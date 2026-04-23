@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#409eff"/>
+      <stop offset="100%" stop-color="#1860c4"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#67c23a"/>
+      <stop offset="100%" stop-color="#3d8b1e"/>
+    </linearGradient>
+  </defs>
+  <!-- 底座方块 -->
+  <rect x="20" y="55" width="28" height="28" rx="4" fill="url(#g1)" opacity="0.9"/>
+  <rect x="52" y="55" width="28" height="28" rx="4" fill="url(#g1)" opacity="0.7"/>
+  <!-- 上层方块 -->
+  <rect x="36" y="35" width="28" height="28" rx="4" fill="url(#g2)" opacity="0.95"/>
+  <!-- 连接点 -->
+  <circle cx="50" cy="50" r="5" fill="#fff"/>
+</svg>

@@ -1,0 +1,1474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>权限组件原型 - 服务编排</title>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  <!-- Element Plus -->
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css">
+  <script src="https://unpkg.com/element-plus/dist/index.full.js"></script>
+  <!-- Element Plus Icons -->
+  <script src="https://unpkg.com/@element-plus/icons-vue"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #app { height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+    
+    .layout { display: flex; height: 100vh; background: #f5f7fa; }
+    
+    /* 左侧组件面板 */
+    .left-panel { width: 240px; background: #fff; border-right: 1px solid #e4e7ed; display: flex; flex-direction: column; }
+    .left-panel .title { padding: 14px 16px; font-size: 15px; font-weight: 600; color: #303133; border-bottom: 1px solid #e4e7ed; }
+    .component-group { border-bottom: 1px solid #f0f0f0; }
+    .group-header { padding: 12px 16px; font-size: 14px; font-weight: 500; color: #606266; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+    .group-header:hover { background: #f5f7fa; }
+    .group-content { padding: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .comp-item { text-align: center; padding: 10px 4px; border-radius: 6px; cursor: pointer; transition: all .2s; }
+    .comp-item:hover { background: #ecf5ff; }
+    .comp-icon { width: 36px; height: 36px; margin: 0 auto 6px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff; }
+    .comp-icon.blue { background: #409eff; }
+    .comp-icon.green { background: #67c23a; }
+    .comp-icon.orange { background: #e6a23c; }
+    .comp-icon.purple { background: #a855f7; }
+    .comp-icon.cyan { background: #14b8a6; }
+    .comp-name { font-size: 12px; color: #606266; }
+    
+    /* 中间画布 */
+    .center-canvas { flex: 1; position: relative; overflow: auto; }
+    .canvas-inner { min-height: 100%; padding: 40px 0; display: flex; flex-direction: column; align-items: center; }
+    .pipeline { display: flex; flex-direction: column; align-items: center; gap: 0; }
+    .node-wrapper { display: flex; flex-direction: column; align-items: center; position: relative; }
+    .node-card { width: 240px; background: #fff; border-radius: 8px; box-shadow: 0 2px 12px 0 rgba(0,0,0,0.06); border: 1px solid #e4e7ed; padding: 14px 16px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: all .2s; z-index: 2; }
+    .node-card:hover { box-shadow: 0 4px 16px 0 rgba(0,0,0,0.1); }
+    .node-card.active { border-color: #409eff; box-shadow: 0 0 0 2px rgba(64,158,255,0.2); }
+    .node-icon-wrap { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .node-icon-wrap.start { background: #e6f7e6; color: #67c23a; }
+    .node-icon-wrap.end { background: #fde2e2; color: #f56c6c; }
+    .node-icon-wrap.perm { background: #ecf5ff; color: #409eff; }
+    .node-icon-wrap.method { background: #f4f4f5; color: #606266; }
+    .node-title { font-size: 14px; color: #303133; font-weight: 500; }
+    .node-desc { font-size: 12px; color: #909399; margin-top: 2px; }
+    .connector { width: 2px; height: 32px; background: #dcdfe6; position: relative; }
+    .connector::after { content: ''; position: absolute; bottom: -4px; left: 50%; transform: translateX(-50%); border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #c0c4cc; }
+    .pipeline-group { width: 240px; padding: 10px 0 4px; font-size: 12px; font-weight: 600; color: #909399; text-align: center; letter-spacing: 1px; }
+    .node-icon-wrap.loop { background: #fdf6ec; color: #e6a23c; }
+    .node-badge { font-size: 11px; color: #f56c6c; margin-left: 4px; font-weight: 600; }
+    /* 限定条件选择器样式 */
+    .el-popper.is-light.limit-type-dropdown { min-width: 140px !important; width: 140px !important; }
+    .el-popper.is-light.limit-type-dropdown .el-select-dropdown__item { text-align: left !important; padding-left: 16px !important; justify-content: flex-start !important; }
+    
+    /* 右侧抽屉 */
+    .right-drawer { width: 460px; background: #fff; border-left: 1px solid #e4e7ed; display: flex; flex-direction: column; transition: width .25s; position: relative; }
+    .right-drawer.collapsed { width: 0; overflow: hidden; border-left: none; }
+    .drawer-tabs { border-bottom: 1px solid #e4e7ed; display: flex; padding: 0 16px; }
+    .drawer-tab { padding: 12px 16px; font-size: 14px; color: #606266; cursor: pointer; position: relative; }
+    .drawer-tab.active { color: #409eff; font-weight: 500; }
+    .drawer-tab.active::after { content: ''; position: absolute; bottom: 0; left: 8px; right: 8px; height: 2px; background: #409eff; border-radius: 2px 2px 0 0; }
+    .drawer-body { flex: 1; overflow-y: auto; padding: 16px; }
+    .drawer-footer { padding: 12px 16px; border-top: 1px solid #e4e7ed; text-align: right; }
+    
+    .collapse-title { font-weight: 500; font-size: 14px; color: #303133; }
+    .form-section { margin-bottom: 16px; }
+    .form-label { font-size: 13px; color: #606266; margin-bottom: 6px; display: block; }
+    .form-tip { font-size: 12px; color: #909399; margin-top: 4px; line-height: 1.5; }
+    .code-block { background: #f5f7fa; padding: 10px 12px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; color: #606266; margin-top: 8px; line-height: 1.6; }
+    .empty-state { text-align: center; padding: 40px 20px; color: #909399; font-size: 13px; }
+    
+    .toggle-btn { position: absolute; right: 12px; top: 10px; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #606266; border-radius: 4px; z-index: 10; }
+    .toggle-btn:hover { background: #f5f7fa; color: #409eff; }
+    .info-card { background: #f5f7fa; padding: 10px 12px; border-radius: 6px; font-size: 12px; color: #606266; line-height: 1.8; }
+    .info-card .row { display: flex; }
+    .info-card .row strong { width: 80px; flex-shrink: 0; color: #303133; }
+    
+    /* 映射表格样式 */
+    .mapping-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .mapping-table th { text-align: left; padding: 8px 10px; background: #f5f7fa; color: #606266; font-weight: 500; border-bottom: 1px solid #e4e7ed; }
+    .mapping-table td { padding: 10px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+    .mapping-table .perm-field { color: #303133; font-weight: 500; }
+    .mapping-table .perm-meta { font-size: 12px; color: #909399; margin-top: 2px; }
+    .mapping-table .arrow-cell { width: 40px; text-align: center; color: #c0c4cc; }
+    .mapping-table .biz-cell { width: 45%; }
+    
+    .section-title { font-size: 13px; font-weight: 600; color: #262626; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .section-title::before { content: ''; width: 3px; height: 13px; background: #409eff; border-radius: 2px; }
+    .section-card { background: #fafafa; border: 1px solid #e8e8e8; border-radius: 4px; padding: 12px; margin-bottom: 12px; }
+    .section-card.white { background: #fff; }
+    .strategy-readonly { background: #f0f9ff; border: 1px solid #d9ecff; padding: 10px 12px; border-radius: 4px; }
+    .strategy-readonly .line { font-size: 13px; color: #303133; line-height: 1.8; }
+    .strategy-readonly .logic { color: #409eff; font-weight: 500; margin-right: 6px; }
+    
+    /* 自定义 select option tooltip */
+    .custom-option { display: flex; flex-direction: column; }
+    .custom-option .label { font-size: 13px; color: #303133; }
+    .custom-option .code { font-size: 11px; color: #909399; }
+    
+    /* 配置引导样式 */
+    .guide-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .guide-title { font-size: 15px; font-weight: 600; color: #303133; }
+    .guide-desc { font-size: 12px; color: #909399; margin-bottom: 16px; padding-left: 28px; }
+    .guide-steps :deep(.el-step__title) { font-size: 13px; font-weight: 500; color: #303133; display: flex; align-items: center; gap: 6px; }
+    .guide-steps :deep(.el-step__description) { padding-right: 0; }
+    .guide-steps :deep(.el-step__icon) { width: 22px; height: 22px; font-size: 12px; }
+    .guide-steps :deep(.el-step__line) { left: 10px; }
+    .step-title { color: #303133; }
+    .step-status { margin-left: 6px; font-size: 11px; height: 18px; line-height: 16px; padding: 0 5px; }
+    .step-content { background: #f8f9fb; border-radius: 6px; padding: 10px 12px; margin-top: 6px; margin-bottom: 10px; }
+    .step-text { font-size: 12px; color: #606266; line-height: 1.7; margin-bottom: 8px; }
+    .step-text strong { color: #303133; }
+    .step-list { margin: 0; padding-left: 16px; font-size: 12px; color: #606266; line-height: 1.8; }
+    .step-list li { margin-bottom: 4px; }
+    .step-tip { display: flex; align-items: flex-start; gap: 6px; background: #fdf6ec; border: 1px solid #faecd8; border-radius: 4px; padding: 8px 10px; font-size: 12px; color: #8c572a; line-height: 1.5; margin-top: 8px; }
+    .step-tip span { flex: 1; }
+    .step-action { margin-top: 10px; }
+    .step-highlight { background: #f0f9ff; border: 1px solid #d9ecff; border-radius: 4px; padding: 8px 10px; margin-top: 8px; }
+    .highlight-item { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+    .highlight-label { color: #606266; }
+    .highlight-value { color: #303133; font-weight: 500; }
+    
+    .principle-cards { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+    .principle-card { flex: 1; background: #fff; border: 1px solid #e4e7ed; border-radius: 6px; padding: 10px; display: flex; align-items: center; gap: 8px; }
+    .principle-icon { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #fff; font-weight: 600; flex-shrink: 0; }
+    .principle-icon.blue { background: #409eff; }
+    .principle-icon.green { background: #67c23a; }
+    .principle-title { font-size: 12px; font-weight: 500; color: #303133; }
+    .principle-text { font-size: 11px; color: #909399; margin-top: 2px; }
+    .principle-arrow { flex-shrink: 0; }
+    
+    .mapping-demo { background: #fff; border: 1px dashed #c0c4cc; border-radius: 6px; padding: 12px; margin-top: 10px; }
+    .mapping-demo-title { font-size: 12px; font-weight: 500; color: #303133; margin-bottom: 10px; }
+    .mapping-demo-body { display: flex; align-items: center; gap: 8px; }
+    .mapping-demo-box { flex: 1; background: #f5f7fa; border-radius: 4px; padding: 10px; text-align: center; }
+    .mapping-demo-box.left { background: #ecf5ff; border: 1px solid #d9ecff; }
+    .mapping-demo-box.right { background: #f0f9eb; border: 1px solid #d9ecff; }
+    .mapping-demo-label { font-size: 11px; color: #909399; margin-bottom: 4px; }
+    .mapping-demo-value { font-size: 12px; font-weight: 500; color: #303133; line-height: 1.4; }
+    .mapping-demo-sub { font-size: 11px; color: #606266; font-weight: normal; }
+    .mapping-demo-arrow { font-size: 16px; color: #c0c4cc; font-weight: 600; }
+    .mapping-demo-desc { font-size: 11px; color: #909399; text-align: center; margin-top: 8px; }
+    
+    .checklist-card { background: #fff; border: 1px solid #e4e7ed; border-radius: 6px; padding: 12px; margin-top: 16px; }
+    .checklist-title { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: #303133; margin-bottom: 10px; }
+    .checklist-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #606266; padding: 5px 0; border-bottom: 1px dashed #f0f0f0; }
+    .checklist-item:last-child { border-bottom: none; }
+    .checklist-item.checked { color: #67c23a; }
+    
+    /* 原生上下文表格 */
+    .native-table { width: 100%; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+    .native-table th { text-align: left; padding: 8px 10px; background: #f5f7fa; color: #606266; font-weight: 500; border: 1px solid #e4e7ed; }
+    .native-table td { padding: 8px 10px; border: 1px solid #e4e7ed; color: #606266; vertical-align: middle; font-size: 12px; }
+    .native-table tr:nth-child(even) td { background: #fafafa; }
+    .native-table .nt-label { color: #303133; font-weight: 500; }
+    .native-table td span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    
+    /* 上下文选择弹窗 */
+    .ctx-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.35); z-index: 2000; }
+    .ctx-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 640px; background: #fff; display: flex; flex-direction: column; box-shadow: -4px 0 20px rgba(0,0,0,0.12); animation: ctxSlideIn .25s ease; }
+    @keyframes ctxSlideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+    .ctx-header { padding: 14px 20px; border-bottom: 1px solid #e4e7ed; display: flex; align-items: center; justify-content: space-between; }
+    .ctx-title { font-size: 15px; font-weight: 600; color: #303133; }
+    .ctx-close { cursor: pointer; color: #909399; font-size: 18px; }
+    .ctx-close:hover { color: #409eff; }
+    .ctx-tabs { display: flex; padding: 0 20px; border-bottom: 1px solid #e4e7ed; }
+    .ctx-tab { padding: 10px 0; margin-right: 24px; font-size: 14px; color: #606266; cursor: pointer; position: relative; }
+    .ctx-tab.active { color: #409eff; font-weight: 500; }
+    .ctx-tab.active::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: #409eff; border-radius: 2px 2px 0 0; }
+    .ctx-filter-bar { padding: 12px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid #f0f0f0; }
+    .ctx-checkboxes { display: flex; gap: 16px; font-size: 12px; color: #606266; }
+    .ctx-body { flex: 1; overflow-y: auto; padding: 8px 0; }
+    .ctx-tree-row { display: flex; align-items: center; padding: 7px 20px; cursor: pointer; font-size: 13px; line-height: 1.5; transition: background .15s; }
+    .ctx-tree-row:hover { background: #f5f7fa; }
+    .ctx-tree-row.active { background: #ecf5ff; }
+    .ctx-tree-row.leaf { color: #303133; }
+    .ctx-tree-arrow { width: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-right: 4px; color: #909399; }
+    .ctx-tree-arrow-placeholder { width: 14px; flex-shrink: 0; margin-right: 4px; }
+    .ctx-tree-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #303133; }
+    .ctx-tree-label.category { font-weight: 600; color: #303133; }
+    .ctx-tree-meta { display: flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px; max-width: 45%; }
+    .ctx-tree-code { color: #409eff; font-size: 12px; font-family: Consolas, 'Courier New', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ctx-tree-type { color: #909399; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ctx-footer { padding: 12px 20px; border-top: 1px solid #e4e7ed; text-align: right; }
+    .biz-field-display { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; background: #f5f7fa; border-radius: 4px; }
+    .biz-field-label { font-size: 13px; color: #303133; }
+    .biz-field-empty { text-align: center; padding: 8px 0; }
+    .placeholder-row { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #fff; border: 1px dashed #dcdfe6; border-radius: 4px; margin-bottom: 8px; }
+    .placeholder-tag { font-size: 13px; color: #f56c6c; font-weight: 600; font-family: Consolas, monospace; }
+    .placeholder-desc { font-size: 12px; color: #606266; flex: 1; }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="layout">
+      <!-- 左侧组件面板 -->
+      <div class="left-panel">
+        <div class="title">组件面板</div>
+        
+        <div class="component-group">
+          <div class="group-header" @click="toggleGroup('logic')">
+            <el-icon><arrow-down v-if="groups.logic" /><arrow-right v-else /></el-icon>
+            <span>逻辑组件</span>
+          </div>
+          <div v-if="groups.logic" class="group-content">
+            <div class="comp-item" v-for="c in logicComps" :key="c.name">
+              <div class="comp-icon" :class="c.color"><el-icon :size="20"><component :is="c.icon"/></el-icon></div>
+              <div class="comp-name">{{c.name}}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="component-group">
+          <div class="group-header" @click="toggleGroup('db')">
+            <el-icon><arrow-down v-if="groups.db" /><arrow-right v-else /></el-icon>
+            <span>数据库组件</span>
+          </div>
+          <div v-if="groups.db" class="group-content">
+            <div class="comp-item" v-for="c in dbComps" :key="c.name">
+              <div class="comp-icon" :class="c.color"><el-icon :size="20"><component :is="c.icon"/></el-icon></div>
+              <div class="comp-name">{{c.name}}</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="component-group">
+          <div class="group-header" @click="toggleGroup('common')">
+            <el-icon><arrow-down v-if="groups.common" /><arrow-right v-else /></el-icon>
+            <span>通用组件</span>
+          </div>
+          <div v-if="groups.common" class="group-content">
+            <div class="comp-item" v-for="c in commonComps" :key="c.name">
+              <div class="comp-icon" :class="c.color"><el-icon :size="20"><component :is="c.icon"/></el-icon></div>
+              <div class="comp-name">{{c.name}}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 中间画布 -->
+      <div class="center-canvas">
+        <div class="canvas-inner">
+          <div class="pipeline">
+            <template v-for="(node, index) in pipelineNodes" :key="node.id">
+              <!-- 分组标题 -->
+              <div v-if="node.type === 'group'" class="pipeline-group">{{ node.name }}</div>
+              <!-- 普通节点 -->
+              <div v-else class="node-wrapper">
+                <div class="node-card" :class="{active: selectedNodeId === node.id}" @click="selectNode(node.id)">
+                  <div class="node-icon-wrap" :class="node.iconClass">
+                    <el-icon :size="18"><component :is="node.icon" /></el-icon>
+                  </div>
+                  <div>
+                    <div class="node-title">{{ node.name }}<span v-if="node.type==='permission'" class="node-badge">★</span></div>
+                    <div class="node-desc">{{ node.desc || (node.type==='permission' ? (node.config.selectedPermission ? node.config.selectedPermission.name : '未配置权限') : '') }}</div>
+                  </div>
+                </div>
+              </div>
+              <!-- 连接线（除最后一个普通节点和分组外） -->
+              <div v-if="index < pipelineNodes.length - 1 && node.type !== 'group' && pipelineNodes[index+1].type !== 'group'" class="connector"></div>
+            </template>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 右侧抽屉 -->
+      <div :class="['right-drawer', {collapsed: drawerCollapsed}]">
+        <div style="position:relative;">
+          <div class="drawer-tabs">
+            <div :class="['drawer-tab', {active: activeTab==='property'}]" @click="activeTab='property'">属性</div>
+            <div :class="['drawer-tab', {active: activeTab==='guide'}]" @click="activeTab='guide'">配置引导</div>
+            <div :class="['drawer-tab', {active: activeTab==='context'}]" @click="activeTab='context'">上下文</div>
+            <div :class="['drawer-tab', {active: activeTab==='tree'}]" @click="activeTab='tree'">结构树</div>
+          </div>
+          <div class="toggle-btn" @click="drawerCollapsed=!drawerCollapsed">
+            <el-icon><d-arrow-right v-if="drawerCollapsed" /><d-arrow-right style="transform:rotate(180deg)" v-else /></el-icon>
+          </div>
+        </div>
+        
+        <div class="drawer-body">
+          <!-- 配置引导面板 -->
+          <div v-if="activeTab==='guide'">
+            <div class="guide-header">
+              <el-icon :size="20" color="#409eff"><info-filled /></el-icon>
+              <span class="guide-title">权限组件配置向导</span>
+            </div>
+            <div class="guide-desc">按照以下步骤，快速完成权限校验节点的配置</div>
+            
+            <el-steps direction="vertical" :active="guideActiveStep" class="guide-steps">
+              <!-- Step 1: 理解原理 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">理解权限校验原理</span>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">
+                      权限的本质是<strong>"分发结果"与"实际业务数据"的比对</strong>。以处方权为例：
+                    </div>
+                    <div class="principle-cards">
+                      <div class="principle-card">
+                        <div class="principle-icon blue">权</div>
+                        <div class="principle-body">
+                          <div class="principle-title">权限中心已定义</div>
+                          <div class="principle-text">把"药品科目类别"分发给医生</div>
+                        </div>
+                      </div>
+                      <div class="principle-arrow">
+                        <el-icon :size="16" color="#c0c4cc"><right /></el-icon>
+                      </div>
+                      <div class="principle-card">
+                        <div class="principle-icon green">比</div>
+                        <div class="principle-body">
+                          <div class="principle-title">服务编排要比对</div>
+                          <div class="principle-text">当前医嘱里的药品是什么类别</div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="step-tip">
+                      <el-icon :size="14" color="#e6a23c"><warning /></el-icon>
+                      <span>您只需要告诉系统：<strong>当前方法里的"药品类别"字段在上下文的哪里</strong></span>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+              
+              <!-- Step 2: 选择权限 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">选择要校验的权限</span>
+                  <el-tag v-if="permConfig.selectedPermission" size="small" type="success" class="step-status">已完成</el-tag>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">在"属性"面板的<strong>权限选择</strong>区域，从权限中心定义的权限列表中选择一个权限。</div>
+                    <div class="step-highlight" v-if="permConfig.selectedPermission">
+                      <div class="highlight-item">
+                        <span class="highlight-label">当前已选：</span>
+                        <span class="highlight-value">{{ permConfig.selectedPermission.name }}（{{ permConfig.selectedPermission.code }}）</span>
+                      </div>
+                    </div>
+                    <div class="step-action">
+                      <el-button type="primary" size="small" @click="activeTab='property'; scrollToSection('2')">去配置</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+              
+              <!-- Step 3: 授权对象 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">确认授权对象</span>
+                  <el-tag v-if="authObjectConfigured" size="small" type="success" class="step-status">已完成</el-tag>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">授权对象即"谁"拥有这个权限。</div>
+                    <ul class="step-list">
+                      <li><strong>系统用户</strong>：可选择"当前登录用户"（默认，自动取当前登录用户ID），也可从上下文中"指定用户"</li>
+                      <li><strong>系统角色</strong>：必须从上下文中指定角色编码参数</li>
+                    </ul>
+                    <div class="step-tip">
+                      <el-icon :size="14" color="#e6a23c"><warning /></el-icon>
+                      <span>指定用户/角色时，点击"选择上下文参数"按钮打开装配对象弹窗，从树形上下文中选择对应参数</span>
+                    </div>
+                    <div class="step-highlight" v-if="authObjectConfigured">
+                      <div class="highlight-item">
+                        <span class="highlight-label">当前配置：</span>
+                        <span class="highlight-value">{{ authObjectDisplay }}</span>
+                      </div>
+                    </div>
+                    <div class="step-action">
+                      <el-button type="primary" size="small" @click="activeTab='property'; scrollToSection('3')">去配置</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+              
+              <!-- Step 4: 字段映射 - 核心 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">配置字段映射关系（资源对象）</span>
+                  <el-tag v-if="mappingConfigured" size="small" type="success" class="step-status">已完成</el-tag>
+                  <el-tag v-else-if="permConfig.selectedPermission && permConfig.selectedPermission.resourceFields && permConfig.selectedPermission.resourceFields.length" size="small" type="warning" class="step-status">待配置</el-tag>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">这是<strong>最关键的一步</strong>。配置<strong>资源对象（权限定义中的校验字段）</strong>与<strong>当前方法/接口的实际业务字段</strong>的映射关系。系统提取实际业务字段的值，与权限分发结果进行比对。</div>
+                    
+                    <div class="mapping-demo" v-if="permConfig.selectedPermission && permConfig.selectedPermission.code === 'PRES_PER'">
+                      <div class="mapping-demo-title">示例：处方权限的映射</div>
+                      <div class="mapping-demo-body">
+                        <div class="mapping-demo-box left">
+                          <div class="mapping-demo-label">权限定义中的字段</div>
+                          <div class="mapping-demo-value">处方科目类别<br><span class="mapping-demo-sub">药品字典.科目类别代码</span></div>
+                        </div>
+                        <div class="mapping-demo-arrow">&rarr;</div>
+                        <div class="mapping-demo-box right">
+                          <div class="mapping-demo-label">当前方法的字段</div>
+                          <div class="mapping-demo-value">request.drugList[*]<br><span class="mapping-demo-sub">.subjectClassCode</span></div>
+                        </div>
+                      </div>
+                      <div class="mapping-demo-desc">系统会依次提取医嘱中每个药品的科目类别，与医生的处方权限进行比对</div>
+                    </div>
+                    
+                    <div class="mapping-demo" v-else-if="permConfig.selectedPermission && permConfig.selectedPermission.code === 'ANTIBIOTIC_PER'">
+                      <div class="mapping-demo-title">示例：抗菌药权限的映射</div>
+                      <div class="mapping-demo-body">
+                        <div class="mapping-demo-box left">
+                          <div class="mapping-demo-label">权限定义中的字段</div>
+                          <div class="mapping-demo-value">抗菌药等级<br><span class="mapping-demo-sub">药品字典.抗菌药等级</span></div>
+                        </div>
+                        <div class="mapping-demo-arrow">&rarr;</div>
+                        <div class="mapping-demo-box right">
+                          <div class="mapping-demo-label">当前方法的字段</div>
+                          <div class="mapping-demo-value">request.drugList[*]<br><span class="mapping-demo-sub">.antiLevel</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="mapping-demo" v-else-if="permConfig.selectedPermission && permConfig.selectedPermission.code === 'TOXIC_NARCOTIC_PER'">
+                      <div class="mapping-demo-title">示例：毒精麻权限的映射</div>
+                      <div class="mapping-demo-body">
+                        <div class="mapping-demo-box left">
+                          <div class="mapping-demo-label">权限定义中的字段</div>
+                          <div class="mapping-demo-value">毒理分类<br><span class="mapping-demo-sub">药品字典.毒理分类代码</span></div>
+                        </div>
+                        <div class="mapping-demo-arrow">&rarr;</div>
+                        <div class="mapping-demo-box right">
+                          <div class="mapping-demo-label">当前方法的字段</div>
+                          <div class="mapping-demo-value">request.drugList[*]<br><span class="mapping-demo-sub">.toxicClassCode</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="mapping-demo" v-else-if="permConfig.selectedPermission && permConfig.selectedPermission.code === 'HIGH_WARN_DRUG_PER'">
+                      <div class="mapping-demo-title">示例：高警示药品权限的映射</div>
+                      <div class="mapping-demo-body">
+                        <div class="mapping-demo-box left">
+                          <div class="mapping-demo-label">权限定义中的字段</div>
+                          <div class="mapping-demo-value">警示级别<br><span class="mapping-demo-sub">药品字典.高警示级别代码</span></div>
+                        </div>
+                        <div class="mapping-demo-arrow">&rarr;</div>
+                        <div class="mapping-demo-box right">
+                          <div class="mapping-demo-label">当前方法的字段</div>
+                          <div class="mapping-demo-value">request.drugList[*]<br><span class="mapping-demo-sub">.warnLevelCode</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="mapping-demo" v-else-if="permConfig.selectedPermission && permConfig.selectedPermission.code === 'ANTITUMOR_DRUG_PER'">
+                      <div class="mapping-demo-title">示例：抗肿瘤药品权限的映射</div>
+                      <div class="mapping-demo-body">
+                        <div class="mapping-demo-box left">
+                          <div class="mapping-demo-label">权限定义中的字段</div>
+                          <div class="mapping-demo-value">抗肿瘤标识<br><span class="mapping-demo-sub">药品字典.抗肿瘤标识</span></div>
+                        </div>
+                        <div class="mapping-demo-arrow">&rarr;</div>
+                        <div class="mapping-demo-box right">
+                          <div class="mapping-demo-label">当前方法的字段</div>
+                          <div class="mapping-demo-value">request.drugList[*]<br><span class="mapping-demo-sub">.antitumorFlag</span></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div class="mapping-demo" v-else-if="permConfig.selectedPermission && permConfig.selectedPermission.code === 'EMR_MODIFY_PER'">
+                      <div class="mapping-demo-title">示例：病历编辑权的映射</div>
+                      <div class="mapping-demo-body">
+                        <div class="mapping-demo-box left">
+                          <div class="mapping-demo-label">权限定义中的字段</div>
+                          <div class="mapping-demo-value">病历所属科室 / 医疗小组<br><span class="mapping-demo-sub">病历文书信息</span></div>
+                        </div>
+                        <div class="mapping-demo-arrow">&rarr;</div>
+                        <div class="mapping-demo-box right">
+                          <div class="mapping-demo-label">当前方法的字段</div>
+                          <div class="mapping-demo-value">request.emrList[*]<br><span class="mapping-demo-sub">.deptId / .medicalGroupId</span></div>
+                        </div>
+                      </div>
+                      <div class="mapping-demo-desc">系统会依次提取病历列表中的科室和医疗小组信息，与医生的病历编辑权限进行比对</div>
+                    </div>
+                    
+                    <div class="step-action">
+                      <el-button type="primary" size="small" @click="activeTab='property'; scrollToSection('4')">去配置</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+              
+              <!-- Step 5: 限定条件 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">配置限定条件（可选）</span>
+                  <el-tag v-if="limitConfigured" size="small" type="info" class="step-status">已配置</el-tag>
+                  <el-tag v-else size="small" type="info" effect="plain" class="step-status">可选</el-tag>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">如果权限只在特定范围生效（如某医疗组、某院区），可以配置限定条件。不配置则全局生效。</div>
+                    <div class="step-tip">
+                      <el-icon :size="14" color="#e6a23c"><warning /></el-icon>
+                      <span>条件类型选择后，上下文参数通过"装配对象"弹窗从树形上下文中选择</span>
+                    </div>
+                    <div class="step-action">
+                      <el-button type="primary" size="small" plain @click="activeTab='property'; scrollToSection('5')">去配置</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+              
+              <!-- Step 6: 结果处理 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">设置校验结果处理</span>
+                  <el-tag v-if="resultConfigured" size="small" type="success" class="step-status">已完成</el-tag>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">配置校验通过和不通过的后续处理方式：</div>
+                    <ul class="step-list">
+                      <li><strong>校验通过</strong>：继续执行后续节点</li>
+                      <li><strong>校验不通过</strong>：可选择"流程中断并提示"（需选择预设提示语）或"继续执行（记录日志）"</li>
+                    </ul>
+                    <div class="step-tip">
+                      <el-icon :size="14" color="#e6a23c"><warning /></el-icon>
+                      <span>部分提示语包含占位符（如 <strong>药品{0}抗菌药等级{1}无权开具！</strong>），选择提示语后需为每个占位符指定对应的上下文参数</span>
+                    </div>
+                    <div class="step-action">
+                      <el-button type="primary" size="small" @click="activeTab='property'; scrollToSection('7')">去配置</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+              
+              <!-- Step 7: 保存 -->
+              <el-step>
+                <template #title>
+                  <span class="step-title">保存配置</span>
+                </template>
+                <template #description>
+                  <div class="step-content">
+                    <div class="step-text">确认以上配置无误后，点击右下角"保存配置"按钮即可生效。</div>
+                    <div class="step-action">
+                      <el-button type="success" size="small" @click="simulateSave">保存配置</el-button>
+                    </div>
+                  </div>
+                </template>
+              </el-step>
+            </el-steps>
+            
+            <!-- 快速检查清单 -->
+            <div class="checklist-card">
+              <div class="checklist-title">
+                <el-icon :size="16" color="#67c23a"><circle-check /></el-icon>
+                <span>配置检查清单</span>
+              </div>
+              <div class="checklist-item" :class="{checked: permConfig.selectedPermission}">
+                <el-icon v-if="permConfig.selectedPermission" :size="14" color="#67c23a"><check /></el-icon>
+                <el-icon v-else :size="14" color="#c0c4cc"><circle-check /></el-icon>
+                <span>已选择权限</span>
+              </div>
+              <div class="checklist-item" :class="{checked: authObjectConfigured}">
+                <el-icon v-if="authObjectConfigured" :size="14" color="#67c23a"><check /></el-icon>
+                <el-icon v-else :size="14" color="#c0c4cc"><circle-check /></el-icon>
+                <span>已配置授权对象</span>
+              </div>
+              <div class="checklist-item" :class="{checked: mappingConfigured}">
+                <el-icon v-if="mappingConfigured" :size="14" color="#67c23a"><check /></el-icon>
+                <el-icon v-else :size="14" color="#c0c4cc"><circle-check /></el-icon>
+                <span>已配置字段映射</span>
+              </div>
+              <div class="checklist-item" :class="{checked: limitConfigured}">
+                <el-icon v-if="limitConfigured" :size="14" color="#67c23a"><check /></el-icon>
+                <el-icon v-else :size="14" color="#c0c4cc"><circle-check /></el-icon>
+                <span>已配置限定条件（可选）</span>
+              </div>
+              <div class="checklist-item" :class="{checked: resultConfigured}">
+                <el-icon v-if="resultConfigured" :size="14" color="#67c23a"><check /></el-icon>
+                <el-icon v-else :size="14" color="#c0c4cc"><circle-check /></el-icon>
+                <span>已设置结果处理</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 属性面板 -->
+          <div v-if="activeTab==='property'">
+            <template v-if="selectedNode?.type === 'permission'">
+              <el-collapse v-model="collapseActive" style="border:none;">
+                <!-- 基础信息 -->
+                <el-collapse-item name="1">
+                  <template #title><span class="collapse-title">基础信息</span></template>
+                  <div class="form-section">
+                    <label class="form-label">组件名称</label>
+                    <el-input v-model="permConfig.name" placeholder="权限校验" size="default" />
+                  </div>
+                  <div class="form-section">
+                    <label class="form-label">组件备注</label>
+                    <el-input v-model="permConfig.remark" type="textarea" :rows="2" placeholder="请输入备注" size="default" />
+                  </div>
+                </el-collapse-item>
+                
+                <!-- 权限选择 -->
+                <el-collapse-item name="2">
+                  <template #title><span class="collapse-title">权限选择</span></template>
+                  <div class="form-section">
+                    <label class="form-label">选择权限 <span style="color:#f56c6c">*</span></label>
+                    <el-select v-model="permConfig.selectedPermission" value-key="code" placeholder="请选择权限" style="width:100%" @change="onPermissionChange">
+                      <el-option v-for="p in permissionList" :key="p.code" :label="p.name + ' (' + p.code + ')'" :value="p" />
+                    </el-select>
+                    <div class="form-tip">从权限中心定义的权限列表中选择。</div>
+                  </div>
+                  <div v-if="permConfig.selectedPermission" class="info-card" style="margin-top:8px;">
+                    <div class="row"><strong>权限代码：</strong>{{ permConfig.selectedPermission.code }}</div>
+                    <div class="row"><strong>权限名称：</strong>{{ permConfig.selectedPermission.name }}</div>
+                  </div>
+                </el-collapse-item>
+                
+                <!-- 授权对象配置 -->
+                <el-collapse-item name="3" v-if="permConfig.selectedPermission">
+                  <template #title><span class="collapse-title">授权对象配置</span></template>
+                  <div class="form-section">
+                    <label class="form-label">授权对象类型 <span style="color:#f56c6c">*</span></label>
+                    <el-radio-group v-model="permConfig.authObject.type" size="small" @change="onAuthObjectTypeChange">
+                      <el-radio-button label="SYS_USER">系统用户</el-radio-button>
+                      <el-radio-button label="SYS_ROLE">系统角色</el-radio-button>
+                    </el-radio-group>
+                    <div class="form-tip">权限的分发目标。系统用户默认取当前登录用户；系统角色需要从上下文中指定参数。</div>
+                  </div>
+                  
+                  <!-- 系统用户 -->
+                  <div v-if="permConfig.authObject.type === 'SYS_USER'" class="form-section" style="margin-top:10px;">
+                    <el-radio-group v-model="permConfig.authObject.userMode" size="small">
+                      <el-radio label="current">当前用户（默认）</el-radio>
+                      <el-radio label="specify">指定用户</el-radio>
+                    </el-radio-group>
+                    <div v-if="permConfig.authObject.userMode === 'specify'" style="margin-top:8px;">
+                      <div v-if="permConfig.authObject.userValue" class="biz-field-display">
+                        <span class="biz-field-label">{{ getContextVarLabel(permConfig.authObject.userValue) }}</span>
+                        <el-button size="small" @click="openAuthContextSelector('user')">更换</el-button>
+                      </div>
+                      <el-button v-else type="primary" plain size="small" @click="openAuthContextSelector('user')">选择上下文参数</el-button>
+                    </div>
+                  </div>
+                  
+                  <!-- 系统角色 -->
+                  <div v-if="permConfig.authObject.type === 'SYS_ROLE'" class="form-section" style="margin-top:10px;">
+                    <label class="form-label">指定角色参数</label>
+                    <div v-if="permConfig.authObject.roleValue" class="biz-field-display">
+                      <span class="biz-field-label">{{ getContextVarLabel(permConfig.authObject.roleValue) }}</span>
+                      <el-button size="small" @click="openAuthContextSelector('role')">更换</el-button>
+                    </div>
+                    <el-button v-else type="primary" plain size="small" @click="openAuthContextSelector('role')">选择上下文参数</el-button>
+                  </div>
+                </el-collapse-item>
+                
+                <!-- 字段映射配置（资源对象） -->
+                <el-collapse-item name="4" v-if="permConfig.selectedPermission && permConfig.selectedPermission.resourceFields && permConfig.selectedPermission.resourceFields.length">
+                  <template #title><span class="collapse-title">字段映射配置（资源对象）</span></template>
+                  <div class="section-card white" style="margin-bottom:12px;">
+                    <div style="font-size:12px;color:#606266;line-height:1.6;margin-bottom:10px;">
+                      配置<strong>资源对象（权限定义中的校验字段）</strong>与<strong>当前方法/接口的实际业务字段</strong>的映射关系。
+                      系统提取实际业务字段的值，与权限分发结果进行比对。
+                    </div>
+                    <table class="mapping-table">
+                      <thead>
+                        <tr>
+                          <th style="width:45%;">资源对象字段（权限定义）</th>
+                          <th class="arrow-cell"></th>
+                          <th style="width:45%;">实际业务字段（当前上下文）</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-for="(field, idx) in permConfig.selectedPermission.resourceFields" :key="idx">
+                          <td>
+                            <div class="perm-field">{{ field.name }}</div>
+                            <div class="perm-meta">对象：{{ field.objectName }} &nbsp;|&nbsp; 字段：{{ field.fieldName }}</div>
+                          </td>
+                          <td class="arrow-cell">
+                            <el-icon :size="16" color="#c0c4cc"><right /></el-icon>
+                          </td>
+                          <td class="biz-cell">
+                            <div v-if="permConfig.params.fieldMappings[field.code]" class="biz-field-display">
+                              <span class="biz-field-label">{{ getContextVarLabel(permConfig.params.fieldMappings[field.code]) }}</span>
+                              <el-button size="small" @click="openContextSelector(field.code)">更换</el-button>
+                            </div>
+                            <el-button v-else type="primary" plain size="small" @click="openContextSelector(field.code)">选择上下文字段</el-button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </el-collapse-item>
+                
+                <!-- 限定条件 -->
+                <el-collapse-item name="5" v-if="permConfig.selectedPermission">
+                  <template #title><span class="collapse-title">限定条件（可选）</span></template>
+                  <div class="section-card white">
+                    <div style="font-size:12px;color:#606266;line-height:1.6;margin-bottom:10px;">
+                      如需在特定范围（如医疗组、院区）内校验权限，可指定上下文参数作为限定条件。
+                    </div>
+                    <div style="display:flex;align-items:flex-end;gap:12px;">
+                      <div style="width:140px;flex-shrink:0;">
+                        <label class="form-label">条件类型</label>
+                        <el-select v-model="permConfig.limitCondition.type" placeholder="请选择" size="default" style="width:140px;" popper-class="limit-type-dropdown">
+                          <el-option v-for="opt in limitTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                        </el-select>
+                      </div>
+                      <div style="flex:1;min-width:160px;">
+                        <label class="form-label">上下文参数</label>
+                        <div v-if="permConfig.limitCondition.value" class="biz-field-display">
+                          <span class="biz-field-label">{{ getContextVarLabel(permConfig.limitCondition.value) }}</span>
+                          <el-button size="small" @click="openLimitContextSelector">更换</el-button>
+                        </div>
+                        <el-button v-else type="primary" plain size="small" @click="openLimitContextSelector">选择上下文参数</el-button>
+                      </div>
+                    </div>
+                  </div>
+                </el-collapse-item>
+                
+                <!-- 结果处理 -->
+                <el-collapse-item name="7" v-if="permConfig.selectedPermission">
+                  <template #title><span class="collapse-title">结果处理</span></template>
+                  <div class="form-section">
+                    <label class="form-label">校验通过</label>
+                    <el-radio-group v-model="permConfig.result.passAction">
+                      <el-radio label="continue">继续执行后续节点</el-radio>
+                    </el-radio-group>
+                  </div>
+                  <div class="form-section">
+                    <label class="form-label">校验不通过</label>
+                    <el-select v-model="permConfig.result.failAction" placeholder="请选择处理方式" style="width:100%" size="default">
+                      <el-option v-for="opt in failActionOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+                    </el-select>
+                    <div v-if="permConfig.result.failAction==='interrupt'" style="margin-top:12px;padding:12px;background:#f5f7fa;border-radius:6px;">
+                      <div class="form-section">
+                        <label class="form-label">选择提示语</label>
+                        <el-select v-model="permConfig.result.failTipPreset" placeholder="请选择" style="width:100%" size="default">
+                          <el-option v-for="t in presetTips" :key="t.code" :label="t.text" :value="t.code" />
+                        </el-select>
+                        <div v-if="currentTipPlaceholders.length" style="margin-top:10px;">
+                          <div style="font-size:12px;color:#606266;margin-bottom:6px;">提示语占位符映射：</div>
+                          <div v-for="ph in currentTipPlaceholders" :key="ph.index" class="placeholder-row">
+                            <span class="placeholder-tag">{{ '{' + ph.index + '}' }}</span>
+                            <span class="placeholder-desc">{{ ph.desc }}</span>
+                            <div v-if="permConfig.result.placeholderMappings[ph.index]" class="biz-field-display" style="flex:1;margin-left:8px;">
+                              <span class="biz-field-label">{{ getContextVarLabel(permConfig.result.placeholderMappings[ph.index]) }}</span>
+                              <el-button size="small" @click="openPlaceholderContextSelector(ph.index)">更换</el-button>
+                            </div>
+                            <el-button v-else type="primary" plain size="small" @click="openPlaceholderContextSelector(ph.index)">选择上下文参数</el-button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="form-section">
+                        <label class="form-label">错误码（只读）</label>
+                        <el-input v-model="permConfig.result.errorCode" disabled size="default" />
+                      </div>
+                    </div>
+                  </div>
+                </el-collapse-item>
+                
+                <!-- 调用示例 -->
+                <el-collapse-item name="8" v-if="permConfig.selectedPermission">
+                  <template #title><span class="collapse-title">调用示例与说明</span></template>
+                  <div class="code-block">
+                    调用：checkPermission(<br>
+                    &nbsp;&nbsp;权限代码：'{{ permConfig.selectedPermission.code }}',<br>
+                    &nbsp;&nbsp;授权对象：{{ permConfig.authObject.type === 'SYS_USER' ? (permConfig.authObject.userMode === 'current' ? '当前登录用户' : permConfig.authObject.userValue || '指定用户') : permConfig.authObject.roleValue || '指定角色' }},<br>
+                    &nbsp;&nbsp;资源字段：映射后的业务字段值,<br>
+                    &nbsp;&nbsp;限定条件：{{ permConfig.limitCondition.type ? permConfig.limitCondition.type + ' = ' + permConfig.limitCondition.value : '无' }}<br>
+                    )<br><br>
+                    返回：成功 / 失败 {msg: '没有处方权限，无法开具该药品'}
+                  </div>
+                </el-collapse-item>
+              </el-collapse>
+            </template>
+            
+            <template v-else-if="selectedNode?.type === 'method'">
+              <div style="font-size:14px;color:#303133;font-weight:500;margin-bottom:12px;">医嘱保存接口配置</div>
+              <div class="form-section">
+                <label class="form-label">接口名称</label>
+                <el-input value="医嘱保存接口" disabled size="default" />
+              </div>
+              <div class="form-section">
+                <label class="form-label">接口编码</label>
+                <el-input value="saveOutpOrder" disabled size="default" />
+              </div>
+              <div class="form-section">
+                <label class="form-label">说明</label>
+                <div class="form-tip">接收门诊医嘱数据并执行保存，已在保存前配置权限校验节点。</div>
+              </div>
+            </template>
+            
+            <template v-else-if="selectedNode">
+              <div class="empty-state">请点击链路中的节点进行配置</div>
+            </template>
+          </div>
+          
+          <!-- 上下文面板 -->
+          <div v-if="activeTab==='context'">
+            <div style="font-size:13px;color:#606266;margin-bottom:10px;">当前链路可用的上下文变量：</div>
+            <table class="native-table">
+              <thead>
+                <tr>
+                  <th style="width:90px;">参数名称</th>
+                  <th style="width:130px;">参数编码</th>
+                  <th style="width:50px;text-align:center;">类型</th>
+                  <th>说明</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="v in contextVars" :key="v.paramCode">
+                  <td><span class="nt-label" :title="v.paramName">{{ v.paramName }}</span></td>
+                  <td><span :title="v.paramCode">{{ v.paramCode }}</span></td>
+                  <td align="center">{{ v.type }}</td>
+                  <td><span :title="v.desc">{{ v.desc }}</span></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- 结构树面板 -->
+          <div v-if="activeTab==='tree'">
+            <div style="font-size:13px;color:#606266;margin-bottom:10px;">当前权限组件配置结构预览：</div>
+            <pre style="background:#f5f7fa;padding:12px;border-radius:6px;font-size:12px;color:#606266;overflow:auto;">{{ JSON.stringify(permConfig, null, 2) }}</pre>
+          </div>
+        </div>
+        
+        <div class="drawer-footer" v-if="!drawerCollapsed">
+          <el-button type="primary" size="default">保存配置</el-button>
+          <el-button size="default" style="margin-left:8px;">查看出入参</el-button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- 上下文选择弹窗 -->
+    <div v-if="contextSelectorVisible" class="ctx-mask" @click="closeContextSelector">
+      <div class="ctx-panel" @click.stop>
+        <div class="ctx-header">
+          <span class="ctx-title">选择上下文参数</span>
+          <el-icon class="ctx-close" @click="closeContextSelector"><close /></el-icon>
+        </div>
+        <div class="ctx-tabs">
+          <div class="ctx-tab active">变量赋值</div>
+        </div>
+        <div class="ctx-filter-bar">
+          <el-input v-model="ctxSearch" placeholder="输入关键字过滤" size="default" clearable style="width:220px;">
+            <template #prefix><el-icon><search /></el-icon></template>
+          </el-input>
+          <div class="ctx-checkboxes">
+            <el-checkbox v-model="ctxFilter.sameType" size="small">同数据类型</el-checkbox>
+            <el-checkbox v-model="ctxFilter.sameClass" size="small">同元类编码</el-checkbox>
+            <el-checkbox v-model="ctxFilter.sameName" size="small">同参数名</el-checkbox>
+          </div>
+        </div>
+        <div class="ctx-body">
+          <div v-if="ctxVisibleNodes.length">
+            <div v-for="node in ctxVisibleNodes" :key="node.id"
+                 :class="['ctx-tree-row', {active: ctxSelected === (node.value || node.code), leaf: node.leaf}]"
+                 :style="{paddingLeft: (20 + node.level * 18) + 'px'}"
+                 @click="onCtxNodeClick(node)">
+              <span v-if="!node.leaf && node.children && node.children.length" class="ctx-tree-arrow">
+                <el-icon :size="12"><arrow-down v-if="node.expanded" /><arrow-right v-else /></el-icon>
+              </span>
+              <span v-else class="ctx-tree-arrow-placeholder"></span>
+              <span :class="['ctx-tree-label', {category: node.level === 0}]">{{ node.label }}</span>
+              <span class="ctx-tree-meta">
+                <span v-if="node.code" class="ctx-tree-code" :title="node.code">{{ node.code }}</span>
+                <span v-if="node.typeLabel" class="ctx-tree-type" :title="node.typeLabel">{{ node.typeLabel }}</span>
+              </span>
+            </div>
+          </div>
+          <div v-else class="empty-state" style="padding: 40px 20px;">未找到匹配的上下文变量</div>
+        </div>
+        <div class="ctx-footer">
+          <el-button @click="closeContextSelector">取消</el-button>
+          <el-button type="primary" @click="confirmContextSelect" :disabled="!ctxSelected">确定</el-button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, reactive, computed, watch } = Vue;
+    const { ArrowDown, ArrowRight, VideoPlay, VideoPause, Lock, Collection, DArrowRight, Right, InfoFilled, Warning, Check, CircleCheck, Close, Search } = ElementPlusIconsVue;
+
+    createApp({
+      components: {
+        ArrowDown, ArrowRight, VideoPlay, VideoPause, Lock, Collection, DArrowRight, Right, InfoFilled, Warning, Check, CircleCheck, Close, Search
+      },
+      setup() {
+        const groups = reactive({ logic: true, db: true, common: true });
+        const drawerCollapsed = ref(false);
+        const activeTab = ref('property');
+        const collapseActive = ref(['1','2','3','4','5','7','8']);
+        
+        // 上下文选择弹窗状态
+        const contextSelectorVisible = ref(false);
+        const currentMappingField = ref('');
+        const ctxSearch = ref('');
+        const ctxSelected = ref('');
+        
+        const logicComps = [
+          { name: 'IF', icon: 'Switch', color: 'blue' },
+          { name: '获取条件值', icon: 'Filter', color: 'blue' },
+        ];
+        const dbComps = [
+          { name: 'HTTP调用', icon: 'Position', color: 'green' },
+          { name: 'Redis保存', icon: 'Box', color: 'orange' },
+          { name: 'Redis查询', icon: 'View', color: 'orange' },
+        ];
+        const commonComps = [
+          { name: '日志组件', icon: 'Document', color: 'cyan' },
+          { name: '权限组件', icon: 'Lock', color: 'purple' },
+          { name: '获取标签值', icon: 'PriceTag', color: 'blue' },
+          { name: 'AI大模型', icon: 'Cpu', color: 'blue' },
+          { name: '数据处理', icon: 'Menu', color: 'blue' },
+          { name: '脚本执行', icon: 'Ticket', color: 'blue' },
+          { name: '智能体', icon: 'ChatDotRound', color: 'blue' },
+        ];
+        
+        const permissionList = [
+          {
+            code: 'PRES_PER',
+            name: '处方权限',
+            desc: '门诊医生的处方权限按西药、中成药、中草药进行分类管理',
+            resourceFields: [
+              { code: 'PRES_SUBJECT_CLASS', name: '处方科目类别', objectName: '药品字典', fieldName: '科目类别代码', objectCode: 'PRES_SUBJECT_CLASS' }
+            ],
+            authStrategy: [{ text: '处方科目类别代码 包含于 权限分发结果' }]
+          },
+          {
+            code: 'ANTIBIOTIC_PER',
+            name: '抗菌药权限',
+            desc: '控制医生开具抗菌药物的权限等级',
+            resourceFields: [
+              { code: 'ANTIBIOTIC_LEVEL', name: '抗菌药等级', objectName: '药品字典', fieldName: '抗菌药等级', objectCode: 'ANTIBIOTIC_LEVEL' }
+            ],
+            authStrategy: [
+              { text: '抗菌药等级 不为空' },
+              { logic: '且', text: '抗菌药等级 包含于 权限分发结果' }
+            ]
+          },
+          {
+            code: 'TOXIC_NARCOTIC_PER',
+            name: '毒精麻权限',
+            desc: '控制医生开具毒性药品、精神药品、麻醉药品的权限',
+            resourceFields: [
+              { code: 'TOXIC_CLASS', name: '毒理分类', objectName: '药品字典', fieldName: '毒理分类代码', objectCode: 'TOXIC_CLASS' }
+            ],
+            authStrategy: [{ text: '毒理分类 包含于 权限分发结果' }]
+          },
+          {
+            code: 'HIGH_WARN_DRUG_PER',
+            name: '高警示药品权限',
+            desc: '控制医生开具高警示药品的权限',
+            resourceFields: [
+              { code: 'WARN_LEVEL', name: '警示级别', objectName: '药品字典', fieldName: '高警示级别代码', objectCode: 'WARN_LEVEL' }
+            ],
+            authStrategy: [{ text: '警示级别 包含于 权限分发结果' }]
+          },
+          {
+            code: 'ANTITUMOR_DRUG_PER',
+            name: '抗肿瘤药品权限',
+            desc: '控制医生开具抗肿瘤药品的权限',
+            resourceFields: [
+              { code: 'ANTITUMOR_FLAG', name: '抗肿瘤标识', objectName: '药品字典', fieldName: '抗肿瘤标识', objectCode: 'ANTITUMOR_FLAG' }
+            ],
+            authStrategy: [{ text: '抗肿瘤标识 包含于 权限分发结果' }]
+          },
+          {
+            code: 'EMR_MODIFY_PER',
+            name: '病历编辑权',
+            desc: '控制医生修改病历的权限',
+            resourceFields: [
+              { code: 'EMR_DEPT', name: '病历所属科室', objectName: '病历文书信息', fieldName: '所属科室ID', objectCode: 'EMR_DEPT' },
+              { code: 'EMR_GROUP', name: '病历所属医疗小组', objectName: '病历文书信息', fieldName: '所属医疗小组', objectCode: 'EMR_GROUP' },
+            ],
+            authStrategy: [
+              { text: '病历修改状态 未归档' },
+              { logic: '且', text: '病历修改人排序 小于 用户职称排序' },
+              { logic: '且', text: '分发值 包含 "同医疗组" 且 病历所属医疗小组 等于 用户医疗组' },
+              { logic: '或', text: '分发值 包含 "同科室" 且 病历所属科室 等于 登录科室' }
+            ]
+          },
+        ];
+        
+        const failActionOptions = [
+          { label: '流程中断并提示', value: 'interrupt' },
+          { label: '继续执行（记录日志）', value: 'log' }
+        ];
+        
+        const limitTypeOptions = [
+          { label: '医疗组', value: 'CLIN_GROUP' },
+          { label: '院区', value: 'DISTRICT' },
+          { label: '科室', value: 'DEPT' },
+          { label: '机构', value: 'ORG' }
+        ];
+        
+        const presetTips = [
+          { code: 'NO_PERM', text: '无权操作', placeholders: [] },
+          { code: 'NO_DISP_PERM', text: '药品{0}没有处方权限，无法开具！', placeholders: [{ index: 0, desc: '药品名称' }] },
+          { code: 'NO_ANTIBIOTIC_PERM', text: '药品{0}抗菌药等级{1}无权开具！', placeholders: [{ index: 0, desc: '药品名称' }, { index: 1, desc: '抗菌药等级' }] },
+          { code: 'NO_TOXIC_PERM', text: '药品{0}没有毒精麻处方权限！', placeholders: [{ index: 0, desc: '药品名称' }] },
+          { code: 'NO_HIGH_WARN_PERM', text: '药品{0}没有高警示药品处方权限！', placeholders: [{ index: 0, desc: '药品名称' }] },
+          { code: 'NO_ANTITUMOR_PERM', text: '药品{0}没有抗肿瘤药品处方权限！', placeholders: [{ index: 0, desc: '药品名称' }] },
+          { code: 'NO_EMR_EDIT', text: '没有病历编辑权限', placeholders: [] },
+        ];
+        
+        const contextVars = [
+          { paramName: '药品列表', paramCode: 'request.drugList', type: 'array', desc: '门诊处方保存时传入的药品列表', category: '入参' },
+          { paramName: '药品科目类别', paramCode: 'request.drugList[*].subjectClassCode', type: 'string', desc: '药品列表中的科目类别代码字段', category: '入参' },
+          { paramName: '抗菌药等级', paramCode: 'request.drugList[*].antiLevel', type: 'string', desc: '药品列表中的抗菌药等级字段', category: '入参' },
+          { paramName: '毒理分类', paramCode: 'request.drugList[*].toxicClassCode', type: 'string', desc: '药品毒理分类代码（毒/精/麻）', category: '入参' },
+          { paramName: '警示级别', paramCode: 'request.drugList[*].warnLevelCode', type: 'string', desc: '高警示药品级别代码', category: '入参' },
+          { paramName: '抗肿瘤标识', paramCode: 'request.drugList[*].antitumorFlag', type: 'string', desc: '抗肿瘤药品标识', category: '入参' },
+          { paramName: '药品ID', paramCode: 'request.drugList[*].drugId', type: 'Long', desc: '药品唯一标识', category: '入参' },
+          { paramName: '药品名称', paramCode: 'request.drugList[*].drugName', type: 'String', desc: '药品名称', category: '入参' },
+          { paramName: '患者ID', paramCode: 'request.patient.patientId', type: 'Long', desc: '患者唯一标识', category: '入参' },
+          { paramName: '患者姓名', paramCode: 'request.patient.patientName', type: 'String', desc: '患者姓名', category: '入参' },
+          { paramName: '就诊流水号', paramCode: 'request.patient.visitNo', type: 'String', desc: '本次就诊流水号', category: '入参' },
+          { paramName: '就诊科室ID', paramCode: 'request.patient.deptId', type: 'Long', desc: '患者就诊科室ID', category: '入参' },
+          { paramName: '医生ID', paramCode: 'request.doctor.doctorId', type: 'Long', desc: '开单医生ID', category: '入参' },
+          { paramName: '开单科室ID', paramCode: 'request.doctor.deptId', type: 'Long', desc: '医生所属科室ID', category: '入参' },
+          { paramName: '医生医疗组ID', paramCode: 'request.doctor.medicalGroupId', type: 'Long', desc: '医生所属医疗组ID', category: '入参' },
+          { paramName: '就诊ID', paramCode: 'request.visitId', type: 'Long', desc: '本次就诊ID', category: '入参' },
+          { paramName: '处方类型', paramCode: 'request.presType', type: 'String', desc: '处方类型：西药/中成药/中草药', category: '入参' },
+          { paramName: '处方ID', paramCode: 'result.presId', type: 'Long', desc: '保存成功后返回的处方ID', category: '出参' },
+          { paramName: '处方流水号', paramCode: 'result.presNo', type: 'String', desc: '保存成功后返回的处方流水号', category: '出参' },
+          { paramName: '保存状态', paramCode: 'result.status', type: 'String', desc: '保存结果状态', category: '出参' },
+          { paramName: '当前用户ID', paramCode: 'currentUser.userId', type: 'Long', desc: '当前登录用户ID', category: '上下文变量' },
+          { paramName: '当前用户名', paramCode: 'currentUser.userName', type: 'String', desc: '当前登录用户名', category: '上下文变量' },
+          { paramName: '当前科室ID', paramCode: 'currentUser.deptId', type: 'Long', desc: '当前登录科室ID', category: '上下文变量' },
+          { paramName: '当前院区ID', paramCode: 'currentUser.districtId', type: 'Long', desc: '当前登录院区ID', category: '上下文变量' },
+          { paramName: '当前医疗组ID', paramCode: 'currentUser.medicalGroupId', type: 'Long', desc: '当前登录医疗组ID', category: '上下文变量' },
+          { paramName: '当前角色编码', paramCode: 'currentUser.roleCode', type: 'String', desc: '当前用户角色编码', category: '上下文变量' },
+          { paramName: '当前机构ID', paramCode: 'currentUser.orgId', type: 'Long', desc: '当前登录机构ID', category: '上下文变量' },
+          { paramName: '就诊信息就诊ID', paramCode: 'currentVisit.visitId', type: 'Long', desc: '当前就诊ID', category: '上下文变量' },
+          { paramName: '就诊信息患者ID', paramCode: 'currentVisit.patientId', type: 'Long', desc: '当前就诊患者ID', category: '上下文变量' },
+          { paramName: '就诊信息科室ID', paramCode: 'currentVisit.deptId', type: 'Long', desc: '当前就诊科室ID', category: '上下文变量' },
+          { paramName: '全局机构ID', paramCode: 'globalConfig.orgId', type: 'Long', desc: '全局机构ID', category: '上下文变量' },
+          { paramName: '医院编码', paramCode: 'globalConfig.hospitalCode', type: 'String', desc: '医院编码', category: '上下文变量' },
+        ];
+        
+        const contextVarOptions = contextVars.map(v => ({ label: v.paramName, value: v.paramCode }));
+        
+        // 上下文选择弹窗 - 树形数据
+        const ctxTreeData = reactive([
+          {
+            id: 'in', label: '入参', level: 0, expanded: true,
+            children: [
+              {
+                id: 'in-1', label: '门诊医嘱保存入参', code: 'request', typeLabel: 'Object<SaveOutpOrderRequest>', level: 1, expanded: true,
+                children: [
+                  {
+                    id: 'in-1-1', label: '药品列表', code: 'drugList', typeLabel: 'List<OutpOrderDrug>', level: 2, expanded: true,
+                    children: [
+                      { id: 'in-1-1-1', label: '药品ID', code: 'drugId', typeLabel: 'Long', level: 3, leaf: true, value: 'request.drugList[*].drugId' },
+                      { id: 'in-1-1-2', label: '药品名称', code: 'drugName', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].drugName' },
+                      { id: 'in-1-1-3', label: '科目类别代码', code: 'subjectClassCode', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].subjectClassCode' },
+                      { id: 'in-1-1-4', label: '抗菌药等级', code: 'antiLevel', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].antiLevel' },
+                      { id: 'in-1-1-5', label: '毒理分类', code: 'toxicClassCode', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].toxicClassCode' },
+                      { id: 'in-1-1-6', label: '警示级别', code: 'warnLevelCode', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].warnLevelCode' },
+                      { id: 'in-1-1-7', label: '抗肿瘤标识', code: 'antitumorFlag', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].antitumorFlag' },
+                      { id: 'in-1-1-8', label: '数量', code: 'qty', typeLabel: 'BigDecimal', level: 3, leaf: true, value: 'request.drugList[*].qty' },
+                      { id: 'in-1-1-9', label: '单位', code: 'unit', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].unit' },
+                      { id: 'in-1-1-10', label: '规格', code: 'drugSpec', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].drugSpec' },
+                      { id: 'in-1-1-11', label: '用法代码', code: 'usageCode', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].usageCode' },
+                      { id: 'in-1-1-12', label: '频次代码', code: 'frequencyCode', typeLabel: 'String', level: 3, leaf: true, value: 'request.drugList[*].frequencyCode' },
+                      { id: 'in-1-1-13', label: '天数', code: 'days', typeLabel: 'Integer', level: 3, leaf: true, value: 'request.drugList[*].days' }
+                    ]
+                  },
+                  {
+                    id: 'in-1-2', label: '患者信息', code: 'patient', typeLabel: 'Object<PatientInfo>', level: 2, expanded: false,
+                    children: [
+                      { id: 'in-1-2-1', label: '患者ID', code: 'patientId', typeLabel: 'Long', level: 3, leaf: true, value: 'request.patient.patientId' },
+                      { id: 'in-1-2-2', label: '患者姓名', code: 'patientName', typeLabel: 'String', level: 3, leaf: true, value: 'request.patient.patientName' },
+                      { id: 'in-1-2-3', label: '就诊流水号', code: 'visitNo', typeLabel: 'String', level: 3, leaf: true, value: 'request.patient.visitNo' },
+                      { id: 'in-1-2-4', label: '就诊科室ID', code: 'deptId', typeLabel: 'Long', level: 3, leaf: true, value: 'request.patient.deptId' }
+                    ]
+                  },
+                  {
+                    id: 'in-1-3', label: '医生信息', code: 'doctor', typeLabel: 'Object<DoctorInfo>', level: 2, expanded: false,
+                    children: [
+                      { id: 'in-1-3-1', label: '医生ID', code: 'doctorId', typeLabel: 'Long', level: 3, leaf: true, value: 'request.doctor.doctorId' },
+                      { id: 'in-1-3-2', label: '开单科室ID', code: 'deptId', typeLabel: 'Long', level: 3, leaf: true, value: 'request.doctor.deptId' },
+                      { id: 'in-1-3-3', label: '医疗组ID', code: 'medicalGroupId', typeLabel: 'Long', level: 3, leaf: true, value: 'request.doctor.medicalGroupId' }
+                    ]
+                  },
+                  { id: 'in-1-4', label: '就诊ID', code: 'visitId', typeLabel: 'Long', level: 2, leaf: true, value: 'request.visitId' },
+                  { id: 'in-1-5', label: '处方类型', code: 'presType', typeLabel: 'String', level: 2, leaf: true, value: 'request.presType' }
+                ]
+              }
+            ]
+          },
+          {
+            id: 'out', label: '出参', level: 0, expanded: true,
+            children: [
+              {
+                id: 'out-1', label: '医嘱保存结果', code: 'result', typeLabel: 'Object<SaveOutpOrderResult>', level: 1, expanded: true,
+                children: [
+                  { id: 'out-1-1', label: '处方ID', code: 'presId', typeLabel: 'Long', level: 2, leaf: true, value: 'result.presId' },
+                  { id: 'out-1-2', label: '处方流水号', code: 'presNo', typeLabel: 'String', level: 2, leaf: true, value: 'result.presNo' },
+                  { id: 'out-1-3', label: '保存状态', code: 'status', typeLabel: 'String', level: 2, leaf: true, value: 'result.status' },
+                  { id: 'out-1-4', label: '错误信息', code: 'errorMsg', typeLabel: 'String', level: 2, leaf: true, value: 'result.errorMsg' }
+                ]
+              }
+            ]
+          },
+          {
+            id: 'ctx', label: '上下文变量', level: 0, expanded: true,
+            children: [
+              {
+                id: 'ctx-1', label: '当前登录用户', code: 'currentUser', typeLabel: 'Object<UserInfo>', level: 1, expanded: true,
+                children: [
+                  { id: 'ctx-1-1', label: '用户ID', code: 'userId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentUser.userId' },
+                  { id: 'ctx-1-2', label: '用户名', code: 'userName', typeLabel: 'String', level: 2, leaf: true, value: 'currentUser.userName' },
+                  { id: 'ctx-1-3', label: '科室ID', code: 'deptId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentUser.deptId' },
+                  { id: 'ctx-1-4', label: '院区ID', code: 'districtId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentUser.districtId' },
+                  { id: 'ctx-1-5', label: '医疗组ID', code: 'medicalGroupId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentUser.medicalGroupId' },
+                  { id: 'ctx-1-6', label: '角色编码', code: 'roleCode', typeLabel: 'String', level: 2, leaf: true, value: 'currentUser.roleCode' },
+                  { id: 'ctx-1-7', label: '机构ID', code: 'orgId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentUser.orgId' }
+                ]
+              },
+              {
+                id: 'ctx-2', label: '当前就诊信息', code: 'currentVisit', typeLabel: 'Object<VisitInfo>', level: 1, expanded: false,
+                children: [
+                  { id: 'ctx-2-1', label: '就诊ID', code: 'visitId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentVisit.visitId' },
+                  { id: 'ctx-2-2', label: '患者ID', code: 'patientId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentVisit.patientId' },
+                  { id: 'ctx-2-3', label: '科室ID', code: 'deptId', typeLabel: 'Long', level: 2, leaf: true, value: 'currentVisit.deptId' },
+                  { id: 'ctx-2-4', label: '就诊类型', code: 'visitType', typeLabel: 'String', level: 2, leaf: true, value: 'currentVisit.visitType' }
+                ]
+              },
+              {
+                id: 'ctx-3', label: '全局配置', code: 'globalConfig', typeLabel: 'Object', level: 1, expanded: false,
+                children: [
+                  { id: 'ctx-3-1', label: '机构ID', code: 'orgId', typeLabel: 'Long', level: 2, leaf: true, value: 'globalConfig.orgId' },
+                  { id: 'ctx-3-2', label: '医院编码', code: 'hospitalCode', typeLabel: 'String', level: 2, leaf: true, value: 'globalConfig.hospitalCode' }
+                ]
+              }
+            ]
+          }
+        ]);
+        
+        const ctxFilter = reactive({ sameType: false, sameClass: false, sameName: false });
+        
+        // 树形节点匹配搜索关键词
+        function nodeMatches(node, keyword) {
+          if (!keyword) return true;
+          const text = ((node.label || '') + ' ' + (node.code || '') + ' ' + (node.typeLabel || '')).toLowerCase();
+          return text.includes(keyword);
+        }
+        
+        function treeHasMatch(node, keyword) {
+          if (nodeMatches(node, keyword)) return true;
+          if (!node.children) return false;
+          return node.children.some(c => treeHasMatch(c, keyword));
+        }
+        
+        // 计算可见节点（扁平化）
+        const ctxVisibleNodes = computed(() => {
+          const keyword = ctxSearch.value.trim().toLowerCase();
+          const result = [];
+          
+          function walk(nodes) {
+            for (const node of nodes) {
+              const hasMatch = treeHasMatch(node, keyword);
+              if (!keyword || hasMatch) {
+                result.push(node);
+                if (node.children && node.children.length) {
+                  const shouldExpand = keyword ? node.children.some(c => treeHasMatch(c, keyword)) : node.expanded;
+                  if (shouldExpand) {
+                    walk(node.children);
+                  }
+                }
+              }
+            }
+          }
+          
+          walk(ctxTreeData);
+          return result;
+        });
+        
+        // 权限配置工厂函数
+        function createPermConfig(permissionCode, namePrefix, remark) {
+          const perm = permissionList.find(p => p.code === permissionCode);
+          const mappings = {};
+          if (perm && perm.resourceFields) {
+            perm.resourceFields.forEach(f => { mappings[f.code] = ''; });
+          }
+          return reactive({
+            name: '权限校验：' + (perm ? perm.name : namePrefix),
+            remark: remark || '',
+            selectedPermission: perm || null,
+            authObject: { type: 'SYS_USER', userMode: 'current', userValue: '', roleValue: '' },
+            params: { fieldMappings: mappings },
+            limitCondition: { type: '', value: '' },
+            result: { passAction: 'continue', failAction: 'interrupt', failTipPreset: 'NO_PERM', errorCode: 'PERMISSION_DENIED', placeholderMappings: {} }
+          });
+        }
+        
+        // 节点列表（医嘱保存编排链路）
+        const pipelineNodes = reactive([
+          { id: 'start', type: 'start', name: '开始', icon: 'VideoPlay', iconClass: 'start' },
+          { id: 'g1', type: 'group', name: '前置校验' },
+          { id: 'checkValidMedregNo', type: 'method', name: '挂号号状态检测', code: 'checkValidMedregNo', desc: '检测挂号号是否有效', icon: 'Collection', iconClass: 'method' },
+          { id: 'checkInpatientStatus', type: 'method', name: '住院状态检测', code: 'checkInpatientStatus', desc: '检测患者住院状态', icon: 'Collection', iconClass: 'method' },
+          { id: 'generate', type: 'method', name: '构建医嘱模型', code: 'generate', desc: '构建医嘱数据模型', icon: 'Collection', iconClass: 'method' },
+          { id: 'g2', type: 'group', name: '循环校验（每条医嘱）' },
+          { id: 'perm_pres', type: 'permission', name: '处方开单权限校验', code: 'orderTypePermissionValidate', icon: 'Lock', iconClass: 'perm' },
+          { id: 'orderItemValidate', type: 'method', name: '项目有效性校验', code: 'orderItemValidate', desc: '校验医嘱项目是否有效', icon: 'Collection', iconClass: 'method' },
+          { id: 'executeDeptValidate', type: 'method', name: '执行科室校验', code: 'executeDepartmentValidate', desc: '校验执行科室是否有效', icon: 'Collection', iconClass: 'method' },
+          { id: 'useDrugMethodValidate', type: 'method', name: '用药方法校验', code: 'useDrugMethodValidate', desc: '校验用药方法是否正确', icon: 'Collection', iconClass: 'method' },
+          { id: 'outpatientInpatientDrugLimitValidate', type: 'method', name: '门诊住院药品限制校验', code: 'outpatientInpatientDrugLimitValidate', desc: '校验门诊住院药品限制', icon: 'Collection', iconClass: 'method' },
+          { id: 'checkDrugInventory', type: 'method', name: '药品库存校验', code: 'checkDrugInventory', desc: '校验药品库存是否充足', icon: 'Collection', iconClass: 'method' },
+          { id: 'perm_antibiotic', type: 'permission', name: '抗菌药等级权限校验', code: 'antibactGradeCodePermissionValidate', icon: 'Lock', iconClass: 'perm' },
+          { id: 'perm_toxic', type: 'permission', name: '毒精麻权限校验', code: 'checkDrugToxicologyPermissionValidate', icon: 'Lock', iconClass: 'perm' },
+          { id: 'perm_highwarn', type: 'permission', name: '高警示药品权限校验', code: 'checkHighWarnDrugIssuePermission', icon: 'Lock', iconClass: 'perm' },
+          { id: 'perm_antitumor', type: 'permission', name: '抗肿瘤药品权限校验', code: 'checkAntitumorDrugIssuePermission', icon: 'Lock', iconClass: 'perm' },
+          { id: 'save', type: 'method', name: '医嘱保存', code: 'saveOutpOrder', desc: '保存门诊医嘱', icon: 'Collection', iconClass: 'method' },
+          { id: 'end', type: 'end', name: '结束', icon: 'VideoPause', iconClass: 'end' }
+        ]);
+        
+        // 为权限节点初始化配置
+        pipelineNodes.forEach(node => {
+          if (node.type === 'permission') {
+            if (node.id === 'perm_pres') {
+              node.config = createPermConfig('PRES_PER', '处方权限', '校验医生是否具备相应药品科目的处方权限');
+              node.config.params.fieldMappings['PRES_SUBJECT_CLASS'] = 'request.drugList[*].subjectClassCode';
+              node.config.result.failTipPreset = 'NO_DISP_PERM';
+            } else if (node.id === 'perm_antibiotic') {
+              node.config = createPermConfig('ANTIBIOTIC_PER', '抗菌药权限', '校验医生是否具备开具抗菌药物的权限');
+              node.config.params.fieldMappings['ANTIBIOTIC_LEVEL'] = 'request.drugList[*].antiLevel';
+              node.config.result.failTipPreset = 'NO_ANTIBIOTIC_PERM';
+            } else if (node.id === 'perm_toxic') {
+              node.config = createPermConfig('TOXIC_NARCOTIC_PER', '毒精麻权限', '校验医生是否具备开具毒精麻药品的权限');
+              node.config.params.fieldMappings['TOXIC_CLASS'] = 'request.drugList[*].toxicClassCode';
+              node.config.result.failTipPreset = 'NO_TOXIC_PERM';
+            } else if (node.id === 'perm_highwarn') {
+              node.config = createPermConfig('HIGH_WARN_DRUG_PER', '高警示药品权限', '校验医生是否具备开具高警示药品的权限');
+              node.config.params.fieldMappings['WARN_LEVEL'] = 'request.drugList[*].warnLevelCode';
+              node.config.result.failTipPreset = 'NO_HIGH_WARN_PERM';
+            } else if (node.id === 'perm_antitumor') {
+              node.config = createPermConfig('ANTITUMOR_DRUG_PER', '抗肿瘤药品权限', '校验医生是否具备开具抗肿瘤药品的权限');
+              node.config.params.fieldMappings['ANTITUMOR_FLAG'] = 'request.drugList[*].antitumorFlag';
+              node.config.result.failTipPreset = 'NO_ANTITUMOR_PERM';
+            }
+          }
+        });
+        
+        // 选中态
+        const selectedNodeId = ref('perm_pres');
+        const selectedNode = computed(() => pipelineNodes.find(n => n.id === selectedNodeId.value));
+        const permConfig = computed(() => selectedNode.value?.config || {});
+        
+        function toggleGroup(key) { groups[key] = !groups[key]; }
+        function selectNode(nodeId) { selectedNodeId.value = nodeId; drawerCollapsed.value = false; activeTab.value = 'property'; }
+        
+        const guideActiveStep = computed(() => {
+          if (!permConfig.value || !permConfig.value.selectedPermission) return 0;
+          let step = 0;
+          if (permConfig.value.selectedPermission) step = 1;
+          if (authObjectConfigured.value) step = 2;
+          if (mappingConfigured.value) step = 3;
+          if (limitConfigured.value) step = 4;
+          if (resultConfigured.value) step = 5;
+          return step;
+        });
+        
+        const authObjectConfigured = computed(() => {
+          if (!permConfig.value || !permConfig.value.authObject) return false;
+          if (permConfig.value.authObject.type === 'SYS_USER') {
+            return permConfig.value.authObject.userMode === 'current' || !!permConfig.value.authObject.userValue;
+          }
+          return true;
+        });
+        
+        const authObjectDisplay = computed(() => {
+          if (!permConfig.value || !permConfig.value.authObject) return '未配置';
+          if (permConfig.value.authObject.type === 'SYS_USER') {
+            return permConfig.value.authObject.userMode === 'current' ? '系统用户 - 当前登录用户' : `系统用户 - 指定用户(${permConfig.value.authObject.userValue})`;
+          }
+          return `系统角色 - ${permConfig.value.authObject.roleValue || '未指定'}`;
+        });
+        
+        const mappingConfigured = computed(() => {
+          if (!permConfig.value || !permConfig.value.selectedPermission || !permConfig.value.selectedPermission.resourceFields || !permConfig.value.selectedPermission.resourceFields.length) return false;
+          return permConfig.value.selectedPermission.resourceFields.every(f => !!permConfig.value.params.fieldMappings[f.code]);
+        });
+        
+        const limitConfigured = computed(() => {
+          if (!permConfig.value) return false;
+          return !!permConfig.value.limitCondition.type && !!permConfig.value.limitCondition.value;
+        });
+        
+        const currentTipPlaceholders = computed(() => {
+          if (!permConfig.value || !permConfig.value.result.failTipPreset) return [];
+          const tip = presetTips.find(t => t.code === permConfig.value.result.failTipPreset);
+          return tip && tip.placeholders ? tip.placeholders : [];
+        });
+        
+        const resultConfigured = computed(() => {
+          if (!permConfig.value) return false;
+          if (permConfig.value.result.failAction === 'interrupt') {
+            if (!permConfig.value.result.failTipPreset) return false;
+            const placeholders = currentTipPlaceholders.value;
+            if (placeholders.length) {
+              return placeholders.every(ph => !!permConfig.value.result.placeholderMappings[ph.index]);
+            }
+            return true;
+          }
+          return permConfig.value.result.failAction === 'log';
+        });
+        
+        function scrollToSection(name) {
+          if (!collapseActive.value.includes(name)) {
+            collapseActive.value.push(name);
+          }
+        }
+        
+        function simulateSave() {
+          activeTab.value = 'property';
+          ElementPlus.ElMessage.success('配置保存成功');
+        }
+        
+        function onAuthObjectTypeChange(type) {
+          if (!permConfig.value) return;
+          if (type === 'SYS_USER') {
+            permConfig.value.authObject.userMode = 'current';
+            permConfig.value.authObject.userValue = '';
+            permConfig.value.authObject.roleValue = '';
+          } else {
+            permConfig.value.authObject.userMode = '';
+            permConfig.value.authObject.userValue = '';
+            permConfig.value.authObject.roleValue = '';
+          }
+        }
+        
+        function onPermissionChange(val) {
+          if (!permConfig.value) return;
+          permConfig.value.name = '权限校验：' + (val ? val.name : '');
+          const mappings = {};
+          if (val && val.resourceFields) {
+            val.resourceFields.forEach(f => { mappings[f.code] = ''; });
+          }
+          permConfig.value.params.fieldMappings = mappings;
+          permConfig.value.result.errorCode = 'PERMISSION_DENIED';
+          permConfig.value.result.failTipPreset = 'NO_PERM';
+          permConfig.value.result.placeholderMappings = {};
+          permConfig.value.limitCondition = { type: '', value: '' };
+          
+          // 自动填充示例映射
+          if (val && val.code === 'PRES_PER') {
+            permConfig.value.params.fieldMappings['PRES_SUBJECT_CLASS'] = 'request.drugList[*].subjectClassCode';
+            permConfig.value.result.failTipPreset = 'NO_DISP_PERM';
+          } else if (val && val.code === 'ANTIBIOTIC_PER') {
+            permConfig.value.params.fieldMappings['ANTIBIOTIC_LEVEL'] = 'request.drugList[*].antiLevel';
+            permConfig.value.result.failTipPreset = 'NO_ANTIBIOTIC_PERM';
+          } else if (val && val.code === 'EMR_MODIFY_PER') {
+            permConfig.value.params.fieldMappings['EMR_DEPT'] = 'request.emrList[*].deptId';
+            permConfig.value.params.fieldMappings['EMR_GROUP'] = 'request.emrList[*].medicalGroupId';
+            permConfig.value.result.failTipPreset = 'NO_EMR_EDIT';
+          } else if (val && val.code === 'TOXIC_NARCOTIC_PER') {
+            permConfig.value.params.fieldMappings['TOXIC_CLASS'] = 'request.drugList[*].toxicClassCode';
+            permConfig.value.result.failTipPreset = 'NO_TOXIC_PERM';
+          } else if (val && val.code === 'HIGH_WARN_DRUG_PER') {
+            permConfig.value.params.fieldMappings['WARN_LEVEL'] = 'request.drugList[*].warnLevelCode';
+            permConfig.value.result.failTipPreset = 'NO_HIGH_WARN_PERM';
+          } else if (val && val.code === 'ANTITUMOR_DRUG_PER') {
+            permConfig.value.params.fieldMappings['ANTITUMOR_FLAG'] = 'request.drugList[*].antitumorFlag';
+            permConfig.value.result.failTipPreset = 'NO_ANTITUMOR_PERM';
+          }
+        }
+        
+        function getContextVarLabel(code) {
+          function search(nodes) {
+            for (const node of nodes) {
+              if ((node.value || node.code) === code) return node.label;
+              if (node.children) {
+                const found = search(node.children);
+                if (found) return found;
+              }
+            }
+            return null;
+          }
+          const fromTree = search(ctxTreeData);
+          if (fromTree) return fromTree;
+          const found = contextVars.find(v => v.paramCode === code);
+          return found ? found.paramName : code;
+        }
+        
+        function onCtxNodeClick(node) {
+          if (node.leaf) {
+            ctxSelected.value = node.value || node.code;
+          } else if (node.children && node.children.length) {
+            node.expanded = !node.expanded;
+          }
+        }
+        
+        function openContextSelector(fieldCode) {
+          currentMappingField.value = fieldCode;
+          ctxSelected.value = (permConfig.value && permConfig.value.params.fieldMappings[fieldCode]) || '';
+          ctxSearch.value = '';
+          contextSelectorVisible.value = true;
+        }
+        
+        function openLimitContextSelector() {
+          currentMappingField.value = '__limit__';
+          ctxSelected.value = (permConfig.value && permConfig.value.limitCondition.value) || '';
+          ctxSearch.value = '';
+          contextSelectorVisible.value = true;
+        }
+        
+        function openAuthContextSelector(target) {
+          currentMappingField.value = '__auth_' + target + '__';
+          if (target === 'user') {
+            ctxSelected.value = (permConfig.value && permConfig.value.authObject.userValue) || '';
+          } else {
+            ctxSelected.value = (permConfig.value && permConfig.value.authObject.roleValue) || '';
+          }
+          ctxSearch.value = '';
+          contextSelectorVisible.value = true;
+        }
+        
+        function openPlaceholderContextSelector(index) {
+          currentMappingField.value = '__placeholder_' + index + '__';
+          ctxSelected.value = (permConfig.value && permConfig.value.result.placeholderMappings[index]) || '';
+          ctxSearch.value = '';
+          contextSelectorVisible.value = true;
+        }
+        
+        function closeContextSelector() {
+          contextSelectorVisible.value = false;
+          currentMappingField.value = '';
+          ctxSelected.value = '';
+          ctxSearch.value = '';
+        }
+        
+        function confirmContextSelect() {
+          if (currentMappingField.value === '__limit__' && permConfig.value) {
+            permConfig.value.limitCondition.value = ctxSelected.value;
+          } else if (currentMappingField.value === '__auth_user__' && permConfig.value) {
+            permConfig.value.authObject.userValue = ctxSelected.value;
+          } else if (currentMappingField.value === '__auth_role__' && permConfig.value) {
+            permConfig.value.authObject.roleValue = ctxSelected.value;
+          } else if (currentMappingField.value && currentMappingField.value.startsWith('__placeholder_') && permConfig.value) {
+            const idx = currentMappingField.value.replace('__placeholder_', '').replace('__', '');
+            permConfig.value.result.placeholderMappings[idx] = ctxSelected.value;
+          } else if (currentMappingField.value && permConfig.value) {
+            permConfig.value.params.fieldMappings[currentMappingField.value] = ctxSelected.value;
+          }
+          closeContextSelector();
+        }
+        
+        return {
+          groups, drawerCollapsed, selectedNodeId, selectedNode, activeTab, collapseActive,
+          logicComps, dbComps, commonComps, pipelineNodes,
+          permissionList, presetTips, failActionOptions, limitTypeOptions, contextVars, contextVarOptions, permConfig,
+          toggleGroup, selectNode, onPermissionChange, onAuthObjectTypeChange,
+          guideActiveStep, authObjectConfigured, authObjectDisplay, mappingConfigured, limitConfigured, resultConfigured, currentTipPlaceholders,
+          scrollToSection, simulateSave,
+          contextSelectorVisible, currentMappingField, ctxSearch, ctxSelected, ctxFilter,
+          ctxTreeData, ctxVisibleNodes,
+          getContextVarLabel, openContextSelector, openLimitContextSelector, openAuthContextSelector, openPlaceholderContextSelector, closeContextSelector, confirmContextSelect, onCtxNodeClick
+        };
+      }
+    }).use(ElementPlus).mount('#app');
+  </script>
+</body>
+</html>
