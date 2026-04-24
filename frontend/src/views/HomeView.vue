@@ -53,24 +53,24 @@
           <p class="card-desc">{{ item.description || '暂无描述' }}</p>
           <div class="card-meta">
             <span v-if="item.category_name" class="category-tag">{{ item.category_name }}</span>
-            <span class="creator">{{ item.creator_name }}</span>
-          </div>
-          <div class="card-meta">
             <span v-if="item.github_url" class="github-link" @click.stop>
               <el-icon><Link /></el-icon>
               <a :href="item.github_url" target="_blank">GitHub</a>
             </span>
-            <span class="update-time">{{ formatDate(item.updated_at) }}</span>
+            <span class="creator">{{ item.creator_name }}</span>
           </div>
-          <div class="card-actions" @click.stop>
-            <el-button size="small" @click="goToDetail(item.id)">查看</el-button>
-            <el-button
-              v-if="canEdit(item)"
-              size="small"
-              type="danger"
-              plain
-              @click="handleDelete(item)"
-            >删除</el-button>
+          <div class="card-footer" @click.stop>
+            <div class="card-actions">
+              <el-button size="small" @click="goToDetail(item.id)">查看</el-button>
+              <el-button
+                v-if="canEdit(item)"
+                size="small"
+                type="danger"
+                plain
+                @click="handleDelete(item)"
+              >删除</el-button>
+            </div>
+            <span class="update-time">{{ formatDate(item.updated_at) }}</span>
           </div>
         </el-card>
       </el-col>
@@ -169,11 +169,18 @@ async function handleCreate() {
   
   creating.value = true
   try {
-    await createPrototype(createForm.value)
-    ElMessage.success('创建成功')
+    const res = await createPrototype(createForm.value)
+    const created = res.data.data
     showCreateDialog.value = false
     createForm.value = { name: '', description: '', githubUrl: '', categoryId: null, tags: [] }
     loadData()
+    
+    // 如果绑定了GitHub且同步失败，给出明确提示
+    if (created.github_url && created.sync_status === 'failed') {
+      ElMessage.warning(`原型已创建，但GitHub同步失败: ${created.sync_error || '网络异常'}。您可以稍后手动重试同步。`)
+    } else {
+      ElMessage.success('创建成功')
+    }
   } catch (err) {
     ElMessage.error(err.response?.data?.message || '创建失败')
   } finally {
@@ -219,7 +226,8 @@ function getStatusText(status) {
 function formatDate(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
-  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 onMounted(loadData)
@@ -324,7 +332,22 @@ onMounted(loadData)
 .card-actions {
   display: flex;
   gap: 8px;
+}
+
+.card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   border-top: 1px solid #ebeef5;
   padding-top: 12px;
+  margin-top: 4px;
+}
+
+.update-time {
+  font-size: 12px;
+  color: #c0c4cc;
+  font-family: 'SF Mono', 'Menlo', 'Monaco', 'Courier New', monospace;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
 }
 </style>

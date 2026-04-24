@@ -41,7 +41,9 @@ router.get('/:id/versions/:v/*.html', (req, res) => {
   }
 
   let content = fs.readFileSync(fullPath, 'utf-8');
-  const basePath = `/preview/${prototype.id}/versions/${req.params.v}/`;
+  const fileDir = path.dirname(filePath).replace(/\\/g, '/');
+  const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
+  const basePath = `/preview/${prototype.id}/versions/${req.params.v}/${dirPart}`;
   content = processHtml(content, basePath);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -82,7 +84,9 @@ router.get('/:id/*.html', (req, res) => {
   }
 
   let content = fs.readFileSync(fullPath, 'utf-8');
-  const basePath = `/preview/${prototype.id}/`;
+  const fileDir = path.dirname(filePath).replace(/\\/g, '/');
+  const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
+  const basePath = `/preview/${prototype.id}/${dirPart}`;
   content = processHtml(content, basePath);
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');

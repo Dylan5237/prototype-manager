@@ -24,6 +24,14 @@
           <el-icon><View /></el-icon>
           预览
         </el-button>
+        <el-button v-else-if="prototype.github_url && !prototype.entry_file" disabled type="info" title="GitHub仓库尚未同步，请先点击同步获取文件">
+          <el-icon><View /></el-icon>
+          预览（未同步）
+        </el-button>
+        <el-button v-else-if="!prototype.entry_file" disabled type="info" title="尚未上传文件，请上传ZIP或同步GitHub">
+          <el-icon><View /></el-icon>
+          预览（无文件）
+        </el-button>
       </div>
     </div>
 
@@ -33,6 +41,10 @@
       </span>
       <span class="meta-item">创建人：{{ prototype.creator_name }}</span>
       <span class="meta-item">{{ prototype.description || '暂无描述' }}</span>
+      <span v-if="prototype.sync_error" class="meta-item error-text">
+        <el-icon><Warning /></el-icon>
+        同步错误：{{ prototype.sync_error }}
+      </span>
     </div>
 
     <el-row :gutter="16" class="detail-content">
@@ -255,8 +267,12 @@ async function handleSync() {
     syncing.value = true
     const res = await syncGitHub(prototype.value.id, value)
     prototype.value = res.data.data
-    ElMessage.success('同步成功')
-    loadData()
+    if (res.data.success) {
+      ElMessage.success('同步成功')
+      loadData()
+    } else {
+      ElMessage.error('同步失败: ' + (res.data.data?.sync_error || '未知错误'))
+    }
   } catch (err) {
     if (err !== 'cancel') {
       ElMessage.error(err.response?.data?.message || '同步失败')
@@ -533,5 +549,10 @@ onMounted(loadData)
 .versions-container {
   height: calc(100vh - 240px);
   overflow: auto;
+}
+
+.error-text {
+  color: #f56c6c;
+  font-size: 13px;
 }
 </style>

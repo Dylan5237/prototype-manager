@@ -9,6 +9,7 @@ const { migrateFromJson } = require('./routes/prototypes');
 const authRoutes = require('./routes/auth');
 const { router: prototypeRoutes } = require('./routes/prototypes');
 const previewRoutes = require('./routes/preview');
+const { initProxy } = require('./services/github');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,6 +24,9 @@ dirs.forEach(dir => {
 });
 
 async function startServer() {
+  // 初始化代理检测
+  await initProxy();
+  
   // 初始化数据库
   await initDatabase();
   

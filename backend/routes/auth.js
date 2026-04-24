@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
-const { createUser, findUserByUsername, findUserById, getAllUsers, verifyPassword } = require('../services/db-users');
+const { createUser, findUserByUsername, findUserById, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
 
 // 登录
 router.post('/login', (req, res) => {
@@ -74,6 +74,64 @@ router.get('/me', requireAuth, (req, res) => {
 router.get('/users', requireAuth, requireRole(['admin']), (req, res) => {
   const users = getAllUsers();
   res.json({ success: true, data: users });
+});
+
+// 更新用户（仅admin）
+router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  console.log('[PUT /users/:id] params:', req.params, 'body:', req.body);
+  const { nickname, role, password } = req.body;
+  const userId = parseInt(req.params.id);
+
+  const user = findUserById(userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+
+  const validRoles = ['admin', 'uploader', 'viewer'];
+  if (role && !validRoles.includes(role)) {
+    return res.status(400).json({ success: false, message: '无效的角色' });
+  }
+
+  if (password && password.length < 4) {
+    return res.status(400).json({ success: false, message: '密码至少4位' });
+  }
+
+  try {
+    const updated = updateUser(userId, { nickname, role, password });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 删除用户（仅admin）
+router.delete('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  console.log('[DELETE /users/:id] params:', req.params);
+  const userId = parseInt(req.params.id);
+
+  // 不能删除自己
+  if (userId === req.user.id) {
+    return res.status(400).json({ success: false, message: '不能删除当前登录账号' });
+  }
+
+  const user = findUserById(userId);
+  if (!user) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+
+  // 检查是否唯一的admin
+  const allUsers = getAllUsers();
+  const adminCount = allUsers.filter(u => u.role === 'admin').length;
+  if (user.role === 'admin' && adminCount <= 1) {
+    return res.status(400).json({ success: false, message: '系统中至少需要保留一个管理员' });
+  }
+
+  try {
+    deleteUser(userId);
+    res.json({ success: true, message: '删除成功' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;

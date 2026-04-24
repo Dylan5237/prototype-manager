@@ -256,20 +256,27 @@ router.post('/:id/sync', requireAuth, async (req, res) => {
     }
   }
   
-  updatePrototype(prototype.id, { syncStatus: 'syncing' });
-  const result = await syncFromGitHub(prototype.id, prototype.github_url);
-  
-  // 恢复versions目录
-  if (versionsBackupDir && fs.existsSync(versionsBackupDir)) {
-    const restoredRepoDir = path.join(__dirname, '../repos', prototype.id);
-    const versionsDest = path.join(restoredRepoDir, 'versions');
-    if (!fs.existsSync(path.dirname(versionsDest))) {
-      fs.mkdirSync(path.dirname(versionsDest), { recursive: true });
+  let result;
+  try {
+    updatePrototype(prototype.id, { syncStatus: 'syncing' });
+    result = await syncFromGitHub(prototype.id, prototype.github_url);
+  } finally {
+    // 无论同步成功或失败，都确保恢复versions目录
+    if (versionsBackupDir && fs.existsSync(versionsBackupDir)) {
+      const restoredRepoDir = path.join(__dirname, '../repos', prototype.id);
+      const versionsDest = path.join(restoredRepoDir, 'versions');
+      try {
+        if (!fs.existsSync(restoredRepoDir)) {
+          fs.mkdirSync(restoredRepoDir, { recursive: true });
+        }
+        fs.renameSync(versionsBackupDir, versionsDest);
+      } catch (restoreErr) {
+        console.error(`[版本恢复] 失败 ${prototype.id}:`, restoreErr.message);
+      }
     }
-    fs.renameSync(versionsBackupDir, versionsDest);
   }
   
-  if (result.success) {
+  if (result && result.success) {
     const repoDir = path.join(__dirname, '../repos', prototype.id);
     const entryFile = findEntryFile(repoDir);
     updatePrototype(prototype.id, { entryFile, syncStatus: 'success' });
@@ -278,10 +285,10 @@ router.post('/:id/sync', requireAuth, async (req, res) => {
     // 清理旧版本，保留最近10个
     cleanupOldVersions(prototype.id, 10);
   } else {
-    updatePrototype(prototype.id, { syncStatus: 'failed', syncError: result.error });
+    updatePrototype(prototype.id, { syncStatus: 'failed', syncError: result ? result.error : '同步异常' });
   }
   
-  res.json({ success: result.success, data: getPrototypeById(prototype.id) });
+  res.json({ success: result && result.success, data: getPrototypeById(prototype.id) });
 });
 
 // 版本管理API

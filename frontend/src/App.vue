@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <el-container>
-      <el-header class="app-header">
+      <el-header v-if="!isLoginPage" class="app-header">
         <div class="header-content">
           <div class="logo">
             <img src="/favicon.svg" class="logo-img" alt="logo" />
@@ -24,7 +24,7 @@
           </div>
         </div>
       </el-header>
-      <el-main class="app-main">
+      <el-main :class="['app-main', { 'app-main--login': isLoginPage }]">
         <router-view />
       </el-main>
     </el-container>
@@ -33,9 +33,12 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 
 const authStore = useAuthStore()
+const route = useRoute()
+const isLoginPage = computed(() => route.path === '/login')
 
 const roleLabel = computed(() => {
   const map = { admin: '管理员', uploader: '上传者', viewer: '查看者' }
@@ -143,5 +146,11 @@ body {
   margin: 0 auto;
   width: 100%;
   padding: 24px;
+}
+
+.app-main--login {
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 </style>

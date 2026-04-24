@@ -25,7 +25,7 @@ function getAllUsers() {
   return query(`SELECT id, username, nickname, role, created_at FROM users ORDER BY id`);
 }
 
-function updateUser(id, { nickname, role }) {
+function updateUser(id, { nickname, role, password }) {
   const fields = [];
   const values = [];
   if (nickname !== undefined) {
@@ -35,6 +35,11 @@ function updateUser(id, { nickname, role }) {
   if (role !== undefined) {
     fields.push('role = ?');
     values.push(role);
+  }
+  if (password !== undefined && password !== '') {
+    const passwordHash = bcrypt.hashSync(password, SALT_ROUNDS);
+    fields.push('password_hash = ?');
+    values.push(passwordHash);
   }
   if (fields.length === 0) return null;
   values.push(id);
