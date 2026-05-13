@@ -2,7 +2,8 @@ const { query, queryOne, run } = require('../database/db');
 
 function getPrototypes({ keyword, categoryId } = {}) {
   let sql = `
-    SELECT p.*, c.name as category_name, u.nickname as creator_name
+    SELECT p.*, c.name as category_name, u.nickname as creator_name,
+      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
@@ -25,7 +26,8 @@ function getPrototypes({ keyword, categoryId } = {}) {
 
 function getPrototypeById(id) {
   const prototype = queryOne(`
-    SELECT p.*, c.name as category_name, u.nickname as creator_name
+    SELECT p.*, c.name as category_name, u.nickname as creator_name,
+      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id

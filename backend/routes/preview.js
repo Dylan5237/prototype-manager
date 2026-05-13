@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { getPrototypeById } = require('../services/db-prototypes');
+const { recordVisit } = require('../services/db-stats');
 const router = express.Router();
 
 // 通用的HTML处理函数：注入<base>标签并将绝对路径转为相对路径
@@ -46,6 +47,9 @@ router.get('/:id/versions/:v/*.html', (req, res) => {
   const basePath = `/preview/${prototype.id}/versions/${req.params.v}/${dirPart}`;
   content = processHtml(content, basePath);
 
+  // 记录访问
+  recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
+
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);
 });
@@ -88,6 +92,9 @@ router.get('/:id/*.html', (req, res) => {
   const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
   const basePath = `/preview/${prototype.id}/${dirPart}`;
   content = processHtml(content, basePath);
+
+  // 记录访问
+  recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);

@@ -70,7 +70,12 @@
                 @click="handleDelete(item)"
               >删除</el-button>
             </div>
-            <span class="update-time">{{ formatDate(item.updated_at) }}</span>
+            <div class="card-stats">
+              <span class="visit-count" v-if="item.visit_count">
+                <el-icon><View /></el-icon> {{ item.visit_count }}
+              </span>
+              <span class="update-time">{{ formatDate(item.updated_at) }}</span>
+            </div>
           </div>
         </el-card>
       </el-col>
@@ -341,6 +346,21 @@ onMounted(loadData)
   border-top: 1px solid #ebeef5;
   padding-top: 12px;
   margin-top: 4px;
+}
+
+.card-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.visit-count {
+  font-size: 12px;
+  color: #909399;
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .update-time {

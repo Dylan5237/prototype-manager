@@ -63,3 +63,33 @@ export function rollbackVersion(id, versionId) {
 export function deleteVersion(id, versionId) {
   return api.delete(`/prototypes/${id}/versions/${versionId}`)
 }
+
+// 评论反馈 API
+export function getComments(id) {
+  return api.get(`/prototypes/${id}/comments`)
+}
+
+export function createComment(id, data) {
+  return api.post(`/prototypes/${id}/comments`, data)
+}
+
+export function deleteComment(id, commentId) {
+  return api.delete(`/prototypes/${id}/comments/${commentId}`)
+}
+
+export function uploadCommentImage(id, file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post(`/prototypes/${id}/comments/images`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+
+// 访问统计 API
+export function getStats(id) {
+  return api.get(`/prototypes/${id}/stats`)
+}
+
+export function recordVisit(id) {
+  return api.post(`/prototypes/${id}/visit`)
+}

@@ -4,6 +4,15 @@ backend/data
 backend/repos
 backend/uploads
 backend/.env
+backend/server.log
+backend/*.db
+
+# Frontend
+frontend/node_modules
+frontend/dist
+frontend/frontend.log
+
+dist
 
 # Frontend
 frontend/node_modules

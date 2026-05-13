@@ -116,6 +116,47 @@ function createTables() {
     )
   `);
   
+  // comments 表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS comments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prototype_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      content TEXT NOT NULL,
+      images TEXT,
+      parent_id INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES comments(id) ON DELETE CASCADE
+    )
+  `);
+
+  // comment_images 表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS comment_images (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      comment_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      original_name TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (comment_id) REFERENCES comments(id) ON DELETE CASCADE
+    )
+  `);
+
+  // prototype_visits 表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS prototype_visits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prototype_id TEXT NOT NULL,
+      visitor_ip TEXT,
+      user_id INTEGER,
+      visited_at TEXT NOT NULL,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE
+    )
+  `);
+
   // 插入默认分类
   const defaultCategories = ['药品管理', '版本控制', '权限系统', '业务流程', '数据看板'];
   defaultCategories.forEach(name => {

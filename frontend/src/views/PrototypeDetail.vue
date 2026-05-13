@@ -40,6 +40,9 @@
         <el-tag size="small">{{ prototype.category_name }}</el-tag>
       </span>
       <span class="meta-item">创建人：{{ prototype.creator_name }}</span>
+      <span class="meta-item" v-if="visitStats.total">
+        <el-icon><View /></el-icon> 访问 {{ visitStats.total }} 次
+      </span>
       <span class="meta-item">{{ prototype.description || '暂无描述' }}</span>
       <span v-if="prototype.sync_error" class="meta-item error-text">
         <el-icon><Warning /></el-icon>
@@ -71,6 +74,9 @@
                 <el-radio-button label="code">源码查看</el-radio-button>
                 <el-radio-button label="readme">设计文档</el-radio-button>
                 <el-radio-button label="versions">版本历史</el-radio-button>
+                <el-radio-button label="comments">
+                  <el-icon><ChatDotSquare /></el-icon> 评论反馈
+                </el-radio-button>
               </el-radio-group>
             </div>
           </template>
@@ -88,7 +94,7 @@
             <el-empty v-else description="暂无设计文档（未找到README.md）" />
           </div>
 
-          <div v-else class="versions-container">
+          <div v-else-if="activeTab === 'versions'" class="versions-container">
             <el-table :data="versions" v-loading="versionLoading" size="small" style="width: 100%">
               <el-table-column prop="version_number" label="版本号" width="80">
                 <template #default="{ row }">
@@ -136,6 +142,64 @@
             </el-table>
             <el-empty v-if="versions.length === 0 && !versionLoading" description="暂无历史版本" />
           </div>
+
+          <!-- 评论反馈 -->
+          <div v-else class="comments-container">
+            <!-- 评论输入区 -->
+            <div class="comment-input-area">
+              <el-input
+                v-model="commentContent"
+                type="textarea"
+                :rows="3"
+                placeholder="输入评论内容，支持 Ctrl+V 粘贴图片..."
+                @paste="handlePaste"
+              />
+              <div class="comment-toolbar">
+                <div class="comment-image-list" v-if="commentImages.length > 0">
+                  <div v-for="(img, idx) in commentImages" :key="idx" class="comment-image-item">
+                    <img :src="img.url" />
+                    <el-icon class="comment-image-remove" @click="removeCommentImage(idx)"><Delete /></el-icon>
+                  </div>
+                </div>
+                <div class="comment-hint">支持 Ctrl+V 粘贴图片（最多9张）</div>
+                <el-button type="primary" size="small" @click="handleCommentSubmit" :loading="submittingComment">
+                  发表评论
+                </el-button>
+              </div>
+            </div>
+
+            <!-- 评论列表 -->
+            <div class="comment-list" v-loading="commentLoading">
+              <div v-for="comment in comments" :key="comment.id" class="comment-item">
+                <div class="comment-header">
+                  <span class="comment-author">{{ comment.nickname || comment.username }}</span>
+                  <span class="comment-time">{{ formatDateTime(comment.created_at) }}</span>
+                  <el-button
+                    v-if="authStore.isAdmin || comment.user_id === authStore.user?.id"
+                    size="small"
+                    text
+                    type="danger"
+                    @click="handleCommentDelete(comment)"
+                  >
+                    <el-icon><Delete /></el-icon>
+                  </el-button>
+                </div>
+                <div class="comment-body">{{ comment.content }}</div>
+                <div class="comment-images" v-if="comment.images && comment.images.length > 0">
+                  <el-image
+                    v-for="(img, idx) in comment.images"
+                    :key="idx"
+                    :src="img.url"
+                    :preview-src-list="comment.images.map(i => i.url)"
+                    :style="{ width: '120px', height: '120px', borderRadius: '8px', border: '1px solid #e4e7ed', cursor: 'pointer' }"
+                    fit="cover"
+                    hide-on-click-modal
+                  />
+                </div>
+              </div>
+              <el-empty v-if="comments.length === 0 && !commentLoading" description="暂无评论，快来发表第一条评论吧" />
+            </div>
+          </div>
         </el-card>
       </el-col>
     </el-row>
@@ -175,7 +239,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import {
   getPrototype, syncGitHub, uploadZip, getFileContent, getReadme,
-  getVersions, rollbackVersion, deleteVersion
+  getVersions, rollbackVersion, deleteVersion,
+  getComments, createComment, deleteComment, uploadCommentImage,
+  getStats, recordVisit
 } from '../api/prototypes'
 
 const route = useRoute()
@@ -196,6 +262,16 @@ const readmeHtml = ref('')
 const versions = ref([])
 const versionLoading = ref(false)
 const versionNote = ref('')
+
+// 访问统计
+const visitStats = ref({ total: 0, recent7: 0, recent30: 0 })
+
+// 评论反馈
+const comments = ref([])
+const commentLoading = ref(false)
+const commentContent = ref('')
+const commentImages = ref([])
+const submittingComment = ref(false)
 
 const canEdit = computed(() => {
   if (!prototype.value || !authStore.user) return false
@@ -363,6 +439,89 @@ async function handleDeleteVersion(row) {
   }
 }
 
+async function loadStats() {
+  try {
+    const res = await getStats(route.params.id)
+    visitStats.value = res.data.data || { total: 0, recent7: 0, recent30: 0 }
+  } catch (err) {
+    visitStats.value = { total: 0, recent7: 0, recent30: 0 }
+  }
+}
+
+async function loadComments() {
+  commentLoading.value = true
+  try {
+    const res = await getComments(route.params.id)
+    comments.value = res.data.data || []
+  } catch (err) {
+    comments.value = []
+  } finally {
+    commentLoading.value = false
+  }
+}
+
+async function handleCommentSubmit() {
+  if (!commentContent.value.trim() && commentImages.value.length === 0) {
+    ElMessage.warning('请输入评论内容或上传图片')
+    return
+  }
+  submittingComment.value = true
+  try {
+    await createComment(route.params.id, {
+      content: commentContent.value.trim(),
+      images: JSON.stringify(commentImages.value)
+    })
+    ElMessage.success('评论发表成功')
+    commentContent.value = ''
+    commentImages.value = []
+    loadComments()
+    loadStats()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '评论发表失败')
+  } finally {
+    submittingComment.value = false
+  }
+}
+
+async function handleCommentDelete(comment) {
+  try {
+    await ElMessageBox.confirm('确定删除这条评论吗？', '确认删除', { type: 'warning' })
+    await deleteComment(route.params.id, comment.id)
+    ElMessage.success('删除成功')
+    loadComments()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+async function handlePaste(e) {
+  const items = e.clipboardData.files
+  for (const file of items) {
+    if (file.type.startsWith('image/')) {
+      if (commentImages.value.length >= 9) {
+        ElMessage.warning('最多上传9张图片')
+        break
+      }
+      try {
+        const res = await uploadCommentImage(route.params.id, file)
+        commentImages.value.push(res.data.data)
+      } catch (err) {
+        ElMessage.error('图片上传失败')
+      }
+    }
+  }
+}
+
+function removeCommentImage(index) {
+  commentImages.value.splice(index, 1)
+}
+
+function openImage(url) {
+  window.open(url, '_blank')
+}
+
 function getStatusType(status) {
   const map = {
     success: 'success',
@@ -391,12 +550,16 @@ function formatDateTime(dateStr) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
 
-onMounted(loadData)
+onMounted(async () => {
+  await loadData()
+  await loadStats()
+  await loadComments()
+  try { await recordVisit(route.params.id) } catch (e) {}
+})
 </script>
 
 <style scoped>
 .detail-view {
-  height: calc(100vh - 100px);
 }
 
 .detail-header {
@@ -437,7 +600,6 @@ onMounted(loadData)
 }
 
 .detail-content {
-  height: calc(100% - 100px);
 }
 
 .file-tree-card,
@@ -453,8 +615,6 @@ onMounted(loadData)
 
 .code-container,
 .readme-container {
-  height: calc(100vh - 240px);
-  overflow: auto;
 }
 
 .code-block {
@@ -547,9 +707,112 @@ onMounted(loadData)
 }
 
 .versions-container {
-  height: calc(100vh - 240px);
-  overflow: auto;
 }
+
+.comments-container {
+}
+
+.comment-input-area {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.comment-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.comment-image-list {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.comment-image-item {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e4e7ed;
+}
+
+.comment-image-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.comment-image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.comment-hint {
+  font-size: 12px;
+  color: #909399;
+}
+
+.comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.comment-item {
+  padding: 12px 16px;
+  background: #f5f7fa;
+  border-radius: 8px;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.comment-author {
+  font-weight: 600;
+  color: #303133;
+  font-size: 14px;
+}
+
+.comment-time {
+  font-size: 12px;
+  color: #909399;
+  margin-left: auto;
+}
+
+.comment-body {
+  font-size: 14px;
+  color: #303133;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.comment-images {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+
 
 .error-text {
   color: #f56c6c;

@@ -16,6 +16,8 @@ const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLO
 const { syncFromGitHub, parseGitHubUrl } = require('../services/github');
 const { extractReadme } = require('../services/readme-extractor');
 const { marked } = require('marked');
+const { createComment, getComments, deleteComment, COMMENT_IMAGES_DIR } = require('../services/db-comments');
+const { recordVisit, getVisitStats, getVisitCount } = require('../services/db-stats');
 
 // 文件上传配置
 const upload = multer({
@@ -26,6 +28,19 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('只支持zip文件'));
+    }
+  }
+});
+
+// 评论图片上传配置
+const commentImageUpload = multer({
+  dest: COMMENT_IMAGES_DIR,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('只支持图片文件'));
     }
   }
 });
@@ -463,6 +478,111 @@ router.post('/categories', requireAuth, requireRole(['admin']), (req, res) => {
     }
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// ========== 评论反馈 ==========
+
+// 获取评论列表
+router.get('/:id/comments', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  const comments = getComments(req.params.id);
+  res.json({ success: true, data: comments });
+});
+
+// 发表评论
+router.post('/:id/comments', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  const { content, images, parentId } = req.body;
+  if (!content || content.trim() === '') {
+    return res.status(400).json({ success: false, message: '评论内容不能为空' });
+  }
+  try {
+    const comment = createComment({
+      prototypeId: req.params.id,
+      userId: req.user.id,
+      content: content.trim(),
+      images: images || '[]',
+      parentId
+    });
+    res.json({ success: true, data: comment });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 删除评论
+router.delete('/:id/comments/:commentId', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  const commentId = parseInt(req.params.commentId, 10);
+  const comment = getComments(req.params.id).find(c => c.id === commentId);
+  if (!comment) {
+    return res.status(404).json({ success: false, message: '评论不存在' });
+  }
+  if (req.user.role !== 'admin' && comment.user_id !== req.user.id) {
+    return res.status(403).json({ success: false, message: '无权删除该评论' });
+  }
+  deleteComment(commentId);
+  res.json({ success: true });
+});
+
+// 上传评论图片
+router.post('/:id/comments/images', requireAuth, commentImageUpload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ success: false, message: '没有上传图片' });
+  }
+  const filename = req.file.filename;
+  res.json({
+    success: true,
+    data: {
+      filename,
+      originalName: req.file.originalname,
+      url: `/api/prototypes/${req.params.id}/comments/images/${filename}`
+    }
+  });
+});
+
+// 获取评论图片
+router.get('/:id/comments/images/:filename', (req, res) => {
+  const filePath = path.join(COMMENT_IMAGES_DIR, req.params.filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ success: false, message: '图片不存在' });
+  }
+  res.sendFile(filePath);
+});
+
+// ========== 访问统计 ==========
+
+// 获取访问统计
+router.get('/:id/stats', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  const stats = getVisitStats(req.params.id);
+  res.json({ success: true, data: stats });
+});
+
+// 记录访问
+router.post('/:id/visit', (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  recordVisit({
+    prototypeId: req.params.id,
+    visitorIp: req.ip,
+    userId: req.user ? req.user.id : null
+  });
+  res.json({ success: true });
 });
 
 module.exports = { router, migrateFromJson };

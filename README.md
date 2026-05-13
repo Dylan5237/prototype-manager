@@ -44,13 +44,13 @@ npm run dev
 | **设计文档** | 自动提取项目中的README.md，在"设计文档"Tab中渲染展示 |
 | **用户管理** | 管理员可创建用户、分配角色 |
 
-### P2 — 协作深化（规划中）
+### P2 — 协作深化（已实现）
 
 | 功能 | 说明 |
 |---|---|
-| **评论反馈** | 查看者可在原型下留言，产品经理收到反馈通知 |
-| **版本历史** | 每次上传/GitHub同步自动生成新版本，支持回滚和对比 |
-| **访问统计** | 记录浏览次数、最近查看时间，了解原型热度 |
+| **评论反馈** | 查看者可在原型下留言，支持 Ctrl+V 粘贴图片，支持删除自己的评论 |
+| **版本历史** | 每次上传/GitHub同步自动生成新版本，支持回滚和删除，保留最近10个版本 |
+| **访问统计** | 记录浏览次数，展示总次数/近7天/近30天趋势 |
 
 ### P3 — 进阶优化（规划中）
 
@@ -67,8 +67,8 @@ npm run dev
 ├── backend/              # Node.js + Express 后端
 │   ├── database/         # SQLite 数据库层（sql.js）
 │   ├── middleware/       # JWT认证 + 权限中间件
-│   ├── routes/           # API路由（认证/原型/预览）
-│   ├── services/         # 业务逻辑层（数据库操作/GitHub同步/README提取）
+│   ├── routes/           # API路由（认证/原型/预览/评论/统计）
+│   ├── services/         # 业务逻辑层（数据库操作/GitHub同步/README提取/评论/统计）
 │   └── server.js         # 服务入口
 │
 ├── frontend/             # Vue 3 + Vite + Element Plus
@@ -122,19 +122,7 @@ npm run dev
 
 打开 http://localhost:3000，使用默认账号登录。
 
-## 打包上传技能
 
-内置 `fuxi-packager` 技能，支持一键打包项目并上传到伏羲元构：
-
-```bash
-# 命令行方式
-node .agents/skills/fuxi-packager/pack-and-upload.js <项目路径> [原型名称] [描述]
-
-# 示例
-node .agents/skills/fuxi-packager/pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理组件"
-```
-
-脚本自动完成：构建检测 → 打包ZIP（含README） → 登录 → 创建/查找原型 → 上传 → 验证README提取。
 
 ## 数据库Schema
 
@@ -142,10 +130,13 @@ node .agents/skills/fuxi-packager/pack-and-upload.js AuthComponent "权限校验
 
 - `users` — 用户（id, username, password_hash, nickname, role）
 - `categories` — 分类（id, name, description）
-- `prototypes` — 原型（id, name, description, github_url, entry_file, category_id, created_by, sync_status）
+- `prototypes` — 原型（id, name, description, github_url, entry_file, category_id, created_by, sync_status, visit_count）
 - `prototype_tags` — 标签关联（prototype_id, tag_name）
-- `prototype_versions` — 版本历史（P2预留）
+- `prototype_versions` — 版本历史（id, prototype_id, version_number, file_path, entry_file, created_at）
 - `readme_cache` — README缓存（prototype_id, content, file_path）
+- `comments` — 评论反馈（id, prototype_id, user_id, content, images, parent_id, created_at）
+- `comment_images` — 评论图片（id, comment_id, filename, original_name, created_at）
+- `prototype_visits` — 访问记录（id, prototype_id, visitor_ip, user_id, visited_at）
 
 ## 配置说明
 
@@ -167,3 +158,4 @@ node .agents/skills/fuxi-packager/pack-and-upload.js AuthComponent "权限校验
 |---|---|
 | v1.0 | MVP：原型上传、GitHub同步、网页预览、源码查看 |
 | v1.1 | P0+P1：用户认证、权限控制、SQLite持久化、分类/搜索、README设计文档、用户管理、品牌升级（伏羲元构） |
+| v1.2 | P2：评论反馈（支持图片）、版本历史（自动备份/回滚）、访问统计 |
