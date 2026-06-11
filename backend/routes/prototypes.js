@@ -8,7 +8,7 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   getPrototypes, getPrototypeById, createPrototype, updatePrototype, deletePrototype,
   setPrototypeTags, getCategories, createCategory, getReadme, migrateFromJson,
-  getVersions, createVersion, deleteVersion, getLatestVersionNumber
+  getVersions, createVersion, deleteVersion, updateVersionNote, getLatestVersionNumber
 } = require('../services/db-prototypes');
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
@@ -387,6 +387,32 @@ router.delete('/:id/versions/:versionId', requireAuth, (req, res) => {
   deleteVersion(versionId);
   
   res.json({ success: true });
+});
+
+// 更新版本描述
+router.put('/:id/versions/:versionId/note', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+    return res.status(403).json({ success: false, message: '无权操作该原型' });
+  }
+
+  const versionId = parseInt(req.params.versionId, 10);
+  const allVersions = getVersions(req.params.id);
+  const found = allVersions.find(v => v.id === versionId);
+  if (!found) {
+    return res.status(404).json({ success: false, message: '版本不存在' });
+  }
+
+  const { note } = req.body;
+  if (!note || !note.trim()) {
+    return res.status(400).json({ success: false, message: '版本描述不能为空' });
+  }
+
+  const updated = updateVersionNote(found.id, note.trim());
+  res.json({ success: true, data: updated });
 });
 
 // 更新原型信息

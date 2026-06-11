@@ -107,10 +107,19 @@
                     </template>
                   </el-table-column>
                   <el-table-column prop="note" label="备注" show-overflow-tooltip />
-                  <el-table-column label="操作" width="180" fixed="right">
+                  <el-table-column label="操作" width="230" fixed="right">
                     <template #default="{ row }">
                       <el-button size="small" text type="primary" @click="openVersionPreview(row)">
                         <el-icon><View /></el-icon>预览
+                      </el-button>
+                      <el-button
+                        v-if="canEdit"
+                        size="small"
+                        text
+                        type="primary"
+                        @click="openVersionNoteEdit(row)"
+                      >
+                        <el-icon><Edit /></el-icon>编辑
                       </el-button>
                       <el-button size="small" text type="warning" @click="handleRollback(row)">
                         <el-icon><RefreshLeft /></el-icon>回滚
@@ -247,6 +256,27 @@
         <el-button type="primary" @click="handleEditSubmit" :loading="savingEdit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 编辑版本描述对话框 -->
+    <el-dialog v-model="showVersionNoteDialog" title="编辑版本描述" width="500px">
+      <el-form label-width="80px">
+        <el-form-item label="版本">
+          <span>v{{ editingVersion?.version_number }}</span>
+        </el-form-item>
+        <el-form-item label="描述" required>
+          <el-input
+            v-model="editingVersionNote"
+            type="textarea"
+            :rows="4"
+            placeholder="请输入版本描述（必填）"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showVersionNoteDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleVersionNoteSubmit" :loading="savingVersionNote">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -257,7 +287,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import {
   getPrototype, syncGitHub, uploadZip, getReadme, updatePrototype, getCategories,
-  getVersions, rollbackVersion, deleteVersion,
+  getVersions, rollbackVersion, deleteVersion, updateVersionNote,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
 } from '../api/prototypes'
@@ -284,6 +314,12 @@ const showEditDialog = ref(false)
 const editForm = ref({ name: '', description: '', githubUrl: '', categoryId: '' })
 const categories = ref([])
 const savingEdit = ref(false)
+
+// 编辑版本描述
+const showVersionNoteDialog = ref(false)
+const editingVersion = ref(null)
+const editingVersionNote = ref('')
+const savingVersionNote = ref(false)
 
 // 访问统计
 const visitStats = ref({ total: 0, recent7: 0, recent30: 0 })
@@ -387,6 +423,38 @@ async function openEditDialog() {
     categories.value = []
   }
   showEditDialog.value = true
+}
+
+function openVersionNoteEdit(row) {
+  editingVersion.value = row
+  editingVersionNote.value = row.note || ''
+  showVersionNoteDialog.value = true
+}
+
+async function handleVersionNoteSubmit() {
+  if (!editingVersionNote.value.trim()) {
+    ElMessage.warning('请输入版本描述')
+    return
+  }
+  savingVersionNote.value = true
+  try {
+    const res = await updateVersionNote(
+      prototype.value.id,
+      editingVersion.value.id,
+      editingVersionNote.value
+    )
+    const updated = res.data.data
+    const idx = versions.value.findIndex(v => v.id === updated.id)
+    if (idx !== -1) {
+      versions.value[idx] = { ...versions.value[idx], ...updated }
+    }
+    ElMessage.success('版本描述已更新')
+    showVersionNoteDialog.value = false
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '更新失败')
+  } finally {
+    savingVersionNote.value = false
+  }
 }
 
 async function handleSync() {

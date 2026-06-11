@@ -121,6 +121,13 @@ function deleteVersion(id) {
   run(`DELETE FROM prototype_versions WHERE id = ?`, [id]);
 }
 
+function updateVersionNote(id, note) {
+  const existing = queryOne(`SELECT * FROM prototype_versions WHERE id = ?`, [id]);
+  if (!existing) return null;
+  run(`UPDATE prototype_versions SET note = ? WHERE id = ?`, [note || '', id]);
+  return queryOne(`SELECT * FROM prototype_versions WHERE id = ?`, [id]);
+}
+
 function getLatestVersionNumber(prototypeId) {
   const result = queryOne(`SELECT MAX(version_number) as max_version FROM prototype_versions WHERE prototype_id = ?`, [prototypeId]);
   return result && result.max_version ? result.max_version : 0;
@@ -183,5 +190,6 @@ module.exports = {
   getVersions,
   createVersion,
   deleteVersion,
+  updateVersionNote,
   getLatestVersionNumber
 };

@@ -64,6 +64,10 @@ export function deleteVersion(id, versionId) {
   return api.delete(`/prototypes/${id}/versions/${versionId}`)
 }
 
+export function updateVersionNote(id, versionId, note) {
+  return api.put(`/prototypes/${id}/versions/${versionId}/note`, { note })
+}
+
 // 评论反馈 API
 export function getComments(id) {
   return api.get(`/prototypes/${id}/comments`)
