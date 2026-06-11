@@ -12,6 +12,10 @@
         </el-tag>
       </div>
       <div class="header-actions">
+        <el-button v-if="canEdit" text @click="openEditDialog">
+          <el-icon><Edit /></el-icon>
+          编辑
+        </el-button>
         <el-button v-if="canEdit && prototype.github_url" @click="handleSync" :loading="syncing">
           <el-icon><Refresh /></el-icon>
           同步GitHub
@@ -39,6 +43,7 @@
       <span v-if="prototype.category_name" class="meta-item">
         <el-tag size="small">{{ prototype.category_name }}</el-tag>
       </span>
+      <span class="meta-item">ID: {{ prototype.id }}</span>
       <span class="meta-item">创建人：{{ prototype.creator_name }}</span>
       <span class="meta-item" v-if="visitStats.total">
         <el-icon><View /></el-icon> 访问 {{ visitStats.total }} 次
@@ -51,27 +56,11 @@
     </div>
 
     <el-row :gutter="16" class="detail-content">
-      <el-col :span="6">
-        <el-card class="file-tree-card">
-          <template #header>
-            <span>项目文件</span>
-          </template>
-          <el-tree
-            v-if="prototype.files && prototype.files.length > 0"
-            :data="prototype.files"
-            :props="{ label: 'name', children: 'children' }"
-            @node-click="handleNodeClick"
-            highlight-current
-          />
-          <el-empty v-else description="暂无文件" />
-        </el-card>
-      </el-col>
-      <el-col :span="18">
+      <el-col :span="24">
         <el-card class="preview-card">
           <template #header>
             <div class="preview-header">
               <el-radio-group v-model="activeTab" size="small">
-                <el-radio-button label="code">源码查看</el-radio-button>
                 <el-radio-button label="readme">设计文档</el-radio-button>
                 <el-radio-button label="versions">版本历史</el-radio-button>
                 <el-radio-button label="comments">
@@ -81,15 +70,7 @@
             </div>
           </template>
           
-          <div v-if="activeTab === 'code'" class="code-container">
-            <div v-if="selectedFile" class="code-block">
-              <div class="code-path">{{ selectedFile.path }}</div>
-              <pre><code>{{ fileContent }}</code></pre>
-            </div>
-            <el-empty v-else description="点击左侧文件查看源码" />
-          </div>
-          
-          <div v-else-if="activeTab === 'readme'" class="readme-container">
+          <div v-if="activeTab === 'readme'" class="readme-container">
             <div v-if="readmeHtml" class="readme-content" v-html="readmeHtml"></div>
             <el-empty v-else description="暂无设计文档（未找到README.md）" />
           </div>
@@ -221,12 +202,41 @@
           <div class="el-upload__tip">只支持zip格式，最大100MB。上传前当前版本将自动保存为历史版本。</div>
         </template>
       </el-upload>
-      <el-form-item label="版本备注" style="margin-top: 16px;">
-        <el-input v-model="versionNote" placeholder="描述本次变更内容（可选）" />
+      <el-form-item label="版本描述" style="margin-top: 16px;" required>
+        <el-input v-model="versionNote" placeholder="描述本次变更内容（必填）" />
       </el-form-item>
       <template #footer>
         <el-button @click="showUploadDialog = false">取消</el-button>
         <el-button type="primary" @click="handleUpload" :loading="uploading">上传</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 编辑原型对话框 -->
+    <el-dialog v-model="showEditDialog" title="编辑原型信息" width="500px">
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="名称" required>
+          <el-input v-model="editForm.name" placeholder="请输入原型名称" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="editForm.description" type="textarea" :rows="3" placeholder="请输入原型描述" />
+        </el-form-item>
+        <el-form-item label="GitHub">
+          <el-input v-model="editForm.githubUrl" placeholder="https://github.com/..." />
+        </el-form-item>
+        <el-form-item label="分类">
+          <el-select v-model="editForm.categoryId" placeholder="请选择分类" clearable style="width: 100%">
+            <el-option
+              v-for="cat in categories"
+              :key="cat.id"
+              :label="cat.name"
+              :value="cat.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="handleEditSubmit" :loading="savingEdit">保存</el-button>
       </template>
     </el-dialog>
   </div>
@@ -238,7 +248,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
 import {
-  getPrototype, syncGitHub, uploadZip, getFileContent, getReadme,
+  getPrototype, syncGitHub, uploadZip, getReadme, updatePrototype, getCategories,
   getVersions, rollbackVersion, deleteVersion,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
@@ -253,15 +263,19 @@ const showUploadDialog = ref(false)
 const uploading = ref(false)
 const uploadRef = ref(null)
 const uploadFile = ref(null)
-const activeTab = ref('code')
-const selectedFile = ref(null)
-const fileContent = ref('')
+const activeTab = ref('readme')
 const readmeHtml = ref('')
 
 // 版本管理
 const versions = ref([])
 const versionLoading = ref(false)
 const versionNote = ref('')
+
+// 编辑原型
+const showEditDialog = ref(false)
+const editForm = ref({ name: '', description: '', githubUrl: '', categoryId: '' })
+const categories = ref([])
+const savingEdit = ref(false)
 
 // 访问统计
 const visitStats = ref({ total: 0, recent7: 0, recent30: 0 })
@@ -328,16 +342,59 @@ function openPreview() {
   }
 }
 
+async function handleEditSubmit() {
+  if (!editForm.value.name.trim()) {
+    ElMessage.warning('请输入原型名称')
+    return
+  }
+  savingEdit.value = true
+  try {
+    const res = await updatePrototype(prototype.value.id, {
+      name: editForm.value.name,
+      description: editForm.value.description,
+      githubUrl: editForm.value.githubUrl,
+      categoryId: editForm.value.categoryId
+    })
+    prototype.value = { ...prototype.value, ...res.data.data }
+    ElMessage.success('更新成功')
+    showEditDialog.value = false
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '更新失败')
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+async function openEditDialog() {
+  editForm.value = {
+    name: prototype.value.name,
+    description: prototype.value.description || '',
+    githubUrl: prototype.value.github_url || '',
+    categoryId: prototype.value.category_id || ''
+  }
+  try {
+    const res = await getCategories()
+    categories.value = res.data.data || []
+  } catch (e) {
+    categories.value = []
+  }
+  showEditDialog.value = true
+}
+
 async function handleSync() {
   try {
     const { value } = await ElMessageBox.prompt(
-      '同步前当前版本将自动保存为历史版本。如需添加备注，请在下方输入（可选）：',
+      '同步前当前版本将自动保存为历史版本。请填写版本描述：',
       '同步GitHub',
       {
         confirmButtonText: '确认同步',
         cancelButtonText: '取消',
-        inputPlaceholder: '版本备注（可选）',
-        inputValue: ''
+        inputPlaceholder: '版本描述（必填）',
+        inputValue: '',
+        inputValidator: (val) => {
+          if (!val || !val.trim()) return '版本描述不能为空'
+          return true
+        }
       }
     )
     syncing.value = true
@@ -367,6 +424,10 @@ async function handleUpload() {
     ElMessage.warning('请选择文件')
     return
   }
+  if (!versionNote.value.trim()) {
+    ElMessage.warning('请输入版本描述')
+    return
+  }
   uploading.value = true
   try {
     const formData = new FormData()
@@ -384,18 +445,6 @@ async function handleUpload() {
     ElMessage.error(err.response?.data?.message || '上传失败')
   } finally {
     uploading.value = false
-  }
-}
-
-async function handleNodeClick(data) {
-  if (data.type === 'directory') return
-  selectedFile.value = data
-  activeTab.value = 'code'
-  try {
-    const res = await getFileContent(prototype.value.id, data.path)
-    fileContent.value = res.data.data.content
-  } catch (err) {
-    fileContent.value = '无法读取文件内容'
   }
 }
 
