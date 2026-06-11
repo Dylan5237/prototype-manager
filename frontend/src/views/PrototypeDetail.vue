@@ -39,6 +39,7 @@
       </div>
     </div>
 
+<<<<<<< HEAD
     <div class="info-card">
       <div class="info-row">
         <div class="info-id" @click="copyId(prototype.id)" title="点击复制ID">
@@ -59,6 +60,19 @@
       </div>
       <div class="info-desc">{{ prototype.description || '暂无描述' }}</div>
       <div v-if="prototype.sync_error" class="info-error">
+=======
+    <div class="detail-meta">
+      <span v-if="prototype.category_name" class="meta-item">
+        <el-tag size="small">{{ prototype.category_name }}</el-tag>
+      </span>
+      <span class="meta-item">ID: {{ prototype.id }}</span>
+      <span class="meta-item">创建人：{{ prototype.creator_name }}</span>
+      <span class="meta-item" v-if="visitStats.total">
+        <el-icon><View /></el-icon> 访问 {{ visitStats.total }} 次
+      </span>
+      <span class="meta-item">{{ prototype.description || '暂无描述' }}</span>
+      <span v-if="prototype.sync_error" class="meta-item error-text">
+>>>>>>> 4a554a93f996dcb91178a5ebdf987dec30d9a28f
         <el-icon><Warning /></el-icon>
         同步错误：{{ prototype.sync_error }}
       </div>
@@ -67,6 +81,7 @@
     <el-row :gutter="16" class="detail-content">
       <el-col :span="24">
         <el-card class="preview-card">
+<<<<<<< HEAD
           <el-tabs v-model="activeTab" class="detail-tabs">
             <el-tab-pane name="readme">
               <template #label>
@@ -154,6 +169,90 @@
                     <el-button type="primary" size="small" @click="handleCommentSubmit" :loading="submittingComment">
                       发表评论
                     </el-button>
+=======
+          <template #header>
+            <div class="preview-header">
+              <el-radio-group v-model="activeTab" size="small">
+                <el-radio-button label="readme">设计文档</el-radio-button>
+                <el-radio-button label="versions">版本历史</el-radio-button>
+                <el-radio-button label="comments">
+                  <el-icon><ChatDotSquare /></el-icon> 评论反馈
+                </el-radio-button>
+              </el-radio-group>
+            </div>
+          </template>
+          
+          <div v-if="activeTab === 'readme'" class="readme-container">
+            <div v-if="readmeHtml" class="readme-content" v-html="readmeHtml"></div>
+            <el-empty v-else description="暂无设计文档（未找到README.md）" />
+          </div>
+
+          <div v-else-if="activeTab === 'versions'" class="versions-container">
+            <el-table :data="versions" v-loading="versionLoading" size="small" style="width: 100%">
+              <el-table-column prop="version_number" label="版本号" width="80">
+                <template #default="{ row }">
+                  <el-tag size="small" type="primary">v{{ row.version_number }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="created_at" label="时间" width="160">
+                <template #default="{ row }">
+                  {{ formatDateTime(row.created_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="sync_source" label="来源" width="90">
+                <template #default="{ row }">
+                  <el-tag size="small" :type="row.sync_source === 'github' ? 'info' : 'success'">
+                    {{ row.sync_source === 'github' ? 'GitHub' : '上传' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="creator_name" label="操作人" width="100" />
+              <el-table-column prop="size_kb" label="大小" width="90">
+                <template #default="{ row }">
+                  {{ row.size_kb }} KB
+                </template>
+              </el-table-column>
+              <el-table-column prop="note" label="备注" show-overflow-tooltip />
+              <el-table-column label="操作" width="180" fixed="right">
+                <template #default="{ row }">
+                  <el-button size="small" text type="primary" @click="openVersionPreview(row)">
+                    <el-icon><View /></el-icon>预览
+                  </el-button>
+                  <el-button size="small" text type="warning" @click="handleRollback(row)">
+                    <el-icon><RefreshLeft /></el-icon>回滚
+                  </el-button>
+                  <el-button
+                    v-if="canEdit"
+                    size="small"
+                    text
+                    type="danger"
+                    @click="handleDeleteVersion(row)"
+                  >
+                    <el-icon><Delete /></el-icon>删除
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            <el-empty v-if="versions.length === 0 && !versionLoading" description="暂无历史版本" />
+          </div>
+
+          <!-- 评论反馈 -->
+          <div v-else class="comments-container">
+            <!-- 评论输入区 -->
+            <div class="comment-input-area">
+              <el-input
+                v-model="commentContent"
+                type="textarea"
+                :rows="3"
+                placeholder="输入评论内容，支持 Ctrl+V 粘贴图片..."
+                @paste="handlePaste"
+              />
+              <div class="comment-toolbar">
+                <div class="comment-image-list" v-if="commentImages.length > 0">
+                  <div v-for="(img, idx) in commentImages" :key="idx" class="comment-image-item">
+                    <img :src="img.url" />
+                    <el-icon class="comment-image-remove" @click="removeCommentImage(idx)"><Delete /></el-icon>
+>>>>>>> 4a554a93f996dcb91178a5ebdf987dec30d9a28f
                   </div>
                 </div>
                 <div class="comment-list" v-loading="commentLoading">
