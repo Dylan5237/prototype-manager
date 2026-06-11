@@ -15,6 +15,7 @@
 | `projectPath` | 项目目录路径 | `AuthComponent`, `versionControl` |
 | `prototypeName` | 原型名称（如省略则使用项目目录名） | `权限校验原型` |
 | `prototypeDesc` | 原型描述 | `基于Vue3的权限管理组件` |
+| `versionNote` | 版本更新说明（业务性描述，可选；不提供时自动从 git 变更生成） | `修复登录页样式，优化表单校验` |
 | `categoryId` | 分类ID（可选） | `1` |
 | `entryFile` | 入口HTML文件（自动检测，通常无需指定） | `dist/index.html` |
 
@@ -32,10 +33,10 @@
 
 ```bash
 # 基础用法
-node .agents/skills/fuxi-packager/pack-and-upload.js <项目路径> [原型名称] [描述]
+node .agents/skills/fuxi-packager/pack-and-upload.js <项目路径> [原型名称] [描述] [版本更新说明]
 
 # 示例
-node .agents/skills/fuxi-packager/pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理组件"
+node .agents/skills/fuxi-packager/pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理组件" "修复登录页样式，优化表单校验"
 ```
 
 或带详细参数：

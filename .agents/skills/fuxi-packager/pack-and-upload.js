@@ -352,14 +352,15 @@ function packProject(projectPath, outputPath) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.log('用法: node pack-and-upload.js <项目路径> [原型名称] [描述]');
-    console.log('示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理"');
+    console.log('用法: node pack-and-upload.js <项目路径> [原型名称] [描述] [版本更新说明]');
+    console.log('示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理" "修复登录页样式，优化表单校验"');
     process.exit(1);
   }
 
   const projectPath = args[0];
   const prototypeName = args[1] || path.basename(path.resolve(projectPath));
   const description = args[2] || '';
+  const providedVersionNote = args[3] || '';
   const zipName = `fuxi-upload-${Date.now()}.zip`;
   const zipPath = path.join(os.tmpdir(), zipName);
 
@@ -367,6 +368,7 @@ async function main() {
   console.log(`项目路径: ${projectPath}`);
   console.log(`原型名称: ${prototypeName}`);
   console.log(`描述: ${description || '(无)'}`);
+  console.log(`版本更新说明: ${providedVersionNote || '(自动生成)'}`);
   console.log(`==================================\n`);
 
   // 1. 终止开发服务器
@@ -389,8 +391,8 @@ async function main() {
   // 5. 创建/查找原型
   const prototypeId = await findOrCreatePrototype(token, prototypeName, description);
 
-  // 6. 生成版本描述
-  const versionNote = generateVersionNote(path.resolve(projectPath));
+  // 6. 生成版本描述：优先使用调用方提供的业务性描述，否则基于 git 自动生成
+  const versionNote = providedVersionNote.trim() || generateVersionNote(path.resolve(projectPath));
   console.log(`[INFO] 版本描述: ${versionNote}`);
 
   // 7. 上传
