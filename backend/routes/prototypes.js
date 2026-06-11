@@ -130,6 +130,10 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
     return res.status(400).json({ success: false, message: '没有上传文件' });
   }
   
+  if (!req.body.versionNote || !req.body.versionNote.trim()) {
+    return res.status(400).json({ success: false, message: '版本描述不能为空' });
+  }
+  
   try {
     // 保存当前版本到历史
     const repoDir = path.join(__dirname, '../repos', prototype.id);
@@ -147,7 +151,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
           syncSource: prototype.sync_status === 'uploaded' || prototype.sync_status === 'success' ? 'upload' : 'initial',
           createdBy: prototype.created_by,
           sizeKb: currentSize,
-          note: req.body.versionNote || ''
+          note: req.body.versionNote.trim()
         });
       }
       // 备份versions目录，防止removeRepoDir删除它
@@ -244,6 +248,10 @@ router.post('/:id/sync', requireAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '该原型没有绑定GitHub链接' });
   }
   
+  if (!req.body.versionNote || !req.body.versionNote.trim()) {
+    return res.status(400).json({ success: false, message: '版本描述不能为空' });
+  }
+  
   // 保存当前版本到历史
   const repoDir = path.join(__dirname, '../repos', prototype.id);
   let versionsBackupDir = null;
@@ -260,7 +268,7 @@ router.post('/:id/sync', requireAuth, async (req, res) => {
         syncSource: 'github',
         createdBy: req.user.id,
         sizeKb: currentSize,
-        note: req.body.versionNote || ''
+        note: req.body.versionNote.trim()
       });
     }
     // 备份versions目录，防止syncFromGitHub中的removeRepoDir删除它
