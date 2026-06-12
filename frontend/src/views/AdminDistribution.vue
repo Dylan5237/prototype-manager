@@ -126,7 +126,7 @@ async function loadData() {
   loading.value = true
   try {
     const [protoRes, usersRes] = await Promise.all([
-      getPrototypes({ page: 1, pageSize: 1000 }),
+      getPrototypes({ page: 1, pageSize: 1000, scope: 'all' }),
       getUsers()
     ])
     prototypes.value = protoRes.data.data || []

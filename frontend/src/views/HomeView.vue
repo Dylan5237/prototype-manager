@@ -147,7 +147,8 @@ async function loadData() {
       page: currentPage.value,
       pageSize,
       keyword: searchKeyword.value || undefined,
-      category_id: filterCategory.value || undefined
+      category_id: filterCategory.value || undefined,
+      scope: activeTab.value === 'all' ? 'all' : undefined
     })
     prototypes.value = res.data.data || []
     total.value = res.data.total || 0
