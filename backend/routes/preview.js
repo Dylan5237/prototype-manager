@@ -15,16 +15,20 @@ function canAccessPrototype(prototype, user) {
 }
 
 // 通用的HTML处理函数：注入<base>标签并将绝对路径转为相对路径
-function processHtml(content, basePath) {
+// token 会附加到 <base> 的 href 上，使浏览器请求子资源时自动携带 token
+function processHtml(content, basePath, token) {
   // 将本地绝对路径转为相对路径，使<base>标签生效
   // 不碰 // 或 http:// https://
   content = content.replace(/(src|href|content)=(["'])\/([^\/][^"']*)\2/g, '$1=$2$3$2');
 
+  // 构建带 token 的 base href，确保 JS/CSS 等子资源请求能通过 requireAuth
+  const baseHref = token ? `${basePath}?token=${token}` : basePath;
+
   // 注入 <base> 标签到 <head> 中
   if (content.includes('<head>')) {
-    content = content.replace('<head>', `<head>\n  <base href="${basePath}">`);
+    content = content.replace('<head>', `<head>\n  <base href="${baseHref}">`);
   } else if (content.includes('<HEAD>')) {
-    content = content.replace('<HEAD>', `<HEAD>\n  <base href="${basePath}">`);
+    content = content.replace('<HEAD>', `<HEAD>\n  <base href="${baseHref}">`);
   }
 
   return content;
@@ -57,7 +61,7 @@ router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
   const basePath = `/preview/${prototype.id}/versions/${req.params.v}/${dirPart}`;
-  content = processHtml(content, basePath);
+  content = processHtml(content, basePath, req.query.token);
 
   // 记录访问
   recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
@@ -109,7 +113,7 @@ router.get('/:id/*.html', requireAuth, (req, res) => {
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
   const basePath = `/preview/${prototype.id}/${dirPart}`;
-  content = processHtml(content, basePath);
+  content = processHtml(content, basePath, req.query.token);
 
   // 记录访问
   recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
