@@ -8,7 +8,8 @@ const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   getPrototypes, getPrototypeById, createPrototype, updatePrototype, deletePrototype,
   setPrototypeTags, getCategories, createCategory, getReadme, migrateFromJson,
-  getVersions, createVersion, deleteVersion, updateVersionNote, getLatestVersionNumber
+  getVersions, createVersion, deleteVersion, updateVersionNote, getLatestVersionNumber,
+  getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare
 } = require('../services/db-prototypes');
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
@@ -45,10 +46,22 @@ const commentImageUpload = multer({
   }
 });
 
-// 获取所有原型
+// 获取原型列表
+// scope: my（我创建的，默认）| shared（分享给我的）| all（管理员可选，全部）
 router.get('/', requireAuth, (req, res) => {
-  const { keyword, category_id } = req.query;
-  const prototypes = getPrototypes({ keyword, categoryId: category_id });
+  const { keyword, category_id, scope } = req.query;
+  const isAdmin = req.user.role === 'admin';
+  let prototypes;
+
+  if (scope === 'shared') {
+    prototypes = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id });
+  } else if (scope === 'all' && isAdmin) {
+    prototypes = getPrototypes({ keyword, categoryId: category_id });
+  } else {
+    // 默认返回自己创建的
+    prototypes = getPrototypes({ keyword, categoryId: category_id, createdBy: req.user.id });
+  }
+
   res.json({ success: true, data: prototypes });
 });
 
@@ -58,21 +71,28 @@ router.get('/:id', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  
+
+  const isAdmin = req.user.role === 'admin';
+  const isCreator = prototype.created_by === req.user.id;
+  const isShared = getSharedUserIds(prototype.id).includes(req.user.id);
+  if (!isAdmin && !isCreator && !isShared) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
+
   const repoDir = path.join(__dirname, '../repos', prototype.id);
   let files = [];
   if (fs.existsSync(repoDir)) {
     files = scanFiles(repoDir);
   }
-  
+
   res.json({
     success: true,
     data: { ...prototype, files }
   });
 });
 
-// 创建原型
-router.post('/', requireAuth, requireRole(['admin', 'uploader']), async (req, res) => {
+// 创建原型（所有已登录用户均可创建自己的原型）
+router.post('/', requireAuth, async (req, res) => {
   const { name, description, githubUrl, categoryId, tags } = req.body;
   
   if (!name) {
@@ -415,6 +435,64 @@ router.put('/:id/versions/:versionId/note', requireAuth, (req, res) => {
   res.json({ success: true, data: updated });
 });
 
+// 获取原型分享列表
+router.get('/:id/shares', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  const isAdmin = req.user.role === 'admin';
+  const isCreator = prototype.created_by === req.user.id;
+  if (!isAdmin && !isCreator) {
+    return res.status(403).json({ success: false, message: '无权查看分享信息' });
+  }
+  const shares = getPrototypeShares(prototype.id);
+  res.json({ success: true, data: shares });
+});
+
+// 分享原型给指定用户（支持 username 或 userId）
+router.post('/:id/shares', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+    return res.status(403).json({ success: false, message: '无权操作该原型' });
+  }
+
+  const { userId, username } = req.body;
+  if (!userId && !username) {
+    return res.status(400).json({ success: false, message: '请提供用户ID或用户名' });
+  }
+
+  const { findUserById, findUserByUsername } = require('../services/db-users');
+  const targetUser = userId ? findUserById(userId) : findUserByUsername(username);
+  if (!targetUser) {
+    return res.status(404).json({ success: false, message: '用户不存在' });
+  }
+  if (targetUser.id === req.user.id) {
+    return res.status(400).json({ success: false, message: '不能分享给自己' });
+  }
+
+  const shares = addPrototypeShare(prototype.id, targetUser.id);
+  res.json({ success: true, data: shares });
+});
+
+// 取消分享
+router.delete('/:id/shares/:userId', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+    return res.status(403).json({ success: false, message: '无权操作该原型' });
+  }
+
+  const targetUserId = parseInt(req.params.userId, 10);
+  const shares = removePrototypeShare(prototype.id, targetUserId);
+  res.json({ success: true, data: shares });
+});
+
 // 更新原型信息
 router.put('/:id', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
@@ -606,15 +684,21 @@ router.get('/:id/stats', requireAuth, (req, res) => {
 });
 
 // 记录访问
-router.post('/:id/visit', (req, res) => {
+router.post('/:id/visit', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
+  const isAdmin = req.user.role === 'admin';
+  const isCreator = prototype.created_by === req.user.id;
+  const isShared = getSharedUserIds(prototype.id).includes(req.user.id);
+  if (!isAdmin && !isCreator && !isShared) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
   recordVisit({
     prototypeId: req.params.id,
     visitorIp: req.ip,
-    userId: req.user ? req.user.id : null
+    userId: req.user.id
   });
   res.json({ success: true });
 });

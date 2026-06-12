@@ -4,6 +4,14 @@ export function getPrototypes(params) {
   return api.get('/prototypes', { params })
 }
 
+export function getMyPrototypes(params) {
+  return api.get('/prototypes', { params: { ...params, scope: 'my' } })
+}
+
+export function getSharedPrototypes(params) {
+  return api.get('/prototypes', { params: { ...params, scope: 'shared' } })
+}
+
 export function getPrototype(id) {
   return api.get(`/prototypes/${id}`)
 }
@@ -66,6 +74,19 @@ export function deleteVersion(id, versionId) {
 
 export function updateVersionNote(id, versionId, note) {
   return api.put(`/prototypes/${id}/versions/${versionId}/note`, { note })
+}
+
+// 分享相关
+export function getPrototypeShares(id) {
+  return api.get(`/prototypes/${id}/shares`)
+}
+
+export function sharePrototype(id, username) {
+  return api.post(`/prototypes/${id}/shares`, { username })
+}
+
+export function unsharePrototype(id, userId) {
+  return api.delete(`/prototypes/${id}/shares/${userId}`)
 }
 
 // 评论反馈 API

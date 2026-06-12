@@ -1,9 +1,18 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
-const { getPrototypeById } = require('../services/db-prototypes');
+const { getPrototypeById, getSharedUserIds } = require('../services/db-prototypes');
 const { recordVisit } = require('../services/db-stats');
+const { requireAuth } = require('../middleware/auth');
 const router = express.Router();
+
+// 检查当前登录用户是否有权访问原型
+function canAccessPrototype(prototype, user) {
+  if (!user) return false;
+  if (user.role === 'admin') return true;
+  if (prototype.created_by === user.id) return true;
+  return getSharedUserIds(prototype.id).includes(user.id);
+}
 
 // 通用的HTML处理函数：注入<base>标签并将绝对路径转为相对路径
 function processHtml(content, basePath) {
@@ -22,10 +31,13 @@ function processHtml(content, basePath) {
 }
 
 // 历史版本预览HTML
-router.get('/:id/versions/:v/*.html', (req, res) => {
+router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).send('原型不存在');
+  }
+  if (!canAccessPrototype(prototype, req.user)) {
+    return res.status(403).send('无权访问该原型');
   }
 
   const versionDir = path.join(__dirname, '../repos', prototype.id, 'versions', req.params.v);
@@ -55,10 +67,13 @@ router.get('/:id/versions/:v/*.html', (req, res) => {
 });
 
 // 历史版本静态资源
-router.use('/:id/versions/:v', (req, res, next) => {
+router.use('/:id/versions/:v', requireAuth, (req, res, next) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).send('原型不存在');
+  }
+  if (!canAccessPrototype(prototype, req.user)) {
+    return res.status(403).send('无权访问该原型');
   }
   const versionDir = path.join(__dirname, '../repos', prototype.id, 'versions', req.params.v);
   if (!fs.existsSync(versionDir)) {
@@ -68,10 +83,13 @@ router.use('/:id/versions/:v', (req, res, next) => {
 });
 
 // 当前版本预览HTML
-router.get('/:id/*.html', (req, res) => {
+router.get('/:id/*.html', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).send('原型不存在');
+  }
+  if (!canAccessPrototype(prototype, req.user)) {
+    return res.status(403).send('无权访问该原型');
   }
 
   const filePath = req.params[0] + '.html';
@@ -101,10 +119,13 @@ router.get('/:id/*.html', (req, res) => {
 });
 
 // 其他静态文件直接服务（JS/CSS/图片等）
-router.use('/:id', (req, res, next) => {
+router.use('/:id', requireAuth, (req, res, next) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).send('原型不存在');
+  }
+  if (!canAccessPrototype(prototype, req.user)) {
+    return res.status(403).send('无权访问该原型');
   }
   express.static(path.join(__dirname, '../repos', prototype.id))(req, res, next);
 });

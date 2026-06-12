@@ -25,6 +25,17 @@ function getAllUsers() {
   return query(`SELECT id, username, nickname, role, created_at FROM users ORDER BY id`);
 }
 
+function searchUsers(keyword) {
+  const like = keyword ? `%${keyword}%` : '%';
+  return query(`
+    SELECT id, username, nickname, role, created_at
+    FROM users
+    WHERE username LIKE ? OR nickname LIKE ?
+    ORDER BY id
+    LIMIT 50
+  `, [like, like]);
+}
+
 function updateUser(id, { nickname, role, password }) {
   const fields = [];
   const values = [];
@@ -73,6 +84,7 @@ module.exports = {
   findUserByUsername,
   findUserById,
   getAllUsers,
+  searchUsers,
   updateUser,
   deleteUser,
   verifyPassword,

@@ -16,6 +16,10 @@
           <el-icon><Edit /></el-icon>
           编辑
         </el-button>
+        <el-button v-if="canEdit" text @click="openShareDialog">
+          <el-icon><Share /></el-icon>
+          分享
+        </el-button>
         <el-button v-if="canEdit && prototype.github_url" @click="handleSync" :loading="syncing">
           <el-icon><Refresh /></el-icon>
           同步GitHub
@@ -277,6 +281,50 @@
         <el-button type="primary" @click="handleVersionNoteSubmit" :loading="savingVersionNote">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 分享原型对话框 -->
+    <el-dialog v-model="showShareDialog" title="分享原型" width="500px">
+      <el-form label-width="80px">
+        <el-form-item label="分享给">
+          <el-select
+            v-model="shareUsername"
+            filterable
+            remote
+            reserve-keyword
+            placeholder="输入用户名搜索"
+            :remote-method="handleShareUserSearch"
+            :loading="shareLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="u in shareUserOptions"
+              :key="u.id"
+              :label="`${u.nickname || u.username} (${u.username})`"
+              :value="u.username"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <div style="margin-top: 16px;">
+        <div v-loading="sharesLoading">
+          <p v-if="sharesList.length === 0" class="share-empty">尚未分享给任何人</p>
+          <el-tag
+            v-for="s in sharesList"
+            :key="s.user_id"
+            closable
+            type="info"
+            style="margin: 0 8px 8px 0;"
+            @close="handleUnshare(s.user_id)"
+          >
+            {{ s.nickname || s.username }}
+          </el-tag>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showShareDialog = false">关闭</el-button>
+        <el-button type="primary" @click="handleShare" :loading="shareLoading" :disabled="!shareUsername">分享</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -285,9 +333,11 @@ import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
+import { searchUsers } from '../api/auth'
 import {
   getPrototype, syncGitHub, uploadZip, getReadme, updatePrototype, getCategories,
   getVersions, rollbackVersion, deleteVersion, updateVersionNote,
+  getPrototypeShares, sharePrototype, unsharePrototype,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
 } from '../api/prototypes'
@@ -321,6 +371,14 @@ const editingVersion = ref(null)
 const editingVersionNote = ref('')
 const savingVersionNote = ref(false)
 
+// 分享原型
+const showShareDialog = ref(false)
+const shareUsername = ref('')
+const shareUserOptions = ref([])
+const shareLoading = ref(false)
+const sharesList = ref([])
+const sharesLoading = ref(false)
+
 // 访问统计
 const visitStats = ref({ total: 0, recent7: 0, recent30: 0 })
 
@@ -338,7 +396,8 @@ const canEdit = computed(() => {
 
 const previewUrl = computed(() => {
   if (!prototype.value || !prototype.value.entry_file) return null
-  return `/preview/${prototype.value.id}/${prototype.value.entry_file}`
+  const token = authStore.token || ''
+  return `/preview/${prototype.value.id}/${prototype.value.entry_file}?token=${token}`
 })
 
 async function loadData() {
@@ -525,7 +584,8 @@ async function handleUpload() {
 }
 
 function openVersionPreview(row) {
-  const url = `/preview/${prototype.value.id}/versions/v${row.version_number}/${row.entry_file || 'index.html'}`
+  const token = authStore.token || ''
+  const url = `/preview/${prototype.value.id}/versions/v${row.version_number}/${row.entry_file || 'index.html'}?token=${token}`
   window.open(url, '_blank')
 }
 
@@ -688,6 +748,82 @@ function formatDateTime(dateStr) {
   if (!dateStr) return ''
   const d = new Date(dateStr)
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+}
+
+// =================== 分享功能 ===================
+async function openShareDialog() {
+  showShareDialog.value = true
+  shareUsername.value = ''
+  shareUserOptions.value = []
+  sharesLoading.value = true
+  try {
+    const res = await getPrototypeShares(route.params.id)
+    if (res.data.success) {
+      sharesList.value = res.data.data || []
+    }
+  } catch (e) {
+    console.error('加载分享列表失败:', e)
+  } finally {
+    sharesLoading.value = false
+  }
+}
+
+async function handleShareUserSearch(keyword) {
+  if (!keyword || keyword.length < 1) {
+    shareUserOptions.value = []
+    return
+  }
+  shareLoading.value = true
+  try {
+    const res = await searchUsers(keyword)
+    if (res.data.success) {
+      shareUserOptions.value = (res.data.data || []).filter(u => u.id !== authStore.user.id)
+    }
+  } catch (e) {
+    console.error('搜索用户失败:', e)
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function handleShare() {
+  if (!shareUsername.value) {
+    ElMessage.warning('请先搜索并选择用户')
+    return
+  }
+  shareLoading.value = true
+  try {
+    const res = await sharePrototype(route.params.id, shareUsername.value)
+    if (res.data.success) {
+      ElMessage.success('分享成功')
+      shareUsername.value = ''
+      shareUserOptions.value = []
+      const sharesRes = await getPrototypeShares(route.params.id)
+      if (sharesRes.data.success) {
+        sharesList.value = sharesRes.data.data || []
+      }
+    } else {
+      ElMessage.error(res.data.message || '分享失败')
+    }
+  } catch (e) {
+    ElMessage.error('分享失败')
+  } finally {
+    shareLoading.value = false
+  }
+}
+
+async function handleUnshare(userId) {
+  try {
+    const res = await unsharePrototype(route.params.id, userId)
+    if (res.data.success) {
+      ElMessage.success('已取消分享')
+      sharesList.value = sharesList.value.filter(s => s.user_id !== userId)
+    } else {
+      ElMessage.error(res.data.message || '取消分享失败')
+    }
+  } catch (e) {
+    ElMessage.error('取消分享失败')
+  }
 }
 
 onMounted(async () => {

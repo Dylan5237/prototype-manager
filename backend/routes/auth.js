@@ -76,6 +76,14 @@ router.get('/users', requireAuth, requireRole(['admin']), (req, res) => {
   res.json({ success: true, data: users });
 });
 
+// 搜索用户（所有登录用户可用，用于分享时选择用户）
+router.get('/users/search', requireAuth, (req, res) => {
+  const { keyword } = req.query;
+  const { searchUsers } = require('../services/db-users');
+  const users = searchUsers(keyword);
+  res.json({ success: true, data: users });
+});
+
 // 更新用户（仅admin）
 router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
   console.log('[PUT /users/:id] params:', req.params, 'body:', req.body);

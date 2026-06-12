@@ -1,6 +1,6 @@
 const { query, queryOne, run } = require('../database/db');
 
-function getPrototypes({ keyword, categoryId } = {}) {
+function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
   let sql = `
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
       (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count
@@ -10,7 +10,7 @@ function getPrototypes({ keyword, categoryId } = {}) {
     WHERE 1=1
   `;
   const params = [];
-  
+
   if (keyword) {
     sql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
     params.push(`%${keyword}%`, `%${keyword}%`);
@@ -19,7 +19,15 @@ function getPrototypes({ keyword, categoryId } = {}) {
     sql += ` AND p.category_id = ?`;
     params.push(categoryId);
   }
-  
+  if (createdBy) {
+    sql += ` AND p.created_by = ?`;
+    params.push(createdBy);
+  }
+  if (sharedTo) {
+    sql += ` AND p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?)`;
+    params.push(sharedTo);
+  }
+
   sql += ` ORDER BY p.updated_at DESC`;
   return query(sql, params);
 }
@@ -128,6 +136,36 @@ function updateVersionNote(id, note) {
   return queryOne(`SELECT * FROM prototype_versions WHERE id = ?`, [id]);
 }
 
+// 分享管理
+function getPrototypeShares(prototypeId) {
+  return query(`
+    SELECT s.*, u.username, u.nickname
+    FROM prototype_shares s
+    LEFT JOIN users u ON s.user_id = u.id
+    WHERE s.prototype_id = ?
+    ORDER BY s.created_at DESC
+  `, [prototypeId]);
+}
+
+function getSharedUserIds(prototypeId) {
+  const rows = query(`SELECT user_id FROM prototype_shares WHERE prototype_id = ?`, [prototypeId]);
+  return rows.map(r => r.user_id);
+}
+
+function addPrototypeShare(prototypeId, userId) {
+  const now = new Date().toISOString();
+  run(`
+    INSERT OR IGNORE INTO prototype_shares (prototype_id, user_id, created_at)
+    VALUES (?, ?, ?)
+  `, [prototypeId, userId, now]);
+  return getPrototypeShares(prototypeId);
+}
+
+function removePrototypeShare(prototypeId, userId) {
+  run(`DELETE FROM prototype_shares WHERE prototype_id = ? AND user_id = ?`, [prototypeId, userId]);
+  return getPrototypeShares(prototypeId);
+}
+
 function getLatestVersionNumber(prototypeId) {
   const result = queryOne(`SELECT MAX(version_number) as max_version FROM prototype_versions WHERE prototype_id = ?`, [prototypeId]);
   return result && result.max_version ? result.max_version : 0;
@@ -191,5 +229,9 @@ module.exports = {
   createVersion,
   deleteVersion,
   updateVersionNote,
-  getLatestVersionNumber
+  getLatestVersionNumber,
+  getPrototypeShares,
+  getSharedUserIds,
+  addPrototypeShare,
+  removePrototypeShare
 };

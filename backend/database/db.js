@@ -157,6 +157,19 @@ function createTables() {
     )
   `);
 
+  // prototype_shares 表：记录原型分享给哪些用户
+  db.run(`
+    CREATE TABLE IF NOT EXISTS prototype_shares (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prototype_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(prototype_id, user_id)
+    )
+  `);
+
   // 插入默认分类
   const defaultCategories = ['药品管理', '版本控制', '权限系统', '业务流程', '数据看板'];
   defaultCategories.forEach(name => {

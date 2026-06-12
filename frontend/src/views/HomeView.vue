@@ -2,7 +2,7 @@
   <div class="home-view">
     <div class="page-header">
       <h1>原型列表</h1>
-      <el-button v-if="authStore.isUploader" type="primary" @click="showCreateDialog = true">
+      <el-button v-if="authStore.isLoggedIn" type="primary" @click="showCreateDialog = true">
         <el-icon><Plus /></el-icon>
         新建原型
       </el-button>
@@ -36,7 +36,13 @@
       </el-select>
     </div>
 
-    <el-empty v-if="prototypes.length === 0 && !loading" description="暂无原型" />
+    <el-tabs v-model="activeTab" @tab-change="handleTabChange" class="list-tabs">
+      <el-tab-pane label="我的原型" name="my" />
+      <el-tab-pane label="分享给我" name="shared" />
+      <el-tab-pane v-if="authStore.isAdmin" label="全部原型" name="all" />
+    </el-tabs>
+
+    <el-empty v-if="prototypes.length === 0 && !loading" :description="emptyText" />
     
     <el-row v-else :gutter="16">
       <el-col v-for="item in prototypes" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6">
@@ -112,11 +118,11 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../stores/auth'
-import { getPrototypes, createPrototype, deletePrototype, getCategories } from '../api/prototypes'
+import { getMyPrototypes, getSharedPrototypes, getPrototypes, createPrototype, deletePrototype, getCategories } from '../api/prototypes'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -125,6 +131,12 @@ const categories = ref([])
 const loading = ref(false)
 const searchKeyword = ref('')
 const selectedCategory = ref('')
+const activeTab = ref('my')
+const emptyText = computed(() => {
+  if (activeTab.value === 'shared') return '还没有人分享原型给你'
+  if (activeTab.value === 'all') return '暂无原型'
+  return '暂无原型，点击右上角新建'
+})
 const showCreateDialog = ref(false)
 const creating = ref(false)
 const createFormRef = ref(null)
@@ -143,17 +155,27 @@ const createRules = {
 async function loadData() {
   loading.value = true
   try {
-    const [protoRes, catRes] = await Promise.all([
-      getPrototypes({ keyword: searchKeyword.value, category_id: selectedCategory.value }),
-      getCategories()
-    ])
+    const params = { keyword: searchKeyword.value, category_id: selectedCategory.value }
+    let protoRes
+    if (activeTab.value === 'shared') {
+      protoRes = await getSharedPrototypes(params)
+    } else if (activeTab.value === 'all' && authStore.isAdmin) {
+      protoRes = await getPrototypes({ ...params, scope: 'all' })
+    } else {
+      protoRes = await getMyPrototypes(params)
+    }
     prototypes.value = protoRes.data.data || []
+    const catRes = await getCategories()
     categories.value = catRes.data.data || []
   } catch (err) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
   }
+}
+
+function handleTabChange() {
+  loadData()
 }
 
 function handleSearch() {

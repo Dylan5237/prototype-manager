@@ -12,6 +12,10 @@ export function getUsers() {
   return api.get('/auth/users')
 }
 
+export function searchUsers(keyword) {
+  return api.get('/auth/users/search', { params: { keyword } })
+}
+
 export function registerUser(data) {
   return api.post('/auth/register', data)
 }

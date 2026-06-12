@@ -1,7 +1,11 @@
 /**
  * 伏羲打包上传脚本
- * 用法: node pack-and-upload.js <项目路径> [原型名称] [描述]
- * 示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理组件"
+ * 用法: node pack-and-upload.js <项目路径> [原型名称] [描述] [版本更新说明]
+ * 示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理组件" "修复登录页样式"
+ *
+ * 凭证管理:
+ *   首次运行时交互式询问账号密码，保存到同目录下 .credentials.json
+ *   后续运行自动读取凭证文件，登录失败时清除并重新询问
  */
 const fs = require('fs');
 const path = require('path');
@@ -9,11 +13,11 @@ const http = require('http');
 const https = require('https');
 const { URL } = require('url');
 const os = require('os');
+const readline = require('readline');
 const { execSync } = require('child_process');
 
 const API_BASE = process.env.FUXI_API_URL || 'http://8.145.49.128'; // 线上伏羲平台
-const USERNAME = 'admin';
-const PASSWORD = 'admin123';
+const CREDENTIALS_FILE = path.join(__dirname, '.credentials.json');
 
 function request(options, data) {
   return new Promise((resolve, reject) => {
@@ -37,14 +41,89 @@ function request(options, data) {
   });
 }
 
+// =================== 凭证管理 ===================
+
+function readCredentials() {
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE)) {
+      const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf-8');
+      const creds = JSON.parse(raw);
+      if (creds.username && creds.password) {
+        return creds;
+      }
+    }
+  } catch (e) {
+    // 文件损坏，忽略
+  }
+  return null;
+}
+
+function saveCredentials(username, password) {
+  fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({ username, password }, null, 2), 'utf-8');
+  console.log(`[INFO] 凭证已保存到 ${CREDENTIALS_FILE}`);
+}
+
+function clearCredentials() {
+  try {
+    if (fs.existsSync(CREDENTIALS_FILE)) {
+      fs.unlinkSync(CREDENTIALS_FILE);
+      console.log('[INFO] 已清除本地凭证文件');
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function askQuestion(prompt) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(prompt, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+async function promptCredentials() {
+  console.log('[INFO] 首次使用，请输入伏羲平台账号密码：');
+  const username = await askQuestion('  账号: ');
+  if (!username) throw new Error('账号不能为空');
+  const password = await askQuestion('  密码: ');
+  if (!password) throw new Error('密码不能为空');
+  saveCredentials(username, password);
+  return { username, password };
+}
+
 async function login() {
+  let creds = readCredentials();
+  if (!creds) {
+    creds = await promptCredentials();
+  }
+
   const res = await request({
     path: '/api/auth/login', method: 'POST',
     headers: { 'Content-Type': 'application/json' }
-  }, JSON.stringify({ username: USERNAME, password: PASSWORD }));
-  if (!res.success) throw new Error('登录失败: ' + (res.message || '未知错误'));
+  }, JSON.stringify({ username: creds.username, password: creds.password }));
+
+  if (!res.success) {
+    // 登录失败，清除凭证并重新询问
+    console.log('[WARN] 登录失败，凭证可能已过期或错误');
+    clearCredentials();
+    creds = await promptCredentials();
+    const retryRes = await request({
+      path: '/api/auth/login', method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }, JSON.stringify({ username: creds.username, password: creds.password }));
+    if (!retryRes.success) {
+      clearCredentials();
+      throw new Error('登录失败: ' + (retryRes.message || '未知错误'));
+    }
+    return retryRes.data.token;
+  }
   return res.data.token;
 }
+
+// =================== 原型操作 ===================
 
 async function updatePrototype(token, id, { name, description }) {
   try {
@@ -82,9 +161,14 @@ async function findOrCreatePrototype(token, name, description) {
     path: '/api/prototypes', method: 'POST',
     headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
   }, JSON.stringify({ name, description: description || '' }));
+  if (!created.success) {
+    throw new Error('创建原型失败: ' + (created.message || '未知错误'));
+  }
   console.log(`[INFO] 创建新原型: ${name} (${created.data.id})`);
   return created.data.id;
 }
+
+// =================== 项目构建与打包 ===================
 
 function isProjectGitRoot(projectPath) {
   try {
@@ -133,7 +217,6 @@ function generateVersionNote(projectPath) {
   }
 
   try {
-    // 优先检测工作区未提交变更（用户修改后未 commit 的场景）
     const status = execSync('git status --short', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' }).trim();
     if (status) {
       const files = status.split('\n').map(l => l.trim().split(/\s+/).pop()).filter(Boolean);
@@ -144,10 +227,8 @@ function generateVersionNote(projectPath) {
   }
 
   try {
-    // 工作区干净时，使用最近一次 commit message
     const msg = execSync('git log -1 --pretty=format:%s', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' }).trim();
     if (msg && msg !== 'init: 初始提交') return msg;
-    // 如果只有 init commit，尝试获取变更文件列表（虽然工作区干净，但可能用户刚初始化）
     const files = execSync('git diff-tree --no-commit-id --name-only -r HEAD', { cwd: projectPath, encoding: 'utf-8', stdio: 'pipe' }).trim().split('\n').filter(Boolean);
     if (files.length > 0) return summarizeChanges(files);
   } catch (e) {
@@ -194,10 +275,6 @@ async function checkReadme(token, prototypeId) {
   return false;
 }
 
-/**
- * Kill dev server processes running on common ports for the project.
- * Checks Vite default (5173), webpack-dev-server (8080), and other common ports.
- */
 function killDevServer(projectPath) {
   const absPath = path.resolve(projectPath);
   const ports = [5173, 5174, 3000, 8080, 4173];
@@ -218,7 +295,6 @@ function killDevServer(projectPath) {
               `powershell -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
               { encoding: 'utf-8', stdio: 'pipe' }
             ).trim().toLowerCase();
-            // Only kill if the process is related to the project path
             if (cmdLine.includes(absPath.toLowerCase()) || cmdLine.includes('node') || cmdLine.includes('vite')) {
               execSync(`taskkill /F /PID ${pid}`, { stdio: 'pipe' });
               console.log(`[INFO] 已终止进程 PID ${pid} (端口 ${port})`);
@@ -278,7 +354,6 @@ function packProject(projectPath, outputPath) {
     throw new Error(`项目目录不存在: ${absPath}`);
   }
 
-  // 检查README是否存在
   const readmePaths = ['README.md', 'readme.md', 'docs/README.md', 'docs/readme.md'];
   let hasReadme = false;
   for (const rp of readmePaths) {
@@ -294,24 +369,20 @@ function packProject(projectPath, outputPath) {
 
   const excludeDirs = ['node_modules', '.git', '.venv', 'uploads', 'data', 'repos'];
   const imageExts = ['.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp', '.bmp', '.ico', '.tiff', '.tif'];
-  // 不再排除 .md 文档，README 等需要被打进 ZIP
 
-  // 递归收集文件
   const fileList = [];
   walkDir(absPath, absPath, excludeDirs, fileList);
 
-  // 判断是否有 dist/ 目录（Vite/Webpack 构建产物）
   const hasDist = fileList.some(f => f.relativePath === 'dist' || f.relativePath.startsWith('dist/') || f.relativePath.startsWith('dist\\'));
 
   let filteredList;
   if (hasDist) {
-    // 有 dist/ 时：打包 dist/ 内容（提升到根目录）+ 根目录的所有 .md 文件
     console.log(`[INFO] 检测到 dist/ 目录，使用构建产物打包，同时保留文档文件`);
     const distFiles = fileList
       .filter(f => f.relativePath.startsWith('dist/') || f.relativePath.startsWith('dist\\'))
       .map(f => ({
         ...f,
-        relativePath: f.relativePath.slice(5) // 去掉 'dist/' 前缀
+        relativePath: f.relativePath.slice(5)
       }));
     const mdFiles = fileList
       .filter(f => {
@@ -322,13 +393,11 @@ function packProject(projectPath, outputPath) {
       });
     filteredList = [...distFiles, ...mdFiles];
   } else {
-    // 没有 dist/ 时：打包全部文件，排除图片，但保留 .md 文档
     filteredList = fileList.filter(f => {
       const ext = path.extname(f.relativePath).toLowerCase();
       const isRootFile = !f.relativePath.includes(path.sep);
-      // 根目录的图片文件排除
       if (isRootFile && imageExts.includes(ext)) return false;
-      return true; // .md 等文档全部保留
+      return true;
     });
   }
 
@@ -349,11 +418,13 @@ function packProject(projectPath, outputPath) {
   console.log(`[INFO] 打包完成: ${outputPath} (${(stats.size / 1024).toFixed(1)} KB)`);
 }
 
+// =================== 主流程 ===================
+
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
     console.log('用法: node pack-and-upload.js <项目路径> [原型名称] [描述] [版本更新说明]');
-    console.log('示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理" "修复登录页样式，优化表单校验"');
+    console.log('示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理" "修复登录页样式"');
     process.exit(1);
   }
 
@@ -383,7 +454,7 @@ async function main() {
   console.log('[STEP 3/5] 打包项目...');
   packProject(projectPath, zipPath);
 
-  // 4. 登录
+  // 4. 登录（自动读取/询问凭证）
   console.log('[STEP 4/5] 登录伏羲平台...');
   const token = await login();
   console.log('[INFO] 登录成功');
@@ -391,7 +462,7 @@ async function main() {
   // 5. 创建/查找原型
   const prototypeId = await findOrCreatePrototype(token, prototypeName, description);
 
-  // 6. 生成版本描述：优先使用调用方提供的业务性描述，否则基于 git 自动生成
+  // 6. 生成版本描述
   const versionNote = providedVersionNote.trim() || generateVersionNote(path.resolve(projectPath));
   console.log(`[INFO] 版本描述: ${versionNote}`);
 
@@ -399,10 +470,10 @@ async function main() {
   console.log('[STEP 5/5] 上传ZIP...');
   await uploadZip(token, prototypeId, zipPath, versionNote);
 
-  // 6. 验证README
+  // 8. 验证README
   await checkReadme(token, prototypeId);
 
-  // 7. 清理
+  // 9. 清理
   fs.unlinkSync(zipPath);
 
   console.log(`\n========== 完成 ==========`);
