@@ -95,14 +95,42 @@ function setPrototypeTags(id, tags) {
   }
 }
 
+// 转移原型归属者
+function transferPrototype(prototypeId, newOwnerId) {
+  run(`UPDATE prototypes SET created_by = ?, updated_at = ? WHERE id = ?`,
+    [newOwnerId, new Date().toISOString(), prototypeId]);
+  return getPrototypeById(prototypeId);
+}
+
 function getCategories() {
   return query(`SELECT * FROM categories ORDER BY id`);
+}
+
+function getCategoryById(id) {
+  return queryOne(`SELECT * FROM categories WHERE id = ?`, [id]);
 }
 
 function createCategory({ name, description }) {
   const now = new Date().toISOString();
   run(`INSERT INTO categories (name, description, created_at) VALUES (?, ?, ?)`, [name, description || '', now]);
   return queryOne(`SELECT * FROM categories WHERE name = ?`, [name]);
+}
+
+function updateCategory(id, { name, description }) {
+  const fields = [];
+  const values = [];
+  if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+  if (description !== undefined) { fields.push('description = ?'); values.push(description); }
+  if (fields.length === 0) return getCategoryById(id);
+  values.push(id);
+  run(`UPDATE categories SET ${fields.join(', ')} WHERE id = ?`, values);
+  return getCategoryById(id);
+}
+
+function deleteCategory(id) {
+  // 将引用该分类的原型解除关联
+  run(`UPDATE prototypes SET category_id = NULL WHERE category_id = ?`, [id]);
+  run(`DELETE FROM categories WHERE id = ?`, [id]);
 }
 
 // 版本管理
@@ -188,7 +216,7 @@ function saveReadme(prototypeId, { content, filePath }) {
   }
 }
 
-// 从旧JSON迁移数据
+// 从旧Json迁移数据
 function migrateFromJson(prototypes) {
   if (!prototypes || prototypes.length === 0) return;
   
@@ -220,8 +248,12 @@ module.exports = {
   updatePrototype,
   deletePrototype,
   setPrototypeTags,
+  transferPrototype,
   getCategories,
+  getCategoryById,
   createCategory,
+  updateCategory,
+  deleteCategory,
   getReadme,
   saveReadme,
   migrateFromJson,

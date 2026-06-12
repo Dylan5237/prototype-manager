@@ -170,6 +170,9 @@ function createTables() {
     )
   `);
 
+  // 迁移：将 users.role 从单值字符串改为 JSON 数组
+  migrateRoleToArray();
+
   // 插入默认分类
   const defaultCategories = ['药品管理', '版本控制', '权限系统', '业务流程', '数据看板'];
   defaultCategories.forEach(name => {
@@ -180,6 +183,38 @@ function createTables() {
       );
     } catch (e) {}
   });
+}
+
+// 将 role 字段从单值字符串迁移为 JSON 数组格式
+function migrateRoleToArray() {
+  try {
+    const rows = db.run(`SELECT id, role FROM users`).toString();
+    // sql.js 的 db.run 不返回结果，需要用 query
+  } catch (e) {}
+  
+  try {
+    const stmt = db.prepare(`SELECT id, role FROM users`);
+    const toMigrate = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      // 如果不是以 [ 开头，说明是旧格式的单值字符串
+      if (row.role && !row.role.startsWith('[')) {
+        toMigrate.push({ id: row.id, role: row.role });
+      }
+    }
+    stmt.free();
+    
+    toMigrate.forEach(({ id, role }) => {
+      db.run(`UPDATE users SET role = ? WHERE id = ?`, [JSON.stringify([role]), id]);
+    });
+    
+    if (toMigrate.length > 0) {
+      saveDatabase();
+      console.log(`[迁移] 已将 ${toMigrate.length} 个用户的 role 迁移为数组格式`);
+    }
+  } catch (e) {
+    // users 表可能还不存在，忽略
+  }
 }
 
 function saveDatabase() {

@@ -59,6 +59,19 @@ export function createCategory(data) {
   return api.post('/prototypes/categories', data)
 }
 
+export function updateCategory(id, data) {
+  return api.put(`/prototypes/categories/${id}`, data)
+}
+
+export function deleteCategory(id) {
+  return api.delete(`/prototypes/categories/${id}`)
+}
+
+// 转移原型归属者（仅admin）
+export function transferPrototype(id, newOwnerId) {
+  return api.put(`/prototypes/${id}/transfer`, { new_owner_id: newOwnerId })
+}
+
 // 版本管理API
 export function getVersions(id) {
   return api.get(`/prototypes/${id}/versions`)

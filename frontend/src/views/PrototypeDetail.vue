@@ -7,9 +7,18 @@
           返回
         </el-button>
         <h1>{{ prototype.name }}</h1>
-        <el-tag :type="getStatusType(prototype.sync_status)" size="small">
-          {{ getStatusText(prototype.sync_status) }}
-        </el-tag>
+        <el-button v-if="previewUrl" type="success" size="small" @click="openPreview">
+          <el-icon><View /></el-icon>
+          预览
+        </el-button>
+        <el-button v-else-if="prototype.github_url && !prototype.entry_file" disabled type="info" size="small" title="GitHub仓库尚未同步，请先点击同步获取文件">
+          <el-icon><View /></el-icon>
+          预览
+        </el-button>
+        <el-button v-else-if="!prototype.entry_file" disabled type="info" size="small" title="尚未上传文件，请上传ZIP或同步GitHub">
+          <el-icon><View /></el-icon>
+          预览
+        </el-button>
       </div>
       <div class="header-actions">
         <el-button v-if="canEdit" text @click="openEditDialog">
@@ -27,18 +36,6 @@
         <el-button v-if="canEdit" type="primary" @click="showUploadDialog = true">
           <el-icon><Upload /></el-icon>
           上传ZIP
-        </el-button>
-        <el-button v-if="previewUrl" type="success" @click="openPreview">
-          <el-icon><View /></el-icon>
-          预览
-        </el-button>
-        <el-button v-else-if="prototype.github_url && !prototype.entry_file" disabled type="info" title="GitHub仓库尚未同步，请先点击同步获取文件">
-          <el-icon><View /></el-icon>
-          预览（未同步）
-        </el-button>
-        <el-button v-else-if="!prototype.entry_file" disabled type="info" title="尚未上传文件，请上传ZIP或同步GitHub">
-          <el-icon><View /></el-icon>
-          预览（无文件）
         </el-button>
       </div>
     </div>
@@ -68,143 +65,148 @@
       </div>
     </div>
 
-    <el-row :gutter="16" class="detail-content">
-      <el-col :span="24">
-        <el-card class="preview-card">
-          <el-tabs v-model="activeTab" class="detail-tabs">
-            <el-tab-pane name="readme">
-              <template #label>
-                <span class="tab-label"><el-icon><Document /></el-icon> 设计文档</span>
+    <!-- 左右布局：左侧 Tab 导航 + 右侧内容 -->
+    <div class="detail-content">
+      <div class="tab-sidebar">
+        <div
+          v-for="tab in tabs"
+          :key="tab.name"
+          :class="['tab-item', { active: activeTab === tab.name }]"
+          @click="activeTab = tab.name"
+        >
+          <el-icon><component :is="tab.icon" /></el-icon>
+          <span>{{ tab.label }}</span>
+        </div>
+      </div>
+
+      <div class="tab-content">
+        <!-- 设计文档 -->
+        <div v-if="activeTab === 'readme'" class="readme-container">
+          <div v-if="readmeHtml" class="readme-content" v-html="readmeHtml"></div>
+          <el-empty v-else description="暂无设计文档（未找到README.md）" />
+        </div>
+
+        <!-- 版本历史 -->
+        <div v-if="activeTab === 'versions'" class="versions-container">
+          <el-table :data="versions" v-loading="versionLoading" size="small" style="width: 100%">
+            <el-table-column prop="version_number" label="版本号" width="80">
+              <template #default="{ row }">
+                <el-tag size="small" type="primary">v{{ row.version_number }}</el-tag>
               </template>
-              <div class="readme-container">
-                <div v-if="readmeHtml" class="readme-content" v-html="readmeHtml"></div>
-                <el-empty v-else description="暂无设计文档（未找到README.md）" />
-              </div>
-            </el-tab-pane>
-            <el-tab-pane name="versions">
-              <template #label>
-                <span class="tab-label"><el-icon><Clock /></el-icon> 版本历史</span>
+            </el-table-column>
+            <el-table-column prop="created_at" label="时间" width="160">
+              <template #default="{ row }">
+                {{ formatDateTime(row.created_at) }}
               </template>
-              <div class="versions-container">
-                <el-table :data="versions" v-loading="versionLoading" size="small" style="width: 100%">
-                  <el-table-column prop="version_number" label="版本号" width="80">
-                    <template #default="{ row }">
-                      <el-tag size="small" type="primary">v{{ row.version_number }}</el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="created_at" label="时间" width="160">
-                    <template #default="{ row }">
-                      {{ formatDateTime(row.created_at) }}
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="sync_source" label="来源" width="90">
-                    <template #default="{ row }">
-                      <el-tag size="small" :type="row.sync_source === 'github' ? 'info' : 'success'">
-                        {{ row.sync_source === 'github' ? 'GitHub' : '上传' }}
-                      </el-tag>
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="creator_name" label="操作人" width="100" />
-                  <el-table-column prop="size_kb" label="大小" width="90">
-                    <template #default="{ row }">
-                      {{ row.size_kb }} KB
-                    </template>
-                  </el-table-column>
-                  <el-table-column prop="note" label="备注" show-overflow-tooltip />
-                  <el-table-column label="操作" width="230" fixed="right">
-                    <template #default="{ row }">
-                      <el-button size="small" text type="primary" @click="openVersionPreview(row)">
-                        <el-icon><View /></el-icon>预览
-                      </el-button>
-                      <el-button
-                        v-if="canEdit"
-                        size="small"
-                        text
-                        type="primary"
-                        @click="openVersionNoteEdit(row)"
-                      >
-                        <el-icon><Edit /></el-icon>编辑
-                      </el-button>
-                      <el-button size="small" text type="warning" @click="handleRollback(row)">
-                        <el-icon><RefreshLeft /></el-icon>回滚
-                      </el-button>
-                      <el-button
-                        v-if="canEdit"
-                        size="small"
-                        text
-                        type="danger"
-                        @click="handleDeleteVersion(row)"
-                      >
-                        <el-icon><Delete /></el-icon>删除
-                      </el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-                <el-empty v-if="versions.length === 0 && !versionLoading" description="暂无历史版本" />
-              </div>
-            </el-tab-pane>
-            <el-tab-pane name="comments">
-              <template #label>
-                <span class="tab-label"><el-icon><ChatDotSquare /></el-icon> 评论反馈</span>
+            </el-table-column>
+            <el-table-column prop="sync_source" label="来源" width="90">
+              <template #default="{ row }">
+                <el-tag size="small" :type="row.sync_source === 'github' ? 'info' : 'success'">
+                  {{ row.sync_source === 'github' ? 'GitHub' : '上传' }}
+                </el-tag>
               </template>
-              <div class="comments-container">
-                <div class="comment-input-area">
-                  <el-input
-                    v-model="commentContent"
-                    type="textarea"
-                    :rows="3"
-                    placeholder="输入评论内容，支持 Ctrl+V 粘贴图片..."
-                    @paste="handlePaste"
-                  />
-                  <div class="comment-toolbar">
-                    <div class="comment-image-list" v-if="commentImages.length > 0">
-                      <div v-for="(img, idx) in commentImages" :key="idx" class="comment-image-item">
-                        <img :src="img.url" />
-                        <el-icon class="comment-image-remove" @click="removeCommentImage(idx)"><Delete /></el-icon>
-                      </div>
-                    </div>
-                    <div class="comment-hint">支持 Ctrl+V 粘贴图片（最多9张）</div>
-                    <el-button type="primary" size="small" @click="handleCommentSubmit" :loading="submittingComment">
-                      发表评论
+            </el-table-column>
+            <el-table-column prop="creator_name" label="操作人" width="100" />
+            <el-table-column prop="note" label="备注" min-width="200">
+              <template #default="{ row }">
+                <el-tooltip :content="row.note || ''" placement="top" :show-after="300" popper-class="version-note-tooltip">
+                  <span class="note-cell">{{ row.note || '-' }}</span>
+                </el-tooltip>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="240" fixed="right">
+              <template #default="{ row }">
+                <div class="version-actions">
+                  <el-button size="small" text type="primary" @click="openVersionPreview(row)">
+                    <el-icon><View /></el-icon>预览
+                  </el-button>
+                  <el-button
+                    v-if="canEdit"
+                    size="small"
+                    text
+                    type="primary"
+                    @click="openVersionNoteEdit(row)"
+                  >
+                    <el-icon><Edit /></el-icon>编辑
+                  </el-button>
+                  <el-dropdown v-if="canEdit" trigger="click" @command="(cmd) => handleVersionCommand(cmd, row)">
+                    <el-button size="small" text type="info">
+                      更多<el-icon style="margin-left:2px"><ArrowDown /></el-icon>
                     </el-button>
-                  </div>
+                    <template #dropdown>
+                      <el-dropdown-menu>
+                        <el-dropdown-item command="rollback">
+                          <el-icon><RefreshLeft /></el-icon>回滚
+                        </el-dropdown-item>
+                        <el-dropdown-item command="delete" class="danger-item">
+                          <el-icon><Delete /></el-icon>删除
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </template>
+                  </el-dropdown>
                 </div>
-                <div class="comment-list" v-loading="commentLoading">
-                  <div v-for="comment in comments" :key="comment.id" class="comment-item">
-                    <div class="comment-header">
-                      <span class="comment-author">{{ comment.nickname || comment.username }}</span>
-                      <span class="comment-time">{{ formatDateTime(comment.created_at) }}</span>
-                      <el-button
-                        v-if="authStore.isAdmin || comment.user_id === authStore.user?.id"
-                        size="small"
-                        text
-                        type="danger"
-                        @click="handleCommentDelete(comment)"
-                      >
-                        <el-icon><Delete /></el-icon>
-                      </el-button>
-                    </div>
-                    <div class="comment-body">{{ comment.content }}</div>
-                    <div class="comment-images" v-if="comment.images && comment.images.length > 0">
-                      <el-image
-                        v-for="(img, idx) in comment.images"
-                        :key="idx"
-                        :src="img.url"
-                        :preview-src-list="comment.images.map(i => i.url)"
-                        :style="{ width: '120px', height: '120px', borderRadius: '8px', border: '1px solid #e4e7ed', cursor: 'pointer' }"
-                        fit="cover"
-                        hide-on-click-modal
-                      />
-                    </div>
-                  </div>
-                  <el-empty v-if="comments.length === 0 && !commentLoading" description="暂无评论，快来发表第一条评论吧" />
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-if="versions.length === 0 && !versionLoading" description="暂无历史版本" />
+        </div>
+
+        <!-- 评论反馈 -->
+        <div v-if="activeTab === 'comments'" class="comments-container">
+          <div class="comment-input-area">
+            <el-input
+              v-model="commentContent"
+              type="textarea"
+              :rows="3"
+              placeholder="输入评论内容，支持 Ctrl+V 粘贴图片..."
+              @paste="handlePaste"
+            />
+            <div class="comment-toolbar">
+              <div class="comment-image-list" v-if="commentImages.length > 0">
+                <div v-for="(img, idx) in commentImages" :key="idx" class="comment-image-item">
+                  <img :src="img.url" />
+                  <el-icon class="comment-image-remove" @click="removeCommentImage(idx)"><Delete /></el-icon>
                 </div>
               </div>
-            </el-tab-pane>
-          </el-tabs>
-        </el-card>
-      </el-col>
-    </el-row>
+              <div class="comment-hint">支持 Ctrl+V 粘贴图片（最多9张）</div>
+              <el-button type="primary" size="small" @click="handleCommentSubmit" :loading="submittingComment">
+                发表评论
+              </el-button>
+            </div>
+          </div>
+          <div class="comment-list" v-loading="commentLoading">
+            <div v-for="comment in comments" :key="comment.id" class="comment-item">
+              <div class="comment-header">
+                <span class="comment-author">{{ comment.nickname || comment.username }}</span>
+                <span class="comment-time">{{ formatDateTime(comment.created_at) }}</span>
+                <el-button
+                  v-if="authStore.isAdmin || comment.user_id === authStore.user?.id"
+                  size="small"
+                  text
+                  type="danger"
+                  @click="handleCommentDelete(comment)"
+                >
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </div>
+              <div class="comment-body">{{ comment.content }}</div>
+              <div class="comment-images" v-if="comment.images && comment.images.length > 0">
+                <el-image
+                  v-for="(img, idx) in comment.images"
+                  :key="idx"
+                  :src="img.url"
+                  :preview-src-list="comment.images.map(i => i.url)"
+                  :style="{ width: '120px', height: '120px', borderRadius: '8px', border: '1px solid #e4e7ed', cursor: 'pointer' }"
+                  fit="cover"
+                  hide-on-click-modal
+                />
+              </div>
+            </div>
+            <el-empty v-if="comments.length === 0 && !commentLoading" description="暂无评论，快来发表第一条评论吧" />
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- 上传弹窗 -->
     <el-dialog v-model="showUploadDialog" title="上传ZIP包" width="500px">
@@ -327,11 +329,11 @@
     </el-dialog>
   </div>
 </template>
-
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { Document, Clock, ChatDotSquare, ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
 import {
@@ -353,6 +355,12 @@ const uploadRef = ref(null)
 const uploadFile = ref(null)
 const activeTab = ref('readme')
 const readmeHtml = ref('')
+
+const tabs = [
+  { name: 'readme', label: '设计文档', icon: markRaw(Document) },
+  { name: 'versions', label: '版本历史', icon: markRaw(Clock) },
+  { name: 'comments', label: '评论反馈', icon: markRaw(ChatDotSquare) },
+]
 
 // 版本管理
 const versions = ref([])
@@ -624,6 +632,14 @@ async function handleDeleteVersion(row) {
   }
 }
 
+function handleVersionCommand(cmd, row) {
+  if (cmd === 'rollback') {
+    handleRollback(row)
+  } else if (cmd === 'delete') {
+    handleDeleteVersion(row)
+  }
+}
+
 async function loadStats() {
   try {
     const res = await getStats(route.params.id)
@@ -832,20 +848,34 @@ onMounted(async () => {
   await loadComments()
   try { await recordVisit(route.params.id) } catch (e) {}
 })
-</script>
-
-<style scoped>
+</script><style scoped>
 .detail-view {
-  padding-bottom: 24px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 24px 24px;
+  animation: fadeIn 0.3s ease-out;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ========================================
+   顶部 Header 区域
+   ======================================== */
 .detail-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e4e7ed;
+  padding: 16px 24px;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
   margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .header-left {
@@ -854,11 +884,21 @@ onMounted(async () => {
   gap: 12px;
 }
 
+.header-left :deep(.el-button) {
+  color: #4a5568;
+  font-size: 14px;
+}
+
 .header-left h1 {
-  font-size: 22px;
-  font-weight: 600;
-  color: #303133;
+  font-size: 20px;
+  font-weight: 700;
+  color: #1a202c;
   margin: 0;
+}
+
+.header-left :deep(.el-tag) {
+  border-radius: 6px;
+  font-weight: 500;
 }
 
 .header-actions {
@@ -866,63 +906,69 @@ onMounted(async () => {
   gap: 8px;
 }
 
-/* 信息卡片 */
-.info-card {
-  background: #f5f7fa;
+.header-actions :deep(.el-button) {
   border-radius: 8px;
-  padding: 14px 18px;
-  margin-bottom: 20px;
+  font-weight: 500;
+}
+
+/* ========================================
+   信息卡片 - 简约白色风格
+   ======================================== */
+.info-card {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  padding: 16px 24px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .info-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
   margin-bottom: 8px;
 }
 
 .info-id {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 6px;
-  background: #e4e7ed;
-  border-radius: 4px;
-  padding: 3px 10px;
-  font-size: 12px;
-  color: #606266;
   cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
   transition: background 0.2s;
 }
 
 .info-id:hover {
-  background: #d0d4dc;
+  background: #edf2f7;
 }
 
 .info-id code {
-  font-family: 'Courier New', monospace;
   font-size: 12px;
+  color: #4a5568;
+  font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
 .info-tags {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex-wrap: wrap;
 }
 
 .info-item {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 4px;
   font-size: 13px;
-  color: #606266;
+  color: #718096;
 }
 
 .info-desc {
   font-size: 14px;
-  color: #606266;
+  color: #4a5568;
   line-height: 1.6;
 }
 
@@ -930,114 +976,157 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 10px;
   padding: 8px 12px;
-  background: #fef0f0;
-  border-radius: 4px;
+  background: #fff5f5;
+  border-radius: 6px;
+  color: #c53030;
   font-size: 13px;
-  color: #f56c6c;
 }
 
-/* Tabs */
-.detail-tabs :deep(.el-tabs__header) {
-  margin-bottom: 0;
-}
-
-.detail-tabs :deep(.el-tabs__nav-wrap::after) {
-  height: 1px;
-  background-color: #e4e7ed;
-}
-
-.tab-label {
-  display: inline-flex;
+/* ========================================
+   左右布局：Tab 侧边栏 + 内容区
+   ======================================== */
+.version-actions {
+  display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
 }
 
-.readme-container {
-  padding-top: 16px;
+.detail-content {
+  display: flex;
+  gap: 20px;
+  min-height: 500px;
 }
 
-.readme-content {
-  padding: 8px;
-  line-height: 1.8;
-  color: #303133;
-}
-
-.readme-content h1,
-.readme-content h2,
-.readme-content h3,
-.readme-content h4 {
-  margin-top: 16px;
-  margin-bottom: 8px;
-  color: #303133;
-}
-
-.readme-content p {
-  margin-bottom: 12px;
-}
-
-.readme-content code {
-  background: #f5f7fa;
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-family: monospace;
-}
-
-.readme-content pre {
-  background: #f5f7fa;
+.tab-sidebar {
+  width: 180px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
   padding: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  position: sticky;
+  top: 80px;
+  align-self: flex-start;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  color: #4a5568;
+  transition: all 0.2s ease;
+  margin-bottom: 4px;
+}
+
+.tab-item:hover {
+  background: #edf2f7;
+  color: #2d3748;
+}
+
+.tab-item.active {
+  background: #e8f0fe;
+  color: #3b82f6;
+  font-weight: 600;
+}
+
+.tab-item .el-icon {
+  font-size: 16px;
+}
+
+.tab-content {
+  flex: 1;
+  min-width: 0;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  border-radius: 12px;
+  padding: 24px 28px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+/* ========================================
+   设计文档
+   ======================================== */
+.readme-container {
+  line-height: 1.7;
+}
+
+.readme-content :deep(h1),
+.readme-content :deep(h2),
+.readme-content :deep(h3) {
+  color: #1a202c;
+  margin-top: 1.2em;
+  margin-bottom: 0.6em;
+}
+
+.readme-content :deep(p) {
+  color: #4a5568;
+}
+
+.readme-content :deep(code) {
+  background: #f1f5f9;
+  padding: 2px 6px;
   border-radius: 4px;
-  overflow: auto;
+  font-size: 0.9em;
 }
 
-.readme-content blockquote {
-  border-left: 4px solid #409eff;
-  padding-left: 12px;
-  margin-left: 0;
-  color: #606266;
+.readme-content :deep(pre) {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
 }
 
-.readme-content ul,
-.readme-content ol {
-  padding-left: 24px;
-  margin-bottom: 12px;
+.readme-content :deep(img) {
+  max-width: 100%;
+  border-radius: 8px;
 }
 
-.readme-content table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-bottom: 12px;
+/* ========================================
+   版本历史
+   ======================================== */
+.versions-container :deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.readme-content th,
-.readme-content td {
-  border: 1px solid #e4e7ed;
-  padding: 8px 12px;
-  text-align: left;
+.versions-container :deep(.el-table th) {
+  background: #f8fafc;
+  color: #4a5568;
+  font-weight: 600;
 }
 
-.readme-content th {
-  background: #f5f7fa;
-}
-
-.versions-container {
-}
-
-.comments-container {
-}
-
+/* ========================================
+   评论反馈
+   ======================================== */
 .comment-input-area {
-  margin-bottom: 20px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #ebeef5;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #edf2f7;
 }
 
 .comment-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-top: 12px;
+  justify-content: space-between;
+  margin-top: 10px;
+}
+
+.comment-hint {
+  font-size: 12px;
+  color: #a0aec0;
 }
 
 .comment-image-list {
@@ -1048,37 +1137,28 @@ onMounted(async () => {
 
 .comment-image-item {
   position: relative;
-  width: 80px;
-  height: 80px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #e4e7ed;
+  width: 60px;
+  height: 60px;
 }
 
 .comment-image-item img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
 }
 
 .comment-image-remove {
   position: absolute;
-  top: 2px;
-  right: 2px;
-  width: 20px;
-  height: 20px;
-  background: rgba(0, 0, 0, 0.5);
-  color: #fff;
+  top: -6px;
+  right: -6px;
+  background: #fff;
   border-radius: 50%;
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.comment-hint {
-  font-size: 12px;
-  color: #909399;
+  color: #e53e3e;
+  font-size: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.15);
 }
 
 .comment-list {
@@ -1088,49 +1168,116 @@ onMounted(async () => {
 }
 
 .comment-item {
-  padding: 12px 16px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 10px;
+  border: 1px solid #edf2f7;
 }
 
 .comment-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   margin-bottom: 8px;
 }
 
 .comment-author {
   font-weight: 600;
-  color: #303133;
+  color: #2d3748;
   font-size: 14px;
 }
 
 .comment-time {
   font-size: 12px;
-  color: #909399;
-  margin-left: auto;
+  color: #a0aec0;
 }
 
 .comment-body {
   font-size: 14px;
-  color: #303133;
+  color: #4a5568;
   line-height: 1.6;
-  margin-bottom: 8px;
   white-space: pre-wrap;
-  word-break: break-all;
 }
 
 .comment-images {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+  margin-top: 10px;
 }
 
+/* ========================================
+   弹窗统一风格
+   ======================================== */
+:deep(.el-dialog) {
+  border-radius: 12px;
+}
 
+:deep(.el-dialog__header) {
+  border-bottom: 1px solid #f0f0f0;
+  padding-bottom: 16px;
+}
 
-.error-text {
-  color: #f56c6c;
+/* ========================================
+   版本备注 tooltip
+   ======================================== */
+.note-cell {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
   font-size: 13px;
+  color: #4a5568;
+}
+
+.version-note-tooltip {
+  max-width: 300px !important;
+}
+
+/* ========================================
+   版本操作下拉菜单
+   ======================================== */
+.versions-container :deep(.el-dropdown-menu__item.danger-item) {
+  color: #e53e3e;
+}
+
+.versions-container :deep(.el-dropdown-menu__item.danger-item:hover) {
+  background: #fff5f5;
+  color: #c53030;
+}
+
+/* ========================================
+   响应式
+   ======================================== */
+@media (max-width: 768px) {
+  .detail-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+  }
+
+  .detail-content {
+    flex-direction: column;
+  }
+
+  .tab-sidebar {
+    width: 100%;
+    position: static;
+    display: flex;
+    gap: 4px;
+    padding: 8px;
+  }
+
+  .tab-item {
+    flex: 1;
+    justify-content: center;
+    margin-bottom: 0;
+  }
 }
 </style>

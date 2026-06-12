@@ -3,26 +3,46 @@ const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 10;
 
+// 解析 role 字段：从 JSON 数组字符串转为数组
+function parseRole(role) {
+  if (!role) return ['viewer'];
+  if (Array.isArray(role)) return role;
+  try {
+    const parsed = JSON.parse(role);
+    if (Array.isArray(parsed)) return parsed;
+  } catch (e) {}
+  return [role];
+}
+
+// 将用户对象中的 role 字段解析为数组
+function formatUser(user) {
+  if (!user) return user;
+  return { ...user, role: parseRole(user.role) };
+}
+
 function createUser({ username, password, nickname, role }) {
   const passwordHash = bcrypt.hashSync(password, SALT_ROUNDS);
   const now = new Date().toISOString();
+  // role 参数可以是数组或字符串
+  const roleArray = Array.isArray(role) ? role : [role || 'viewer'];
+  const roleStr = JSON.stringify(roleArray);
   run(
     `INSERT INTO users (username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?)`,
-    [username, passwordHash, nickname || username, role || 'viewer', now]
+    [username, passwordHash, nickname || username, roleStr, now]
   );
-  return queryOne(`SELECT id, username, nickname, role, created_at FROM users WHERE username = ?`, [username]);
+  return formatUser(queryOne(`SELECT id, username, nickname, role, created_at FROM users WHERE username = ?`, [username]));
 }
 
 function findUserByUsername(username) {
-  return queryOne(`SELECT * FROM users WHERE username = ?`, [username]);
+  return formatUser(queryOne(`SELECT * FROM users WHERE username = ?`, [username]));
 }
 
 function findUserById(id) {
-  return queryOne(`SELECT id, username, nickname, role, created_at FROM users WHERE id = ?`, [id]);
+  return formatUser(queryOne(`SELECT id, username, nickname, role, created_at FROM users WHERE id = ?`, [id]));
 }
 
 function getAllUsers() {
-  return query(`SELECT id, username, nickname, role, created_at FROM users ORDER BY id`);
+  return query(`SELECT id, username, nickname, role, created_at FROM users ORDER BY id`).map(formatUser);
 }
 
 function searchUsers(keyword) {
@@ -33,7 +53,7 @@ function searchUsers(keyword) {
     WHERE username LIKE ? OR nickname LIKE ?
     ORDER BY id
     LIMIT 50
-  `, [like, like]);
+  `, [like, like]).map(formatUser);
 }
 
 function updateUser(id, { nickname, role, password }) {
@@ -44,8 +64,9 @@ function updateUser(id, { nickname, role, password }) {
     values.push(nickname);
   }
   if (role !== undefined) {
+    const roleArray = Array.isArray(role) ? role : [role];
     fields.push('role = ?');
-    values.push(role);
+    values.push(JSON.stringify(roleArray));
   }
   if (password !== undefined && password !== '') {
     const passwordHash = bcrypt.hashSync(password, SALT_ROUNDS);
@@ -73,7 +94,7 @@ function initDefaultAdmin() {
       username: 'admin',
       password: 'admin123',
       nickname: '管理员',
-      role: 'admin'
+      role: ['admin']
     });
     console.log('[系统] 默认管理员账号已创建: admin / admin123');
   }

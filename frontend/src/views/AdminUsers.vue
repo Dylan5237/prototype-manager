@@ -1,19 +1,15 @@
 <template>
   <div class="admin-users">
-    <div class="page-header">
-      <h1>用户管理</h1>
+    <div class="page-toolbar">
       <el-button type="primary" @click="openCreateDialog">
         <el-icon><Plus /></el-icon>
         新建用户
       </el-button>
-    </div>
-
-    <div class="filter-bar">
       <el-input
         v-model="searchKeyword"
         placeholder="搜索账号或昵称"
         clearable
-        style="width: 280px"
+        class="search-input"
         @keyup.enter="handleSearch"
       >
         <template #suffix>
@@ -22,13 +18,20 @@
       </el-input>
     </div>
 
-    <el-table :data="filteredUsers" v-loading="loading" stripe>
+    <el-table :data="filteredUsers" v-loading="loading" stripe class="data-table">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="username" label="账号" width="150" />
       <el-table-column prop="nickname" label="昵称" width="150" />
-      <el-table-column prop="role" label="角色" width="120">
+      <el-table-column label="角色" width="260">
         <template #default="{ row }">
-          <el-tag :type="getRoleType(row.role)" size="small">{{ getRoleLabel(row.role) }}</el-tag>
+          <el-tag
+            v-for="r in getRolesArray(row.role)"
+            :key="r"
+            :type="getRoleType(r)"
+            size="small"
+            effect="light"
+            class="role-tag"
+          >{{ getRoleLabel(r) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180">
@@ -38,12 +41,14 @@
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
-          <el-button size="small" @click="openEditDialog(row)">
-            <el-icon><Edit /></el-icon>编辑
-          </el-button>
-          <el-button size="small" type="danger" plain @click="handleDelete(row)">
-            <el-icon><Delete /></el-icon>删除
-          </el-button>
+          <div class="table-actions">
+            <el-button size="small" @click="openEditDialog(row)">
+              <el-icon><Edit /></el-icon>编辑
+            </el-button>
+            <el-button size="small" type="danger" plain @click="handleDelete(row)">
+              <el-icon><Delete /></el-icon>删除
+            </el-button>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -60,8 +65,8 @@
         <el-form-item label="昵称">
           <el-input v-model="createForm.nickname" placeholder="显示名称" />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="createForm.role" placeholder="选择角色" style="width:100%">
+        <el-form-item label="角色" prop="roles">
+          <el-select v-model="createForm.roles" multiple placeholder="选择角色（可多选）" style="width:100%">
             <el-option label="管理员" value="admin" />
             <el-option label="上传者" value="uploader" />
             <el-option label="查看者" value="viewer" />
@@ -83,8 +88,8 @@
         <el-form-item label="昵称" prop="nickname">
           <el-input v-model="editForm.nickname" placeholder="显示名称" />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-select v-model="editForm.role" placeholder="选择角色" style="width:100%">
+        <el-form-item label="角色" prop="roles">
+          <el-select v-model="editForm.roles" multiple placeholder="选择角色（可多选）" style="width:100%">
             <el-option label="管理员" value="admin" />
             <el-option label="上传者" value="uploader" />
             <el-option label="查看者" value="viewer" />
@@ -107,14 +112,17 @@ import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUsers, registerUser, updateUser, deleteUser } from '../api/auth'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
-import { useAuthStore } from '../stores/auth'
 
-console.log('[AdminUsers] api imports:', typeof getUsers, typeof registerUser, typeof updateUser, typeof deleteUser)
-
-const authStore = useAuthStore()
 const users = ref([])
 const loading = ref(false)
 const searchKeyword = ref('')
+
+// 将 role 统一转为数组
+function getRolesArray(role) {
+  if (!role) return ['viewer']
+  if (Array.isArray(role)) return role
+  return [role]
+}
 
 /* ========== 新建 ========== */
 const showCreateDialog = ref(false)
@@ -124,16 +132,16 @@ const createForm = ref({
   username: '',
   password: '',
   nickname: '',
-  role: 'viewer'
+  roles: ['viewer']
 })
 const createRules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-  role: [{ required: true, message: '请选择角色', trigger: 'change' }]
+  roles: [{ required: true, type: 'array', min: 1, message: '请至少选择一个角色', trigger: 'change' }]
 }
 
 function openCreateDialog() {
-  createForm.value = { username: '', password: '', nickname: '', role: 'viewer' }
+  createForm.value = { username: '', password: '', nickname: '', roles: ['viewer'] }
   showCreateDialog.value = true
 }
 
@@ -142,7 +150,12 @@ async function handleCreate() {
   if (!valid) return
   creating.value = true
   try {
-    await registerUser(createForm.value)
+    await registerUser({
+      username: createForm.value.username,
+      password: createForm.value.password,
+      nickname: createForm.value.nickname,
+      role: createForm.value.roles
+    })
     ElMessage.success('创建成功')
     showCreateDialog.value = false
     loadData()
@@ -161,12 +174,12 @@ const editForm = ref({
   id: null,
   username: '',
   nickname: '',
-  role: 'viewer',
+  roles: ['viewer'],
   password: ''
 })
 const editRules = {
   nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }],
-  role: [{ required: true, message: '请选择角色', trigger: 'change' }]
+  roles: [{ required: true, type: 'array', min: 1, message: '请至少选择一个角色', trigger: 'change' }]
 }
 
 function openEditDialog(row) {
@@ -174,21 +187,20 @@ function openEditDialog(row) {
     id: row.id,
     username: row.username,
     nickname: row.nickname || '',
-    role: row.role,
+    roles: getRolesArray(row.role),
     password: ''
   }
   showEditDialog.value = true
 }
 
 async function handleEdit() {
-  console.log('[handleEdit] updateUser type:', typeof updateUser, 'id:', editForm.value.id)
   const valid = await editFormRef.value.validate().catch(() => false)
   if (!valid) return
   editing.value = true
   try {
     const payload = {
       nickname: editForm.value.nickname,
-      role: editForm.value.role
+      role: editForm.value.roles
     }
     if (editForm.value.password) {
       payload.password = editForm.value.password
@@ -198,7 +210,6 @@ async function handleEdit() {
     showEditDialog.value = false
     loadData()
   } catch (err) {
-    console.error('[handleEdit] error:', err)
     ElMessage.error(err.response?.data?.message || err.message || '更新失败')
   } finally {
     editing.value = false
@@ -207,7 +218,6 @@ async function handleEdit() {
 
 /* ========== 删除 ========== */
 async function handleDelete(row) {
-  console.log('[handleDelete] deleteUser type:', typeof deleteUser, 'id:', row.id)
   try {
     await ElMessageBox.confirm(
       `确定删除用户 "${row.nickname || row.username}" 吗？删除后无法恢复。`,
@@ -218,7 +228,6 @@ async function handleDelete(row) {
     ElMessage.success('删除成功')
     loadData()
   } catch (err) {
-    console.error('[handleDelete] error:', err)
     if (err !== 'cancel') {
       ElMessage.error(err.response?.data?.message || err.message || '删除失败')
     }
@@ -273,21 +282,44 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.page-header {
+.admin-users {
+  animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-}
-
-.page-header h1 {
-  font-size: 22px;
-  color: #303133;
-}
-
-.filter-bar {
-  display: flex;
-  gap: 12px;
   margin-bottom: 20px;
+  gap: 16px;
+}
+
+.search-input {
+  width: 260px;
+}
+
+.data-table {
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.role-tag {
+  margin-right: 4px;
+}
+
+.table-actions {
+  display: flex;
+  gap: 8px;
 }
 </style>

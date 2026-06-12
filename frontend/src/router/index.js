@@ -4,12 +4,16 @@ import HomeView from '../views/HomeView.vue'
 import PrototypeDetail from '../views/PrototypeDetail.vue'
 import LoginView from '../views/LoginView.vue'
 import AdminUsers from '../views/AdminUsers.vue'
+import AdminDistribution from '../views/AdminDistribution.vue'
+import AdminCategories from '../views/AdminCategories.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
   { path: '/', name: 'home', component: HomeView },
   { path: '/prototype/:id', name: 'prototype', component: PrototypeDetail },
-  { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } }
+  { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
+  { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
+  { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } }
 ]
 
 const router = createRouter({

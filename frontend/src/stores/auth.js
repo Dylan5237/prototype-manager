@@ -32,8 +32,18 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
   const user = ref(null)
   const isLoggedIn = computed(() => !!token.value)
-  const isAdmin = computed(() => user.value?.role === 'admin')
-  const isUploader = computed(() => user.value?.role === 'uploader' || user.value?.role === 'admin')
+  // role 现在是数组，检查是否包含对应角色
+  const isAdmin = computed(() => {
+    const roles = user.value?.role
+    if (!roles) return false
+    return Array.isArray(roles) ? roles.includes('admin') : roles === 'admin'
+  })
+  const isUploader = computed(() => {
+    const roles = user.value?.role
+    if (!roles) return false
+    const roleArr = Array.isArray(roles) ? roles : [roles]
+    return roleArr.includes('uploader') || roleArr.includes('admin')
+  })
 
   async function login(username, password) {
     const res = await api.post('/auth/login', { username, password })

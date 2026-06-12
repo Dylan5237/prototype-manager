@@ -7,7 +7,8 @@ const router = express.Router();
 const { requireAuth, requireRole } = require('../middleware/auth');
 const {
   getPrototypes, getPrototypeById, createPrototype, updatePrototype, deletePrototype,
-  setPrototypeTags, getCategories, createCategory, getReadme, migrateFromJson,
+  setPrototypeTags, getCategories, getCategoryById, createCategory, updateCategory, deleteCategory,
+  getReadme, migrateFromJson, transferPrototype,
   getVersions, createVersion, deleteVersion, updateVersionNote, getLatestVersionNumber,
   getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare
 } = require('../services/db-prototypes');
@@ -19,6 +20,11 @@ const { extractReadme } = require('../services/readme-extractor');
 const { marked } = require('marked');
 const { createComment, getComments, deleteComment, COMMENT_IMAGES_DIR } = require('../services/db-comments');
 const { recordVisit, getVisitStats, getVisitCount } = require('../services/db-stats');
+
+// 辅助函数：判断当前用户是否为管理员
+function isAdmin(req) {
+  return req.user.roles && req.user.roles.includes('admin');
+}
 
 // 文件上传配置
 const upload = multer({
@@ -50,12 +56,12 @@ const commentImageUpload = multer({
 // scope: my（我创建的，默认）| shared（分享给我的）| all（管理员可选，全部）
 router.get('/', requireAuth, (req, res) => {
   const { keyword, category_id, scope } = req.query;
-  const isAdmin = req.user.role === 'admin';
+  const admin = isAdmin(req);
   let prototypes;
 
   if (scope === 'shared') {
     prototypes = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id });
-  } else if (scope === 'all' && isAdmin) {
+  } else if (scope === 'all' && admin) {
     prototypes = getPrototypes({ keyword, categoryId: category_id });
   } else {
     // 默认返回自己创建的
@@ -72,10 +78,10 @@ router.get('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
 
-  const isAdmin = req.user.role === 'admin';
+  const admin = isAdmin(req);
   const isCreator = prototype.created_by === req.user.id;
   const isShared = getSharedUserIds(prototype.id).includes(req.user.id);
-  if (!isAdmin && !isCreator && !isShared) {
+  if (!admin && !isCreator && !isShared) {
     return res.status(403).json({ success: false, message: '无权访问该原型' });
   }
 
@@ -142,7 +148,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
   }
   
   // 权限检查：仅创建人或admin可上传
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -260,7 +266,7 @@ router.post('/:id/sync', requireAuth, async (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
   
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -352,7 +358,7 @@ router.post('/:id/versions/:versionId/rollback', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -390,7 +396,7 @@ router.delete('/:id/versions/:versionId', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -415,7 +421,7 @@ router.put('/:id/versions/:versionId/note', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
@@ -441,9 +447,9 @@ router.get('/:id/shares', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  const isAdmin = req.user.role === 'admin';
+  const admin = isAdmin(req);
   const isCreator = prototype.created_by === req.user.id;
-  if (!isAdmin && !isCreator) {
+  if (!admin && !isCreator) {
     return res.status(403).json({ success: false, message: '无权查看分享信息' });
   }
   const shares = getPrototypeShares(prototype.id);
@@ -456,7 +462,7 @@ router.post('/:id/shares', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
@@ -484,7 +490,7 @@ router.delete('/:id/shares/:userId', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
@@ -500,7 +506,7 @@ router.put('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
   
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -517,7 +523,7 @@ router.delete('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
   
-  if (req.user.role !== 'admin' && prototype.created_by !== req.user.id) {
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -571,6 +577,8 @@ router.get('/:id/readme', requireAuth, (req, res) => {
   res.json({ success: true, data: { ...readme, html } });
 });
 
+// ========== 系统管理 API ==========
+
 // 分类API
 router.get('/categories/list', requireAuth, (req, res) => {
   res.json({ success: true, data: getCategories() });
@@ -590,6 +598,58 @@ router.post('/categories', requireAuth, requireRole(['admin']), (req, res) => {
     }
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// 更新分类（仅admin）
+router.put('/categories/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const categoryId = parseInt(req.params.id, 10);
+  const category = getCategoryById(categoryId);
+  if (!category) {
+    return res.status(404).json({ success: false, message: '分类不存在' });
+  }
+  const { name, description } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, message: '名称不能为空' });
+  }
+  try {
+    const updated = updateCategory(categoryId, { name: name.trim(), description });
+    res.json({ success: true, data: updated });
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ success: false, message: '分类名称已存在' });
+    }
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// 删除分类（仅admin）
+router.delete('/categories/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const categoryId = parseInt(req.params.id, 10);
+  const category = getCategoryById(categoryId);
+  if (!category) {
+    return res.status(404).json({ success: false, message: '分类不存在' });
+  }
+  deleteCategory(categoryId);
+  res.json({ success: true, message: '删除成功' });
+});
+
+// 转移原型归属者（仅admin）
+router.put('/:id/transfer', requireAuth, requireRole(['admin']), (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  const { new_owner_id } = req.body;
+  if (!new_owner_id) {
+    return res.status(400).json({ success: false, message: '请指定新的归属者' });
+  }
+  const { findUserById } = require('../services/db-users');
+  const newOwner = findUserById(new_owner_id);
+  if (!newOwner) {
+    return res.status(404).json({ success: false, message: '目标用户不存在' });
+  }
+  const updated = transferPrototype(prototype.id, new_owner_id);
+  res.json({ success: true, data: updated });
 });
 
 // ========== 评论反馈 ==========
@@ -639,7 +699,7 @@ router.delete('/:id/comments/:commentId', requireAuth, (req, res) => {
   if (!comment) {
     return res.status(404).json({ success: false, message: '评论不存在' });
   }
-  if (req.user.role !== 'admin' && comment.user_id !== req.user.id) {
+  if (!isAdmin(req) && comment.user_id !== req.user.id) {
     return res.status(403).json({ success: false, message: '无权删除该评论' });
   }
   deleteComment(commentId);
@@ -689,10 +749,10 @@ router.post('/:id/visit', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  const isAdmin = req.user.role === 'admin';
+  const admin = isAdmin(req);
   const isCreator = prototype.created_by === req.user.id;
   const isShared = getSharedUserIds(prototype.id).includes(req.user.id);
-  if (!isAdmin && !isCreator && !isShared) {
+  if (!admin && !isCreator && !isShared) {
     return res.status(403).json({ success: false, message: '无权访问该原型' });
   }
   recordVisit({

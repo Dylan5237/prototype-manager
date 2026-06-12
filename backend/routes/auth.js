@@ -3,6 +3,8 @@ const router = express.Router();
 const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
 const { createUser, findUserByUsername, findUserById, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
 
+const VALID_ROLES = ['admin', 'uploader', 'viewer'];
+
 // 登录
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
@@ -45,13 +47,15 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
     return res.status(400).json({ success: false, message: '密码至少4位' });
   }
   
-  const validRoles = ['admin', 'uploader', 'viewer'];
-  if (role && !validRoles.includes(role)) {
-    return res.status(400).json({ success: false, message: '无效的角色' });
+  // role 支持数组和单值
+  const roleArray = Array.isArray(role) ? role : [role || 'viewer'];
+  const invalidRole = roleArray.find(r => !VALID_ROLES.includes(r));
+  if (invalidRole) {
+    return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
   }
   
   try {
-    const user = createUser({ username, password, nickname, role: role || 'viewer' });
+    const user = createUser({ username, password, nickname, role: roleArray });
     res.json({ success: true, data: user });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
@@ -95,9 +99,13 @@ router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
     return res.status(404).json({ success: false, message: '用户不存在' });
   }
 
-  const validRoles = ['admin', 'uploader', 'viewer'];
-  if (role && !validRoles.includes(role)) {
-    return res.status(400).json({ success: false, message: '无效的角色' });
+  // role 支持数组和单值
+  if (role !== undefined) {
+    const roleArray = Array.isArray(role) ? role : [role];
+    const invalidRole = roleArray.find(r => !VALID_ROLES.includes(r));
+    if (invalidRole) {
+      return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
+    }
   }
 
   if (password && password.length < 4) {
@@ -105,7 +113,7 @@ router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
   }
 
   try {
-    const updated = updateUser(userId, { nickname, role, password });
+    const updated = updateUser(userId, { nickname, role: role || user.role, password });
     res.json({ success: true, data: updated });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -127,10 +135,11 @@ router.delete('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
     return res.status(404).json({ success: false, message: '用户不存在' });
   }
 
-  // 检查是否唯一的admin
+  // 检查是否唯一的admin（role 现在是数组）
   const allUsers = getAllUsers();
-  const adminCount = allUsers.filter(u => u.role === 'admin').length;
-  if (user.role === 'admin' && adminCount <= 1) {
+  const adminCount = allUsers.filter(u => Array.isArray(u.role) ? u.role.includes('admin') : u.role === 'admin').length;
+  const targetIsAdmin = Array.isArray(user.role) ? user.role.includes('admin') : user.role === 'admin';
+  if (targetIsAdmin && adminCount <= 1) {
     return res.status(400).json({ success: false, message: '系统中至少需要保留一个管理员' });
   }
 
