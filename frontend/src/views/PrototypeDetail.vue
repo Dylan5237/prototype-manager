@@ -7,15 +7,15 @@
           返回
         </el-button>
         <h1>{{ prototype.name }}</h1>
-        <el-button v-if="previewUrl" type="success" size="small" @click="openPreview">
+        <el-button v-if="previewUrl" type="success" class="preview-btn" @click="openPreview">
           <el-icon><View /></el-icon>
           预览
         </el-button>
-        <el-button v-else-if="prototype.github_url && !prototype.entry_file" disabled type="info" size="small" title="GitHub仓库尚未同步，请先点击同步获取文件">
+        <el-button v-else-if="prototype.github_url && !prototype.entry_file" disabled type="info" class="preview-btn" title="GitHub仓库尚未同步，请先点击同步获取文件">
           <el-icon><View /></el-icon>
           预览
         </el-button>
-        <el-button v-else-if="!prototype.entry_file" disabled type="info" size="small" title="尚未上传文件，请上传ZIP或同步GitHub">
+        <el-button v-else-if="!prototype.entry_file" disabled type="info" class="preview-btn" title="尚未上传文件，请上传ZIP或同步GitHub">
           <el-icon><View /></el-icon>
           预览
         </el-button>
@@ -33,7 +33,7 @@
           <el-icon><Refresh /></el-icon>
           同步GitHub
         </el-button>
-        <el-button v-if="canEdit" type="primary" @click="showUploadDialog = true">
+        <el-button v-if="canEdit" text @click="showUploadDialog = true">
           <el-icon><Upload /></el-icon>
           上传ZIP
         </el-button>
@@ -771,6 +771,7 @@ async function openShareDialog() {
   showShareDialog.value = true
   shareUsername.value = ''
   shareUserOptions.value = []
+  loadAllShareUsers()
   sharesLoading.value = true
   try {
     const res = await getPrototypeShares(route.params.id)
@@ -785,10 +786,33 @@ async function openShareDialog() {
 }
 
 async function handleShareUserSearch(keyword) {
-  if (!keyword || keyword.length < 1) {
-    shareUserOptions.value = []
-    return
+  shareLoading.value = true
+  try {
+    const res = await searchUsers(keyword || '')
+    if (res.data.success) {
+      shareUserOptions.value = (res.data.data || []).filter(u => u.id !== authStore.user.id)
+    }
+  } catch (e) {
+    console.error('搜索用户失败:', e)
+  } finally {
+    shareLoading.value = false
   }
+}
+
+// Load all users when dialog opens
+async function loadAllShareUsers() {
+  shareLoading.value = true
+  try {
+    const res = await searchUsers('')
+    if (res.data.success) {
+      shareUserOptions.value = (res.data.data || []).filter(u => u.id !== authStore.user.id)
+    }
+  } catch (e) {
+    console.error('加载用户列表失败:', e)
+  } finally {
+    shareLoading.value = false
+  }
+}
   shareLoading.value = true
   try {
     const res = await searchUsers(keyword)
@@ -887,6 +911,18 @@ onMounted(async () => {
 .header-left :deep(.el-button) {
   color: #4a5568;
   font-size: 14px;
+}
+
+.preview-btn {
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(103, 194, 58, 0.3);
+}
+
+.preview-btn:hover {
+  box-shadow: 0 4px 12px rgba(103, 194, 58, 0.4);
+  transform: translateY(-1px);
 }
 
 .header-left h1 {
