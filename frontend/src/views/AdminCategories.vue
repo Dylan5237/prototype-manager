@@ -1,13 +1,24 @@
 <template>
   <div class="admin-categories">
     <div class="page-toolbar">
+      <el-input
+        v-model="searchKeyword"
+        placeholder="搜索类别名称"
+        clearable
+        class="search-input"
+        @keyup.enter="loadData"
+      >
+        <template #suffix>
+          <el-icon @click="loadData" style="cursor:pointer"><Search /></el-icon>
+        </template>
+      </el-input>
       <el-button type="primary" @click="openCreateDialog">
         <el-icon><Plus /></el-icon>
         新建类别
       </el-button>
     </div>
 
-    <el-table :data="categories" v-loading="loading" stripe class="data-table">
+    <el-table :data="filteredCategories" v-loading="loading" stripe class="data-table">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="类别名称" width="200" />
       <el-table-column prop="description" label="描述" min-width="300">
@@ -69,14 +80,24 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '../api/prototypes'
-import { Plus, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
 
 const categories = ref([])
 const loading = ref(false)
 const submitting = ref(false)
+const searchKeyword = ref('')
+
+const filteredCategories = computed(() => {
+  if (!searchKeyword.value) return categories.value
+  const kw = searchKeyword.value.toLowerCase()
+  return categories.value.filter(c =>
+    (c.name && c.name.toLowerCase().includes(kw)) ||
+    (c.description && c.description.toLowerCase().includes(kw))
+  )
+})
 
 /* ========== 新建 ========== */
 const showCreateDialog = ref(false)
@@ -199,9 +220,14 @@ onMounted(loadData)
 
 .page-toolbar {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
+  gap: 16px;
+}
+
+.search-input {
+  width: 260px;
 }
 
 .data-table {

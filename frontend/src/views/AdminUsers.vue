@@ -1,10 +1,6 @@
 <template>
   <div class="admin-users">
     <div class="page-toolbar">
-      <el-button type="primary" @click="openCreateDialog">
-        <el-icon><Plus /></el-icon>
-        新建用户
-      </el-button>
       <el-input
         v-model="searchKeyword"
         placeholder="搜索账号或昵称"
@@ -16,6 +12,10 @@
           <el-icon @click="handleSearch" style="cursor:pointer"><Search /></el-icon>
         </template>
       </el-input>
+      <el-button type="primary" @click="openCreateDialog">
+        <el-icon><Plus /></el-icon>
+        新建用户
+      </el-button>
     </div>
 
     <el-table :data="filteredUsers" v-loading="loading" stripe class="data-table">
