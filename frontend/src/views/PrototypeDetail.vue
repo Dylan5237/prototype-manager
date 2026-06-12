@@ -813,18 +813,6 @@ async function loadAllShareUsers() {
     shareLoading.value = false
   }
 }
-  shareLoading.value = true
-  try {
-    const res = await searchUsers(keyword)
-    if (res.data.success) {
-      shareUserOptions.value = (res.data.data || []).filter(u => u.id !== authStore.user.id)
-    }
-  } catch (e) {
-    console.error('搜索用户失败:', e)
-  } finally {
-    shareLoading.value = false
-  }
-}
 
 async function handleShare() {
   if (!shareUsername.value) {
