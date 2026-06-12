@@ -15,26 +15,22 @@ function canAccessPrototype(prototype, user) {
 }
 
 // 通用的HTML处理函数：注入<base>标签并将绝对路径转为相对路径
-// token 会附加到 <base> 的 href 上，使浏览器请求子资源时自动携带 token
-function processHtml(content, basePath, token) {
+function processHtml(content, basePath) {
   // 将本地绝对路径转为相对路径，使<base>标签生效
   // 不碰 // 或 http:// https://
   content = content.replace(/(src|href|content)=(["'])\/([^\/][^"']*)\2/g, '$1=$2$3$2');
 
-  // 构建带 token 的 base href，确保 JS/CSS 等子资源请求能通过 requireAuth
-  const baseHref = token ? `${basePath}?token=${token}` : basePath;
-
   // 注入 <base> 标签到 <head> 中
   if (content.includes('<head>')) {
-    content = content.replace('<head>', `<head>\n  <base href="${baseHref}">`);
+    content = content.replace('<head>', `<head>\n  <base href="${basePath}">`);
   } else if (content.includes('<HEAD>')) {
-    content = content.replace('<HEAD>', `<HEAD>\n  <base href="${baseHref}">`);
+    content = content.replace('<HEAD>', `<HEAD>\n  <base href="${basePath}">`);
   }
 
   return content;
 }
 
-// 历史版本预览HTML
+// 历史版本预览HTML（需要认证）
 router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
@@ -61,7 +57,7 @@ router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
   const basePath = `/preview/${prototype.id}/versions/${req.params.v}/${dirPart}`;
-  content = processHtml(content, basePath, req.query.token);
+  content = processHtml(content, basePath);
 
   // 记录访问
   recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
@@ -70,14 +66,11 @@ router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
   res.send(content);
 });
 
-// 历史版本静态资源
-router.use('/:id/versions/:v', requireAuth, (req, res, next) => {
+// 历史版本静态资源（不需要认证，HTML入口已校验权限）
+router.use('/:id/versions/:v', (req, res, next) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).send('原型不存在');
-  }
-  if (!canAccessPrototype(prototype, req.user)) {
-    return res.status(403).send('无权访问该原型');
   }
   const versionDir = path.join(__dirname, '../repos', prototype.id, 'versions', req.params.v);
   if (!fs.existsSync(versionDir)) {
@@ -86,7 +79,7 @@ router.use('/:id/versions/:v', requireAuth, (req, res, next) => {
   express.static(versionDir)(req, res, next);
 });
 
-// 当前版本预览HTML
+// 当前版本预览HTML（需要认证）
 router.get('/:id/*.html', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
@@ -113,7 +106,7 @@ router.get('/:id/*.html', requireAuth, (req, res) => {
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? fileDir + '/' : '';
   const basePath = `/preview/${prototype.id}/${dirPart}`;
-  content = processHtml(content, basePath, req.query.token);
+  content = processHtml(content, basePath);
 
   // 记录访问
   recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
@@ -122,14 +115,11 @@ router.get('/:id/*.html', requireAuth, (req, res) => {
   res.send(content);
 });
 
-// 其他静态文件直接服务（JS/CSS/图片等）
-router.use('/:id', requireAuth, (req, res, next) => {
+// 其他静态文件直接服务（不需要认证，HTML入口已校验权限）
+router.use('/:id', (req, res, next) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).send('原型不存在');
-  }
-  if (!canAccessPrototype(prototype, req.user)) {
-    return res.status(403).send('无权访问该原型');
   }
   express.static(path.join(__dirname, '../repos', prototype.id))(req, res, next);
 });
