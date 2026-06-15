@@ -13,10 +13,18 @@
         text-color="#4a5568"
         active-text-color="#1a202c"
       >
-        <el-menu-item index="/admin/users">
-          <el-icon><User /></el-icon>
-          <span class="menu-text">用户管理</span>
-        </el-menu-item>
+        <el-sub-menu index="/admin/users">
+          <template #title>
+            <el-icon><User /></el-icon>
+            <span class="menu-text">用户管理</span>
+          </template>
+          <el-menu-item index="/admin/users">
+            <span class="menu-text">用户列表</span>
+          </el-menu-item>
+          <el-menu-item index="/admin/groups">
+            <span class="menu-text">用户组管理</span>
+          </el-menu-item>
+        </el-sub-menu>
         <el-menu-item index="/admin/distribution">
           <el-icon><Promotion /></el-icon>
           <span class="menu-text">原型分发</span>
@@ -24,10 +32,6 @@
         <el-menu-item index="/admin/categories">
           <el-icon><Collection /></el-icon>
           <span class="menu-text">类别管理</span>
-        </el-menu-item>
-        <el-menu-item index="/admin/groups">
-          <el-icon><UserFilled /></el-icon>
-          <span class="menu-text">用户组管理</span>
         </el-menu-item>
       </el-menu>
     </aside>
@@ -40,7 +44,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Setting, User, Promotion, Collection, UserFilled } from '@element-plus/icons-vue'
+import { Setting, User, Promotion, Collection } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)

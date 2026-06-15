@@ -48,7 +48,7 @@
     </el-table>
 
     <!-- 新建/编辑用户组弹窗 -->
-    <el-dialog v-model="showDialog" :title="isEdit ? '编辑用户组' : '新建用户组'" width="520px" destroy-on-close>
+    <el-dialog v-model="showDialog" :title="isEdit ? '编辑用户组' : '新建用户组'" width="640px" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="组名称" prop="name">
           <el-input v-model="form.name" placeholder="如：天宫后端产品" />
@@ -57,21 +57,16 @@
           <el-input v-model="form.description" type="textarea" :rows="2" placeholder="简要说明该组用途" />
         </el-form-item>
         <el-form-item label="成员" prop="memberIds">
-          <el-select
+          <el-transfer
             v-model="form.memberIds"
-            multiple
+            :data="userTransferData"
+            :titles="['全部用户', '已选成员']"
+            :button-texts="['移除', '添加']"
             filterable
-            placeholder="选择组成员"
-            style="width:100%"
-            :loading="usersLoading"
-          >
-            <el-option
-              v-for="u in users"
-              :key="u.id"
-              :label="`${u.nickname || u.username} (${u.username})`"
-              :value="u.id"
-            />
-          </el-select>
+            :filter-method="filterUser"
+            filter-placeholder="搜索用户"
+            class="group-member-transfer"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -85,7 +80,7 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getGroups, createGroup, updateGroup, deleteGroup } from '../api/groups'
+import { getGroups, getGroup, createGroup, updateGroup, deleteGroup } from '../api/groups'
 import { getUsers } from '../api/auth'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
 
@@ -117,13 +112,23 @@ function openCreateDialog() {
   showDialog.value = true
 }
 
-function openEditDialog(row) {
+async function openEditDialog(row) {
   isEdit.value = true
+  // 列表接口只返回 member_count，编辑时需重新拉取详情以获取成员ID列表
+  let memberIds = []
+  try {
+    const res = await getGroup(row.id)
+    if (res.data.success) {
+      memberIds = res.data.data.member_ids || []
+    }
+  } catch (err) {
+    console.error('加载组详情失败', err)
+  }
   form.value = {
     id: row.id,
     name: row.name,
     description: row.description || '',
-    memberIds: row.member_ids || []
+    memberIds
   }
   showDialog.value = true
 }
@@ -169,6 +174,18 @@ async function handleDelete(row) {
       ElMessage.error(err.response?.data?.message || err.message || '删除失败')
     }
   }
+}
+
+const userTransferData = computed(() => {
+  return users.value.map(u => ({
+    key: u.id,
+    label: `${u.nickname || u.username} (${u.username})`,
+    disabled: false
+  }))
+})
+
+function filterUser(query, item) {
+  return item.label.toLowerCase().includes(query.toLowerCase())
 }
 
 const filteredGroups = computed(() => {
@@ -257,5 +274,23 @@ onMounted(() => {
 .table-actions {
   display: flex;
   gap: 8px;
+}
+
+.group-member-transfer {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.group-member-transfer :deep(.el-transfer-panel) {
+  width: 220px;
+}
+
+.group-member-transfer :deep(.el-transfer-panel__body) {
+  height: 280px;
+}
+
+.group-member-transfer :deep(.el-transfer-panel__list) {
+  height: 234px;
 }
 </style>
