@@ -6,6 +6,7 @@ import LoginView from '../views/LoginView.vue'
 import AdminUsers from '../views/AdminUsers.vue'
 import AdminDistribution from '../views/AdminDistribution.vue'
 import AdminCategories from '../views/AdminCategories.vue'
+import RecycleBinView from '../views/RecycleBinView.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
