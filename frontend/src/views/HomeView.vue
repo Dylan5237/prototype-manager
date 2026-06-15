@@ -96,8 +96,8 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype } from '../api/prototypes'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype, deletePrototype } from '../api/prototypes'
 import { getUsers } from '../api/auth'
 import { getCategories } from '../api/prototypes'
 import { Search, Plus, User, Loading, Delete } from '@element-plus/icons-vue'
@@ -190,6 +190,23 @@ async function loadCategories() {
 function openCreateDialog() {
   newPrototype.value = { name: '', description: '', category_ids: [] }
   showCreateDialog.value = true
+}
+
+async function handleCardCommand(command, p) {
+  if (command === 'delete') {
+    try {
+      await ElMessageBox.confirm(
+        '确定要将原型「' + p.name + '」移到回收站吗？',
+        '确认删除',
+        { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      )
+      await deletePrototype(p.id)
+      ElMessage.success('已移到回收站')
+      loadData()
+    } catch (e) {
+      if (e !== 'cancel') ElMessage.error('删除失败')
+    }
+  }
 }
 
 async function handleCreate() {
@@ -389,6 +406,23 @@ onMounted(() => {
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 6px;
+}
+
+.prototype-card .el-dropdown {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 10;
+}
+
+.prototype-card .el-dropdown .card-version {
+  position: static;
+  cursor: pointer;
+  user-select: none;
+}
+
+.prototype-card .el-dropdown .card-version:hover {
+  background: #3182ce;
 }
 
 .pagination-wrapper {
