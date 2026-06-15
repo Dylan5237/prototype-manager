@@ -54,7 +54,7 @@ const commentImageUpload = multer({
 });
 
 // 获取原型列表
-// scope: my（我创建的，默认）| shared（分享给我的）| all（管理员可选，全部）
+// scope: my（我创建的，默认）| shared（分享给我的）| all（全部可访问的原型：管理员为全部，普通用户为自己的+分享给我的）
 router.get('/', requireAuth, (req, res) => {
   const { keyword, category_id, scope } = req.query;
   const admin = isAdmin(req);
@@ -64,6 +64,9 @@ router.get('/', requireAuth, (req, res) => {
     prototypes = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id });
   } else if (scope === 'all' && admin) {
     prototypes = getPrototypes({ keyword, categoryId: category_id });
+  } else if (scope === 'all') {
+    // 普通用户查看全部：自己创建的 + 分享给我的
+    prototypes = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id });
   } else {
     // 默认返回自己创建的
     prototypes = getPrototypes({ keyword, categoryId: category_id, createdBy: req.user.id });

@@ -64,7 +64,7 @@
           <div class="card-footer">
             <span class="card-author">
               <el-icon><User /></el-icon>
-              {{ getAuthorName(p.created_by) }}
+              {{ p.creator_name || getAuthorName(p.created_by) }}
             </span>
             <span class="card-date">{{ formatDate(p.created_at) }}</span>
           </div>
@@ -157,8 +157,9 @@ function getAuthorName(userId) {
 const creators = computed(() => {
   const map = new Map()
   prototypes.value.forEach(p => {
+    const name = p.creator_name || getAuthorName(p.created_by)
     if (!map.has(p.created_by)) {
-      map.set(p.created_by, { id: p.created_by, name: getAuthorName(p.created_by) })
+      map.set(p.created_by, { id: p.created_by, name })
     }
   })
   return Array.from(map.values())

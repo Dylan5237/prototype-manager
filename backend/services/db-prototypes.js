@@ -1,6 +1,6 @@
 const { query, queryOne, run } = require('../database/db');
 
-function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
+function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy } = {}) {
   let sql = `
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
       (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
@@ -28,6 +28,10 @@ function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
   if (sharedTo) {
     sql += ` AND p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?)`;
     params.push(sharedTo);
+  }
+  if (accessibleBy) {
+    sql += ` AND (p.created_by = ? OR p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?))`;
+    params.push(accessibleBy, accessibleBy);
   }
 
   sql += ` AND p.deleted_at IS NULL ORDER BY p.updated_at DESC`;
