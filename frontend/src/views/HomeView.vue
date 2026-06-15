@@ -47,18 +47,16 @@
             <span class="card-date">{{ formatDate(p.created_at) }}</span>
           </div>
         </div>
-        <div class="card-version-wrapper" v-if="authStore.isAdmin || p.created_by === authStore.user.id" @click.stop>
-          <el-dropdown trigger="click" @command="(cmd) => handleCardCommand(cmd, p)">
-            <span class="card-version">v{{ p.version }}</span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item command="delete">
-                  <el-icon><Delete /></el-icon>删除
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
+        <el-dropdown v-if="authStore.isAdmin || p.created_by === authStore.user.id" trigger="click" @command="(cmd) => handleCardCommand(cmd, p)">
+          <span class="card-version" @click.stop>v{{ p.version }}</span>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="delete">
+                <el-icon><Delete /></el-icon>删除
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <span v-else class="card-version">v{{ p.version }}</span>
       </div>
     </div>
