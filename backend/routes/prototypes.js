@@ -72,6 +72,39 @@ router.get('/', requireAuth, (req, res) => {
   res.json({ success: true, data: prototypes });
 });
 
+// ========== 回收站 ==========
+
+// 获取回收站列表（仅admin）
+router.get('/recycle-bin', requireAuth, requireRole(['admin']), (req, res) => {
+  const prototypes = getRecycleBinPrototypes();
+  res.json({ success: true, data: prototypes });
+});
+
+// 恢复原型（admin或创建者）
+router.put('/recycle-bin/:id/restore', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+    return res.status(403).json({ success: false, message: '无权操作该原型' });
+  }
+  restorePrototype(req.params.id);
+  res.json({ success: true });
+});
+
+// 彻底删除（仅admin）
+router.delete('/recycle-bin/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  removeRepoDir(req.params.id);
+  hardDeletePrototype(req.params.id);
+  res.json({ success: true });
+});
+
+
 // 获取单个原型详情
 router.get('/:id', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
@@ -517,38 +550,6 @@ router.put('/:id', requireAuth, (req, res) => {
   res.json({ success: true, data: updated });
 });
 
-
-// ========== 回收站 ==========
-
-// 获取回收站列表（仅admin）
-router.get('/recycle-bin', requireAuth, requireRole(['admin']), (req, res) => {
-  const prototypes = getRecycleBinPrototypes();
-  res.json({ success: true, data: prototypes });
-});
-
-// 恢复原型（admin或创建者）
-router.put('/recycle-bin/:id/restore', requireAuth, (req, res) => {
-  const prototype = getPrototypeById(req.params.id);
-  if (!prototype) {
-    return res.status(404).json({ success: false, message: '原型不存在' });
-  }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
-    return res.status(403).json({ success: false, message: '无权操作该原型' });
-  }
-  restorePrototype(req.params.id);
-  res.json({ success: true });
-});
-
-// 彻底删除（仅admin）
-router.delete('/recycle-bin/:id', requireAuth, requireRole(['admin']), (req, res) => {
-  const prototype = getPrototypeById(req.params.id);
-  if (!prototype) {
-    return res.status(404).json({ success: false, message: '原型不存在' });
-  }
-  removeRepoDir(req.params.id);
-  hardDeletePrototype(req.params.id);
-  res.json({ success: true });
-});
 
 // 删除原型（软删除）
 router.delete('/:id', requireAuth, (req, res) => {
