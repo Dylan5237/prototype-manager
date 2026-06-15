@@ -40,7 +40,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Files, Document, User, Share } from '@element-plus/icons-vue'
+import { Files, Document, User, Share, Delete } from '@element-plus/icons-vue'
 
 import { useAuthStore } from '../stores/auth'
 
@@ -49,6 +49,7 @@ const route = useRoute()
 const router = useRouter()
 
 const activeMenu = computed(() => {
+  if (route.path === '/recycle-bin') return '/recycle-bin'
   const tab = route.query.tab
   if (tab === 'mine') return '/?tab=mine'
   if (tab === 'shared') return '/?tab=shared'

@@ -76,8 +76,12 @@ const fetchRecycleBin = async () => {
   loading.value = true
   try {
     const res = await getRecycleBin()
-    recycleBinList.value = res.data
+    console.log('[RecycleBin] API response:', JSON.stringify(res.data))
+    // 后端返回 { success: true, data: [...] }，axios 的 res.data 即该对象
+    const list = res.data?.data ?? res.data
+    recycleBinList.value = Array.isArray(list) ? list : []
   } catch (e) {
+    console.error('[RecycleBin] fetch error:', e.response?.status, e.response?.data || e.message)
     ElMessage.error('获取回收站列表失败')
   } finally {
     loading.value = false
