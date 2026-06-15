@@ -65,7 +65,7 @@ async function startServer() {
   });
   
   app.listen(PORT, () => {
-    console.log(`伏羲元构后端运行在 http://localhost:${PORT}`);
+    console.log(`伏羲平台后端运行在 http://localhost:${PORT}`);
   });
 }
 

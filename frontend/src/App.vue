@@ -8,7 +8,7 @@
             <img src="/favicon.svg" class="logo-img" alt="logo" />
             <div class="logo-text">
               <div class="logo-title-row">
-                <span class="logo-main">伏羲元构</span>
+                <span class="logo-main">伏羲平台</span>
                 <span class="beta-tag">beta</span>
               </div>
               <span class="logo-sub">AI 产出原型管理平台</span>

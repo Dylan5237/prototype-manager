@@ -118,6 +118,44 @@ const activeMenu = computed(() => route.path)
   margin-left: 4px;
 }
 
+/* 子菜单标题与一级菜单项保持同级视觉 */
+.sidebar-menu .el-sub-menu__title {
+  margin: 4px 10px;
+  border-radius: 8px;
+  height: 42px;
+  line-height: 42px;
+  font-size: 14px;
+  padding-left: 12px !important;
+  transition: all 0.2s ease;
+}
+
+.sidebar-menu .el-sub-menu__title:hover {
+  background: rgba(0, 0, 0, 0.04) !important;
+}
+
+.sidebar-menu .el-sub-menu.is-active > .el-sub-menu__title,
+.sidebar-menu .el-sub-menu.is-opened > .el-sub-menu__title {
+  font-weight: 600;
+}
+
+/* 子菜单展开内容 */
+.sidebar-menu .el-sub-menu .el-menu {
+  background: transparent !important;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item {
+  height: 36px;
+  line-height: 36px;
+  font-size: 13px;
+  padding-left: 40px !important;
+  margin: 2px 10px;
+  color: #64748b;
+}
+
+.sidebar-menu .el-sub-menu .el-menu-item.is-active {
+  color: #1a202c;
+}
+
 /* ========================================
    右侧内容区
    ======================================== */

@@ -21,7 +21,7 @@
               <polyline points="2 12 12 17 22 12"/>
             </svg>
           </div>
-          <h1>伏羲元构</h1>
+          <h1>伏羲平台</h1>
           <p class="subtitle">AI 驱动原型管理平台</p>
         </div>
 
