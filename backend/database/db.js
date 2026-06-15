@@ -206,17 +206,6 @@ function createTables() {
       UNIQUE(group_id, user_id)
     )
   `);
-
-  // 插入默认分类
-  const defaultCategories = ['药品管理', '版本控制', '权限系统', '业务流程', '数据看板'];
-  defaultCategories.forEach(name => {
-    try {
-      db.run(
-        `INSERT OR IGNORE INTO categories (name, description, created_at) VALUES (?, ?, ?)`,
-        [name, '', new Date().toISOString()]
-      );
-    } catch (e) {}
-  });
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式
