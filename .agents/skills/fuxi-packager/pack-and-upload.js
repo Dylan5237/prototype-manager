@@ -238,13 +238,14 @@ function generateVersionNote(projectPath) {
   return '自动上传更新';
 }
 
-async function uploadZip(token, prototypeId, zipPath, versionNote) {
+async function uploadZip(token, prototypeId, zipPath, versionNote, versionType) {
   const zipData = fs.readFileSync(zipPath);
   const boundary = '----FormBoundary' + Date.now();
   const body = Buffer.concat([
     Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${path.basename(zipPath)}"\r\nContent-Type: application/zip\r\n\r\n`),
     zipData,
     Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="versionNote"\r\n\r\n${versionNote}`),
+    Buffer.from(`\r\n--${boundary}\r\nContent-Disposition: form-data; name="versionType"\r\n\r\n${versionType || 'patch'}`),
     Buffer.from(`\r\n--${boundary}--\r\n`)
   ]);
 
@@ -423,7 +424,7 @@ function packProject(projectPath, outputPath) {
 async function main() {
   const args = process.argv.slice(2);
   if (args.length < 1) {
-    console.log('用法: node pack-and-upload.js <项目路径> [原型名称] [描述] [版本更新说明]');
+    console.log('用法: node pack-and-upload.js <项目路径> [原型名称] [描述] [版本更新说明] [versionType]');
     console.log('示例: node pack-and-upload.js AuthComponent "权限校验原型" "基于Vue3的权限管理" "修复登录页样式"');
     process.exit(1);
   }
@@ -432,6 +433,7 @@ async function main() {
   const prototypeName = args[1] || path.basename(path.resolve(projectPath));
   const description = args[2] || '';
   const providedVersionNote = args[3] || '';
+  const versionType = args[4] || 'patch';
   const zipName = `fuxi-upload-${Date.now()}.zip`;
   const zipPath = path.join(os.tmpdir(), zipName);
 
@@ -468,7 +470,7 @@ async function main() {
 
   // 7. 上传
   console.log('[STEP 5/5] 上传ZIP...');
-  await uploadZip(token, prototypeId, zipPath, versionNote);
+  await uploadZip(token, prototypeId, zipPath, versionNote, versionType);
 
   // 8. 验证README
   await checkReadme(token, prototypeId);

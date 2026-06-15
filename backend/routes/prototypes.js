@@ -211,7 +211,8 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
           syncSource: prototype.sync_status === 'uploaded' || prototype.sync_status === 'success' ? 'upload' : 'initial',
           createdBy: prototype.created_by,
           sizeKb: currentSize,
-          note: req.body.versionNote.trim()
+          note: req.body.versionNote.trim(),
+          versionType: req.body.versionType
         });
       }
       // 备份versions目录，防止removeRepoDir删除它
@@ -328,7 +329,8 @@ router.post('/:id/sync', requireAuth, async (req, res) => {
         syncSource: 'github',
         createdBy: req.user.id,
         sizeKb: currentSize,
-        note: req.body.versionNote.trim()
+        note: req.body.versionNote.trim(),
+        versionType: req.body.versionType
       });
     }
     // 备份versions目录，防止syncFromGitHub中的removeRepoDir删除它

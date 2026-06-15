@@ -4,7 +4,8 @@ function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
   let sql = `
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
       (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
-      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version,
+      (SELECT version_label FROM prototype_versions WHERE prototype_id = p.id ORDER BY version_number DESC LIMIT 1) as version_label
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
@@ -37,7 +38,8 @@ function getPrototypeById(id) {
   const prototype = queryOne(`
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
       (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
-      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version,
+      (SELECT version_label FROM prototype_versions WHERE prototype_id = p.id ORDER BY version_number DESC LIMIT 1) as version_label
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
@@ -98,7 +100,8 @@ function softDeletePrototype(id) {
 function getRecycleBinPrototypes() {
   return query(`
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
-      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version,
+      (SELECT version_label FROM prototype_versions WHERE prototype_id = p.id ORDER BY version_number DESC LIMIT 1) as version_label
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
@@ -176,12 +179,33 @@ function getVersions(prototypeId) {
   `, [prototypeId]);
 }
 
-function createVersion({ prototypeId, versionNumber, entryFile, syncSource, createdBy, sizeKb, note }) {
+// SemVer: 根据当前版本标签和升级类型计算新版本号
+function bumpVersion(currentLabel, bumpType) {
+  const parts = currentLabel
+    ? currentLabel.replace(/^v/, '').split('.').map(Number)
+    : [0, 0, 0];
+  const [major, minor, patch] = parts.map(n => isNaN(n) ? 0 : n);
+  switch (bumpType) {
+    case 'major': return `${major + 1}.0.0`;
+    case 'minor': return `${major}.${minor + 1}.0`;
+    case 'patch': return `${major}.${minor}.${patch + 1}`;
+    default: return `${major}.${minor}.${patch + 1}`;
+  }
+}
+
+function createVersion({ prototypeId, versionNumber, entryFile, syncSource, createdBy, sizeKb, note, versionType }) {
   const now = new Date().toISOString();
+  // 计算 SemVer 标签
+  const prev = queryOne(
+    `SELECT version_label FROM prototype_versions WHERE prototype_id = ? ORDER BY version_number DESC LIMIT 1`,
+    [prototypeId]
+  );
+  const currentLabel = prev ? prev.version_label || '' : '';
+  const versionLabel = versionNumber === 1 ? '1.0.0' : bumpVersion(currentLabel, versionType);
   run(`
-    INSERT INTO prototype_versions (prototype_id, version_number, entry_file, sync_source, created_by, size_kb, note, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `, [prototypeId, versionNumber, entryFile || '', syncSource || 'upload', createdBy || null, sizeKb || 0, note || '', now]);
+    INSERT INTO prototype_versions (prototype_id, version_number, entry_file, sync_source, created_by, size_kb, note, version_label, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [prototypeId, versionNumber, entryFile || '', syncSource || 'upload', createdBy || null, sizeKb || 0, note || '', versionLabel, now]);
   return queryOne(`SELECT * FROM prototype_versions WHERE prototype_id = ? AND version_number = ?`, [prototypeId, versionNumber]);
 }
 
@@ -298,6 +322,7 @@ module.exports = {
   deleteVersion,
   updateVersionNote,
   getLatestVersionNumber,
+  bumpVersion,
   getPrototypeShares,
   getSharedUserIds,
   addPrototypeShare,

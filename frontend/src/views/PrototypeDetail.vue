@@ -91,7 +91,7 @@
           <el-table :data="versions" v-loading="versionLoading" size="small" style="width: 100%">
             <el-table-column prop="version_number" label="版本号" width="80">
               <template #default="{ row }">
-                <el-tag size="small" type="primary">v{{ row.version_number }}</el-tag>
+                <el-tag size="small" type="primary">{{ row.version_label ? 'v' + row.version_label : 'v' + row.version_number }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column prop="created_at" label="时间" width="160">
@@ -440,6 +440,10 @@ async function loadVersions() {
   try {
     const res = await getVersions(route.params.id)
     versions.value = res.data.data || []
+    // 同步当前版本标签到原型信息
+    if (versions.value.length > 0 && versions.value[0].version_label) {
+      prototype.value.version_label = versions.value[0].version_label;
+    }
   } catch (err) {
     versions.value = []
   } finally {

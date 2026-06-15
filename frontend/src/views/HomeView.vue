@@ -48,7 +48,7 @@
           </div>
         </div>
         <el-dropdown v-if="authStore.isAdmin || p.created_by === authStore.user.id" trigger="click" @command="(cmd) => handleCardCommand(cmd, p)">
-          <span class="card-version" @click.stop>v{{ p.version }}</span>
+          <span class="card-version" @click.stop>v{{ p.version_label || p.version }}</span>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="delete">
@@ -57,7 +57,7 @@
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <span v-else class="card-version">v{{ p.version }}</span>
+        <span v-else class="card-version">v{{ p.version_label || p.version }}</span>
       </div>
     </div>
 
