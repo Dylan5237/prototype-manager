@@ -48,6 +48,18 @@
           </div>
         </div>
         <span class="card-version">v{{ p.version }}</span>
+        <div class="card-action-menu" v-if="authStore.isAdmin || p.created_by === authStore.user.id" @click.stop>
+          <el-dropdown trigger="click" @command="(cmd) => handleCardCommand(cmd, p)">
+            <el-icon class="card-action-btn"><MoreFilled /></el-icon>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="delete">
+                  <el-icon><Delete /></el-icon>删除
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </div>
     </div>
 
@@ -90,7 +102,7 @@ import { ElMessage } from 'element-plus'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype } from '../api/prototypes'
 import { getUsers } from '../api/auth'
 import { getCategories } from '../api/prototypes'
-import { Search, Plus, User, Loading } from '@element-plus/icons-vue'
+import { Search, Plus, User, Loading, MoreFilled, Delete } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()

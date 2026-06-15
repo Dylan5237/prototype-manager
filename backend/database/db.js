@@ -104,6 +104,9 @@ function createTables() {
   try {
     db.run(`ALTER TABLE prototype_versions ADD COLUMN note TEXT`);
   } catch (e) { /* 字段已存在 */ }
+  try {
+    db.run(`ALTER TABLE prototypes ADD COLUMN deleted_at TEXT DEFAULT NULL`);
+  } catch (e) { /* 字段已存在 */ }
   
   // readme_cache 表
   db.run(`

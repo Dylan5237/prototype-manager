@@ -28,7 +28,7 @@ function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
     params.push(sharedTo);
   }
 
-  sql += ` ORDER BY p.updated_at DESC`;
+  sql += ` AND p.deleted_at IS NULL ORDER BY p.updated_at DESC`;
   return query(sql, params);
 }
 
@@ -83,6 +83,35 @@ function updatePrototype(id, { name, description, githubUrl, categoryId, entryFi
 }
 
 function deletePrototype(id) {
+  run(`DELETE FROM prototypes WHERE id = ?`, [id]);
+}
+
+// 软删除：设置 deleted_at
+function softDeletePrototype(id) {
+  const now = new Date().toISOString();
+  run(`UPDATE prototypes SET deleted_at = ?, updated_at = ? WHERE id = ?`, [now, now, id]);
+}
+
+// 获取回收站列表
+function getRecycleBinPrototypes() {
+  return query(`
+    SELECT p.*, c.name as category_name, u.nickname as creator_name
+    FROM prototypes p
+    LEFT JOIN categories c ON p.category_id = c.id
+    LEFT JOIN users u ON p.created_by = u.id
+    WHERE p.deleted_at IS NOT NULL
+    ORDER BY p.deleted_at DESC
+  `);
+}
+
+// 恢复原型
+function restorePrototype(id) {
+  const now = new Date().toISOString();
+  run(`UPDATE prototypes SET deleted_at = NULL, updated_at = ? WHERE id = ?`, [now, id]);
+}
+
+// 彻底删除（硬删除）
+function hardDeletePrototype(id) {
   run(`DELETE FROM prototypes WHERE id = ?`, [id]);
 }
 
@@ -247,6 +276,10 @@ module.exports = {
   createPrototype,
   updatePrototype,
   deletePrototype,
+  softDeletePrototype,
+  getRecycleBinPrototypes,
+  restorePrototype,
+  hardDeletePrototype,
   setPrototypeTags,
   transferPrototype,
   getCategories,

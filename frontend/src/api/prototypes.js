@@ -28,6 +28,19 @@ export function deletePrototype(id) {
   return api.delete(`/prototypes/${id}`)
 }
 
+// 回收站相关
+export function getRecycleBin() {
+  return api.get('/prototypes/recycle-bin')
+}
+
+export function restorePrototype(id) {
+  return api.put(`/prototypes/recycle-bin/${id}/restore`)
+}
+
+export function hardDeletePrototype(id) {
+  return api.delete(`/prototypes/recycle-bin/${id}`)
+}
+
 export function uploadZip(id, file, versionNote = '') {
   const formData = new FormData()
   formData.append('file', file)

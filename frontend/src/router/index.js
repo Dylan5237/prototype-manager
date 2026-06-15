@@ -13,7 +13,8 @@ const routes = [
   { path: '/prototype/:id', name: 'prototype', component: PrototypeDetail },
   { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
-  { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } }
+  { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },
+  { path: '/recycle-bin', name: 'recycle-bin', component: RecycleBinView, meta: { requireAdmin: true } }
 ]
 
 const router = createRouter({

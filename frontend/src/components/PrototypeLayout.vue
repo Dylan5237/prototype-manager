@@ -25,6 +25,10 @@
           <el-icon><Share /></el-icon>
           <span class="menu-text">分享给我</span>
         </el-menu-item>
+        <el-menu-item v-if="authStore.isAdmin" index="/recycle-bin">
+          <el-icon><Delete /></el-icon>
+          <span class="menu-text">回收站</span>
+        </el-menu-item>
       </el-menu>
     </aside>
     <main class="prototype-content">
@@ -38,6 +42,9 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Files, Document, User, Share } from '@element-plus/icons-vue'
 
+import { useAuthStore } from '../stores/auth'
+
+const authStore = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
