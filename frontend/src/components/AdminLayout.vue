@@ -102,6 +102,7 @@ const activeMenu = computed(() => route.path)
   height: 42px;
   line-height: 42px;
   font-size: 14px;
+  padding-left: 12px !important;
   transition: all 0.2s ease;
 }
 
@@ -118,7 +119,7 @@ const activeMenu = computed(() => route.path)
   margin-left: 4px;
 }
 
-/* 子菜单标题与一级菜单项保持同级视觉 */
+/* 子菜单标题与一级菜单项保持同级视觉，左对齐 */
 .sidebar-menu .el-sub-menu__title {
   margin: 4px 10px;
   border-radius: 8px;
@@ -126,6 +127,7 @@ const activeMenu = computed(() => route.path)
   line-height: 42px;
   font-size: 14px;
   padding-left: 12px !important;
+  padding-right: 12px !important;
   transition: all 0.2s ease;
 }
 
