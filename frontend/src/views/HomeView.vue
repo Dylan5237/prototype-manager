@@ -23,16 +23,38 @@
       </div>
     </div>
 
+    <!-- 归属者筛选标签 -->
+    <div v-if="creators.length > 0" class="creator-filter-bar">
+      <span class="filter-label">归属者：</span>
+      <el-tag
+        v-for="c in creators"
+        :key="c.id"
+        :type="filterCreator === c.id ? '' : 'info'"
+        :effect="filterCreator === c.id ? 'dark' : 'light'"
+        size="small"
+        class="creator-tag"
+        @click="toggleCreator(c.id)"
+      >{{ c.name }}</el-tag>
+      <el-tag
+        v-if="filterCreator !== null"
+        type="info"
+        size="small"
+        effect="plain"
+        class="creator-tag creator-clear"
+        @click="filterCreator = null"
+      > 清除</el-tag>
+    </div>
+
     <div v-if="loading" class="loading-wrapper">
       <el-icon class="is-loading" :size="32"><Loading /></el-icon>
     </div>
 
-    <div v-else-if="prototypes.length === 0" class="empty-wrapper">
-      <el-empty description="暂无原型" />
+    <div v-else-if="filteredPrototypes.length === 0" class="empty-wrapper">
+      <el-empty :description="creators.length > 0 ? '该归属者暂无原型' : '暂无原型'" />
     </div>
 
     <div v-else class="prototype-grid">
-      <div v-for="p in prototypes" :key="p.id" class="prototype-card" @click="$router.push(`/prototype/${p.id}`)">
+      <div v-for="p in filteredPrototypes" :key="p.id" class="prototype-card" @click="$router.push(`/prototype/${p.id}`)">
         <div class="card-body">
           <h3 class="card-title">{{ p.name }}</h3>
           <p class="card-desc">{{ p.description || '暂无描述' }}</p>
@@ -111,6 +133,7 @@ const users = ref([])
 const categories = ref([])
 const searchKeyword = ref('')
 const filterCategory = ref(null)
+const filterCreator = ref(null)
 const currentPage = ref(1)
 const pageSize = 8
 const total = ref(0)
@@ -128,6 +151,27 @@ const tabTitle = computed(() => tabTitleMap[activeTab.value] || '全部原型')
 function getAuthorName(userId) {
   const u = users.value.find(u => u.id === userId)
   return u ? (u.nickname || u.username) : `用户${userId}`
+}
+
+// 从当前列表提取唯一归属者
+const creators = computed(() => {
+  const map = new Map()
+  prototypes.value.forEach(p => {
+    if (!map.has(p.created_by)) {
+      map.set(p.created_by, { id: p.created_by, name: getAuthorName(p.created_by) })
+    }
+  })
+  return Array.from(map.values())
+})
+
+// 筛选后的原型列表
+const filteredPrototypes = computed(() => {
+  if (filterCreator.value === null) return prototypes.value
+  return prototypes.value.filter(p => p.created_by === filterCreator.value)
+})
+
+function toggleCreator(id) {
+  filterCreator.value = filterCreator.value === id ? null : id
 }
 
 function getProtoCategories(prototype) {
@@ -162,6 +206,10 @@ async function loadData() {
     })
     prototypes.value = res.data.data || []
     total.value = res.data.total || 0
+    // 如果当前筛选的归属者不在结果中，自动清除
+    if (filterCreator.value && !prototypes.value.some(p => p.created_by === filterCreator.value)) {
+      filterCreator.value = null
+    }
   } catch (err) {
     ElMessage.error('加载失败')
   } finally {
@@ -229,6 +277,7 @@ async function handleCreate() {
 
 watch(() => route.query.tab, () => {
   currentPage.value = 1
+  filterCreator.value = null
   loadData()
 })
 
@@ -284,6 +333,35 @@ onMounted(() => {
 
 .category-select {
   width: 150px;
+}
+
+/* 归属者筛选标签栏 */
+.creator-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-size: 13px;
+  color: #718096;
+  margin-right: 2px;
+}
+
+.creator-tag {
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+}
+
+.creator-tag:hover {
+  transform: translateY(-1px);
+}
+
+.creator-clear {
+  margin-left: 4px;
 }
 
 .loading-wrapper,
