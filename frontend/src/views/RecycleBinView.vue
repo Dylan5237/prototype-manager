@@ -65,7 +65,7 @@ import { Refresh, RefreshLeft, Delete } from '@element-plus/icons-vue'
 import PrototypeLayout from '@/components/PrototypeLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getRecycleBin, restorePrototype, hardDeletePrototype } from '@/api/prototypes'
-import { getUsers } from '@/api/admin'
+import { getUsers } from '@/api/auth'
 
 const authStore = useAuthStore()
 const recycleBinList = ref([])
