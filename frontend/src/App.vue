@@ -11,7 +11,7 @@
                 <span class="logo-main">伏羲平台</span>
                 <span class="beta-tag">beta</span>
               </div>
-              <span class="logo-sub">AI 产出原型管理平台</span>
+              <span class="logo-sub">AI 原型管理平台</span>
             </div>
           </div>
           <div class="nav" v-if="authStore.isLoggedIn">

@@ -22,7 +22,7 @@
             </svg>
           </div>
           <h1>伏羲平台</h1>
-          <p class="subtitle">AI 驱动原型管理平台</p>
+          <p class="subtitle">AI 原型管理平台</p>
         </div>
 
         <el-form

@@ -1,7 +1,7 @@
 {
   "name": "nvwa-backend",
   "version": "1.0.0",
-  "description": "伏羲平台 — AI产出原型管理平台后端",
+  "description": "伏羲平台 — AI 原型管理平台后端",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
