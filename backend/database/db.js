@@ -110,6 +110,9 @@ function createTables() {
   try {
     db.run(`ALTER TABLE prototype_versions ADD COLUMN version_label TEXT DEFAULT ''`);
   } catch (e) { /* 字段已存在 */ }
+
+  // 迁移：为旧数据补上 version_label
+  migrateVersionLabels();
   
   // readme_cache 表
   db.run(`
@@ -263,6 +266,31 @@ function queryOne(sql, params = []) {
   }
   stmt.free();
   return result;
+}
+
+// 为旧版本数据补上 version_label（version_number=1 → 1.0.0，version_number=N → 1.0.(N-1)）
+function migrateVersionLabels() {
+  try {
+    const stmt = db.prepare(`SELECT id, version_number FROM prototype_versions WHERE version_label = '' OR version_label IS NULL`);
+    const toMigrate = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      toMigrate.push(row);
+    }
+    stmt.free();
+    
+    if (toMigrate.length === 0) return;
+    
+    toMigrate.forEach(({ id, version_number }) => {
+      const label = version_number === 1 ? '1.0.0' : `1.0.${version_number - 1}`;
+      db.run(`UPDATE prototype_versions SET version_label = ? WHERE id = ?`, [label, id]);
+    });
+    
+    saveDatabase();
+    console.log(`[迁移] 已为 ${toMigrate.length} 个旧版本补上 version_label`);
+  } catch (e) {
+    // 表可能还不存在，忽略
+  }
 }
 
 module.exports = {
