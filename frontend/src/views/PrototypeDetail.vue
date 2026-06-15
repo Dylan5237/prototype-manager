@@ -306,6 +306,22 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="或用户组">
+          <el-select
+            v-model="shareGroupId"
+            clearable
+            placeholder="选择用户组"
+            :loading="groupsLoading"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="g in groupOptions"
+              :key="g.id"
+              :label="`${g.name} (${g.member_count || 0}人)`"
+              :value="g.id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <div style="margin-top: 16px;">
         <div v-loading="sharesLoading">
@@ -324,7 +340,7 @@
       </div>
       <template #footer>
         <el-button @click="showShareDialog = false">关闭</el-button>
-        <el-button type="primary" @click="handleShare" :loading="shareLoading" :disabled="!shareUsername">分享</el-button>
+        <el-button type="primary" @click="handleShare" :loading="shareLoading" :disabled="!shareUsername && !shareGroupId">分享</el-button>
       </template>
     </el-dialog>
   </div>
@@ -336,6 +352,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, ChatDotSquare, ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
+import { getGroups } from '../api/groups'
 import {
   getPrototype, syncGitHub, uploadZip, getReadme, updatePrototype, getCategories,
   getVersions, rollbackVersion, deleteVersion, updateVersionNote,
@@ -384,6 +401,9 @@ const showShareDialog = ref(false)
 const shareUsername = ref('')
 const shareUserOptions = ref([])
 const shareLoading = ref(false)
+const shareGroupId = ref(null)
+const groupOptions = ref([])
+const groupsLoading = ref(false)
 const sharesList = ref([])
 const sharesLoading = ref(false)
 
@@ -774,8 +794,10 @@ function formatDateTime(dateStr) {
 async function openShareDialog() {
   showShareDialog.value = true
   shareUsername.value = ''
+  shareGroupId.value = null
   shareUserOptions.value = []
   loadAllShareUsers()
+  loadGroups()
   sharesLoading.value = true
   try {
     const res = await getPrototypeShares(route.params.id)
@@ -818,17 +840,33 @@ async function loadAllShareUsers() {
   }
 }
 
+async function loadGroups() {
+  groupsLoading.value = true
+  try {
+    const res = await getGroups()
+    if (res.data.success) {
+      groupOptions.value = res.data.data || []
+    }
+  } catch (e) {
+    console.error('加载用户组失败:', e)
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
 async function handleShare() {
-  if (!shareUsername.value) {
-    ElMessage.warning('请先搜索并选择用户')
+  if (!shareUsername.value && !shareGroupId.value) {
+    ElMessage.warning('请选择要分享的用户或用户组')
     return
   }
   shareLoading.value = true
   try {
-    const res = await sharePrototype(route.params.id, shareUsername.value)
+    const payload = shareGroupId.value ? { groupId: shareGroupId.value } : shareUsername.value
+    const res = await sharePrototype(route.params.id, payload)
     if (res.data.success) {
       ElMessage.success('分享成功')
       shareUsername.value = ''
+      shareGroupId.value = null
       shareUserOptions.value = []
       const sharesRes = await getPrototypeShares(route.params.id)
       if (sharesRes.data.success) {

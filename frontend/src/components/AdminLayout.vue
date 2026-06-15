@@ -25,6 +25,10 @@
           <el-icon><Collection /></el-icon>
           <span class="menu-text">类别管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/groups">
+          <el-icon><UserFilled /></el-icon>
+          <span class="menu-text">用户组管理</span>
+        </el-menu-item>
       </el-menu>
     </aside>
     <main class="admin-content">
@@ -36,7 +40,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Setting, User, Promotion, Collection } from '@element-plus/icons-vue'
+import { Setting, User, Promotion, Collection, UserFilled } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)

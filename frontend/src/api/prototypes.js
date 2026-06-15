@@ -107,8 +107,12 @@ export function getPrototypeShares(id) {
   return api.get(`/prototypes/${id}/shares`)
 }
 
-export function sharePrototype(id, username) {
-  return api.post(`/prototypes/${id}/shares`, { username })
+export function sharePrototype(id, payload) {
+  // 兼容旧用法：sharePrototype(id, username)
+  if (typeof payload === 'string') {
+    return api.post(`/prototypes/${id}/shares`, { username: payload })
+  }
+  return api.post(`/prototypes/${id}/shares`, payload)
 }
 
 export function unsharePrototype(id, userId) {

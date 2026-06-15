@@ -6,6 +6,7 @@ import LoginView from '../views/LoginView.vue'
 import AdminUsers from '../views/AdminUsers.vue'
 import AdminDistribution from '../views/AdminDistribution.vue'
 import AdminCategories from '../views/AdminCategories.vue'
+import AdminGroups from '../views/AdminGroups.vue'
 import RecycleBinView from '../views/RecycleBinView.vue'
 
 const routes = [
@@ -15,6 +16,7 @@ const routes = [
   { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
   { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },
+  { path: '/admin/groups', name: 'admin-groups', component: AdminGroups, meta: { requireAdmin: true } },
   { path: '/recycle-bin', name: 'recycle-bin', component: RecycleBinView, meta: { requireAdmin: true } }
 ]
 

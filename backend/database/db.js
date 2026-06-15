@@ -182,6 +182,31 @@ function createTables() {
   // 迁移：将 users.role 从单值字符串改为 JSON 数组
   migrateRoleToArray();
 
+  // 用户组表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      description TEXT,
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 用户组成员表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS user_group_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (group_id) REFERENCES user_groups(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(group_id, user_id)
+    )
+  `);
+
   // 插入默认分类
   const defaultCategories = ['药品管理', '版本控制', '权限系统', '业务流程', '数据看板'];
   defaultCategories.forEach(name => {

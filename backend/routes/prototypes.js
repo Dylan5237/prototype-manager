@@ -495,7 +495,7 @@ router.get('/:id/shares', requireAuth, (req, res) => {
   res.json({ success: true, data: shares });
 });
 
-// 分享原型给指定用户（支持 username 或 userId）
+// 分享原型给指定用户或用户组（支持 username、userId 或 groupId）
 router.post('/:id/shares', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
@@ -505,9 +505,29 @@ router.post('/:id/shares', requireAuth, (req, res) => {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
-  const { userId, username } = req.body;
+  const { userId, username, groupId } = req.body;
+
+  // 按用户组分享：把组内成员批量加入 prototype_shares
+  if (groupId) {
+    const { getGroupById } = require('../services/db-groups');
+    const group = getGroupById(parseInt(groupId, 10));
+    if (!group) {
+      return res.status(404).json({ success: false, message: '用户组不存在' });
+    }
+    if (!group.member_ids || group.member_ids.length === 0) {
+      return res.status(400).json({ success: false, message: '该用户组没有成员' });
+    }
+    group.member_ids.forEach(memberId => {
+      if (memberId !== req.user.id) {
+        addPrototypeShare(prototype.id, memberId);
+      }
+    });
+    const shares = getPrototypeShares(prototype.id);
+    return res.json({ success: true, data: shares });
+  }
+
   if (!userId && !username) {
-    return res.status(400).json({ success: false, message: '请提供用户ID或用户名' });
+    return res.status(400).json({ success: false, message: '请提供用户ID、用户名或用户组ID' });
   }
 
   const { findUserById, findUserByUsername } = require('../services/db-users');
