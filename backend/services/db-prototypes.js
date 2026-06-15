@@ -3,7 +3,8 @@ const { query, queryOne, run } = require('../database/db');
 function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
   let sql = `
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
-      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count
+      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
@@ -35,7 +36,8 @@ function getPrototypes({ keyword, categoryId, createdBy, sharedTo } = {}) {
 function getPrototypeById(id) {
   const prototype = queryOne(`
     SELECT p.*, c.name as category_name, u.nickname as creator_name,
-      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count
+      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
@@ -95,7 +97,8 @@ function softDeletePrototype(id) {
 // 获取回收站列表
 function getRecycleBinPrototypes() {
   return query(`
-    SELECT p.*, c.name as category_name, u.nickname as creator_name
+    SELECT p.*, c.name as category_name, u.nickname as creator_name,
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
