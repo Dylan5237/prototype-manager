@@ -16,6 +16,10 @@ export function getPrototype(id) {
   return api.get(`/prototypes/${id}`)
 }
 
+export function downloadPrototype(id) {
+  return api.get(`/prototypes/${id}/download`, { responseType: 'blob' })
+}
+
 export function createPrototype(data) {
   return api.post('/prototypes', data)
 }

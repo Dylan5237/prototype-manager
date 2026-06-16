@@ -11,11 +11,7 @@
           <el-icon><View /></el-icon>
           预览
         </el-button>
-        <el-button v-else-if="prototype.github_url && !prototype.entry_file" disabled type="info" class="preview-btn" title="GitHub仓库尚未同步，请先点击同步获取文件">
-          <el-icon><View /></el-icon>
-          预览
-        </el-button>
-        <el-button v-else-if="!prototype.entry_file" disabled type="info" class="preview-btn" title="尚未上传文件，请上传ZIP或同步GitHub">
+        <el-button v-else disabled type="info" class="preview-btn" title="原型文件尚未上传，请通过 Skill 上传">
           <el-icon><View /></el-icon>
           预览
         </el-button>
@@ -27,19 +23,15 @@
         </el-button>
         <el-button v-if="canEdit" text @click="openShareDialog">
           <el-icon><Share /></el-icon>
-          分享
+          协作
         </el-button>
         <el-button text @click="copyShareLink">
           <el-icon><Link /></el-icon>
           分享链接
         </el-button>
-        <el-button v-if="canEdit && prototype.github_url" @click="handleSync" :loading="syncing">
-          <el-icon><Refresh /></el-icon>
-          同步GitHub
-        </el-button>
-        <el-button v-if="canEdit" text @click="showUploadDialog = true">
-          <el-icon><Upload /></el-icon>
-          上传ZIP
+        <el-button text @click="handleDownload">
+          <el-icon><Download /></el-icon>
+          下载ZIP
         </el-button>
       </div>
     </div>
@@ -212,32 +204,6 @@
       </div>
     </div>
 
-    <!-- 上传弹窗 -->
-    <el-dialog v-model="showUploadDialog" title="上传ZIP包" width="500px">
-      <el-upload
-        drag
-        action="#"
-        :auto-upload="false"
-        :on-change="handleFileChange"
-        :limit="1"
-        accept=".zip"
-        ref="uploadRef"
-      >
-        <el-icon class="el-icon--upload"><Upload /></el-icon>
-        <div class="el-upload__text">拖拽文件到此处或 <em>点击上传</em></div>
-        <template #tip>
-          <div class="el-upload__tip">只支持zip格式，最大100MB。上传前当前版本将自动保存为历史版本。</div>
-        </template>
-      </el-upload>
-      <el-form-item label="版本描述" style="margin-top: 16px;" required>
-        <el-input v-model="versionNote" placeholder="描述本次变更内容（必填）" />
-      </el-form-item>
-      <template #footer>
-        <el-button @click="showUploadDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleUpload" :loading="uploading">上传</el-button>
-      </template>
-    </el-dialog>
-
     <!-- 编辑原型对话框 -->
     <el-dialog v-model="showEditDialog" title="编辑原型信息" width="500px">
       <el-form :model="editForm" label-width="80px">
@@ -246,9 +212,6 @@
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="editForm.description" type="textarea" :rows="3" placeholder="请输入原型描述" />
-        </el-form-item>
-        <el-form-item label="GitHub">
-          <el-input v-model="editForm.githubUrl" placeholder="https://github.com/..." />
         </el-form-item>
         <el-form-item label="分类">
           <el-select v-model="editForm.categoryId" placeholder="请选择分类" clearable style="width: 100%">
@@ -288,10 +251,10 @@
       </template>
     </el-dialog>
 
-    <!-- 分享原型对话框 -->
-    <el-dialog v-model="showShareDialog" title="分享原型" width="500px">
-      <el-form label-width="80px">
-        <el-form-item label="分享给">
+    <!-- 协作者对话框 -->
+    <el-dialog v-model="showShareDialog" title="协作成员" width="500px">
+      <el-form label-width="90px">
+        <el-form-item label="添加用户">
           <el-select
             v-model="shareUsername"
             filterable
@@ -329,7 +292,7 @@
       </el-form>
       <div style="margin-top: 16px;">
         <div v-loading="sharesLoading">
-          <p v-if="sharesList.length === 0" class="share-empty">尚未分享给任何人</p>
+          <p v-if="sharesList.length === 0" class="share-empty">暂无协作者</p>
           <el-tag
             v-for="s in sharesList"
             :key="s.user_id"
@@ -344,7 +307,7 @@
       </div>
       <template #footer>
         <el-button @click="showShareDialog = false">关闭</el-button>
-        <el-button type="primary" @click="handleShare" :loading="shareLoading" :disabled="!shareUsername && !shareGroupId">分享</el-button>
+        <el-button type="primary" @click="handleShare" :loading="shareLoading" :disabled="!shareUsername && !shareGroupId">添加</el-button>
       </template>
     </el-dialog>
   </div>
@@ -353,12 +316,12 @@
 import { ref, onMounted, computed, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Clock, ChatDotSquare, ArrowDown, Link } from '@element-plus/icons-vue'
+import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
 import { getGroups } from '../api/groups'
 import {
-  getPrototype, syncGitHub, uploadZip, getReadme, updatePrototype, getCategories,
+  getPrototype, downloadPrototype, getReadme, updatePrototype, getCategories,
   getVersions, rollbackVersion, deleteVersion, updateVersionNote,
   getPrototypeShares, sharePrototype, unsharePrototype,
   getComments, createComment, deleteComment, uploadCommentImage,
@@ -369,11 +332,6 @@ const route = useRoute()
 const authStore = useAuthStore()
 const prototype = ref(null)
 const loading = ref(false)
-const syncing = ref(false)
-const showUploadDialog = ref(false)
-const uploading = ref(false)
-const uploadRef = ref(null)
-const uploadFile = ref(null)
 const activeTab = ref('readme')
 const readmeHtml = ref('')
 
@@ -386,11 +344,10 @@ const tabs = [
 // 版本管理
 const versions = ref([])
 const versionLoading = ref(false)
-const versionNote = ref('')
 
 // 编辑原型
 const showEditDialog = ref(false)
-const editForm = ref({ name: '', description: '', githubUrl: '', categoryId: '' })
+const editForm = ref({ name: '', description: '', categoryId: '' })
 const categories = ref([])
 const savingEdit = ref(false)
 
@@ -400,7 +357,7 @@ const editingVersion = ref(null)
 const editingVersionNote = ref('')
 const savingVersionNote = ref(false)
 
-// 分享原型
+// 协作者管理
 const showShareDialog = ref(false)
 const shareUsername = ref('')
 const shareUserOptions = ref([])
@@ -423,7 +380,9 @@ const submittingComment = ref(false)
 
 const canEdit = computed(() => {
   if (!prototype.value || !authStore.user) return false
-  return authStore.isAdmin || prototype.value.created_by === authStore.user.id
+  if (authStore.isAdmin || prototype.value.created_by === authStore.user.id) return true
+  const sharedIds = prototype.value.shared_user_ids || []
+  return sharedIds.includes(authStore.user.id)
 })
 
 const previewUrl = computed(() => {
@@ -481,6 +440,24 @@ function openPreview() {
   }
 }
 
+async function handleDownload() {
+  try {
+    const res = await downloadPrototype(prototype.value.id)
+    const blob = new Blob([res.data], { type: 'application/zip' })
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${prototype.value.name || prototype.value.id}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('开始下载')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '下载失败')
+  }
+}
+
 async function handleEditSubmit() {
   if (!editForm.value.name.trim()) {
     ElMessage.warning('请输入原型名称')
@@ -491,7 +468,6 @@ async function handleEditSubmit() {
     const res = await updatePrototype(prototype.value.id, {
       name: editForm.value.name,
       description: editForm.value.description,
-      githubUrl: editForm.value.githubUrl,
       categoryId: editForm.value.categoryId
     })
     prototype.value = { ...prototype.value, ...res.data.data }
@@ -508,7 +484,6 @@ async function openEditDialog() {
   editForm.value = {
     name: prototype.value.name,
     description: prototype.value.description || '',
-    githubUrl: prototype.value.github_url || '',
     categoryId: prototype.value.category_id || ''
   }
   try {
@@ -549,73 +524,6 @@ async function handleVersionNoteSubmit() {
     ElMessage.error(err.response?.data?.message || '更新失败')
   } finally {
     savingVersionNote.value = false
-  }
-}
-
-async function handleSync() {
-  try {
-    const { value } = await ElMessageBox.prompt(
-      '同步前当前版本将自动保存为历史版本。请填写版本描述：',
-      '同步GitHub',
-      {
-        confirmButtonText: '确认同步',
-        cancelButtonText: '取消',
-        inputPlaceholder: '版本描述（必填）',
-        inputValue: '',
-        inputValidator: (val) => {
-          if (!val || !val.trim()) return '版本描述不能为空'
-          return true
-        }
-      }
-    )
-    syncing.value = true
-    const res = await syncGitHub(prototype.value.id, value)
-    prototype.value = res.data.data
-    if (res.data.success) {
-      ElMessage.success('同步成功')
-      loadData()
-    } else {
-      ElMessage.error('同步失败: ' + (res.data.data?.sync_error || '未知错误'))
-    }
-  } catch (err) {
-    if (err !== 'cancel') {
-      ElMessage.error(err.response?.data?.message || '同步失败')
-    }
-  } finally {
-    syncing.value = false
-  }
-}
-
-function handleFileChange(file) {
-  uploadFile.value = file.raw
-}
-
-async function handleUpload() {
-  if (!uploadFile.value) {
-    ElMessage.warning('请选择文件')
-    return
-  }
-  if (!versionNote.value.trim()) {
-    ElMessage.warning('请输入版本描述')
-    return
-  }
-  uploading.value = true
-  try {
-    const formData = new FormData()
-    formData.append('file', uploadFile.value)
-    formData.append('versionNote', versionNote.value)
-    const res = await uploadZip(prototype.value.id, uploadFile.value, versionNote.value)
-    prototype.value = res.data.data
-    ElMessage.success('上传成功')
-    showUploadDialog.value = false
-    uploadRef.value?.clearFiles()
-    uploadFile.value = null
-    versionNote.value = ''
-    loadData()
-  } catch (err) {
-    ElMessage.error(err.response?.data?.message || '上传失败')
-  } finally {
-    uploading.value = false
   }
 }
 
@@ -814,7 +722,7 @@ function formatDateTime(dateStr) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 }
 
-// =================== 分享功能 ===================
+// =================== 协作者管理 ===================
 async function openShareDialog() {
   showShareDialog.value = true
   shareUsername.value = ''
@@ -880,7 +788,7 @@ async function loadGroups() {
 
 async function handleShare() {
   if (!shareUsername.value && !shareGroupId.value) {
-    ElMessage.warning('请选择要分享的用户或用户组')
+    ElMessage.warning('请选择要添加的用户或用户组')
     return
   }
   shareLoading.value = true
@@ -888,7 +796,7 @@ async function handleShare() {
     const payload = shareGroupId.value ? { groupId: shareGroupId.value } : shareUsername.value
     const res = await sharePrototype(route.params.id, payload)
     if (res.data.success) {
-      ElMessage.success('分享成功')
+      ElMessage.success('添加成功')
       shareUsername.value = ''
       shareGroupId.value = null
       shareUserOptions.value = []
@@ -897,10 +805,10 @@ async function handleShare() {
         sharesList.value = sharesRes.data.data || []
       }
     } else {
-      ElMessage.error(res.data.message || '分享失败')
+      ElMessage.error(res.data.message || '添加失败')
     }
   } catch (e) {
-    ElMessage.error('分享失败')
+    ElMessage.error('添加失败')
   } finally {
     shareLoading.value = false
   }
@@ -910,13 +818,13 @@ async function handleUnshare(userId) {
   try {
     const res = await unsharePrototype(route.params.id, userId)
     if (res.data.success) {
-      ElMessage.success('已取消分享')
+      ElMessage.success('已移除协作者')
       sharesList.value = sharesList.value.filter(s => s.user_id !== userId)
     } else {
-      ElMessage.error(res.data.message || '取消分享失败')
+      ElMessage.error(res.data.message || '移除失败')
     }
   } catch (e) {
-    ElMessage.error('取消分享失败')
+    ElMessage.error('移除失败')
   }
 }
 

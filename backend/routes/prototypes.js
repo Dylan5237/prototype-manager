@@ -16,7 +16,7 @@ const {
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
 } = require('../services/storage');
-const { syncFromGitHub, parseGitHubUrl } = require('../services/github');
+
 const { extractReadme } = require('../services/readme-extractor');
 const { marked } = require('marked');
 const { createComment, getComments, deleteComment, COMMENT_IMAGES_DIR } = require('../services/db-comments');
@@ -25,6 +25,21 @@ const { recordVisit, getVisitStats, getVisitCount } = require('../services/db-st
 // 辅助函数：判断当前用户是否为管理员
 function isAdmin(req) {
   return req.user.roles && req.user.roles.includes('admin');
+}
+
+// 判断用户是否为原型的协作者（拥有读写权限）
+function isCollaborator(req, prototypeId) {
+  return getSharedUserIds(prototypeId).includes(req.user.id);
+}
+
+// 是否有权访问原型（查看/预览/下载）
+function canAccessPrototype(req, prototype) {
+  return isAdmin(req) || prototype.created_by === req.user.id || isCollaborator(req, prototype.id);
+}
+
+// 是否有权编辑原型（修改/上传/版本管理/删除/协作）
+function canEditPrototype(req, prototype) {
+  return isAdmin(req) || prototype.created_by === req.user.id || isCollaborator(req, prototype.id);
 }
 
 // 文件上传配置
@@ -89,7 +104,7 @@ router.put('/recycle-bin/:id/restore', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   restorePrototype(req.params.id);
@@ -115,10 +130,7 @@ router.get('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
 
-  const admin = isAdmin(req);
-  const isCreator = prototype.created_by === req.user.id;
-  const isShared = getSharedUserIds(prototype.id).includes(req.user.id);
-  if (!admin && !isCreator && !isShared) {
+  if (!canAccessPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权访问该原型' });
   }
 
@@ -128,15 +140,54 @@ router.get('/:id', requireAuth, (req, res) => {
     files = scanFiles(repoDir);
   }
 
+  const sharedUserIds = getSharedUserIds(prototype.id);
   res.json({
     success: true,
-    data: { ...prototype, files }
+    data: { ...prototype, files, shared_user_ids: sharedUserIds }
   });
 });
 
+// 下载原型仓库为 ZIP
+router.get('/:id/download', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
+
+  const repoDir = path.join(__dirname, '../repos', prototype.id);
+  if (!fs.existsSync(repoDir)) {
+    return res.status(404).json({ success: false, message: '原型文件不存在' });
+  }
+
+  try {
+    const zip = new AdmZip();
+    const items = fs.readdirSync(repoDir, { withFileTypes: true });
+    items.forEach(item => {
+      const itemPath = path.join(repoDir, item.name);
+      if (item.name === 'versions') return; // 排除历史版本目录
+      if (item.isDirectory()) {
+        zip.addLocalFolder(itemPath, item.name);
+      } else {
+        zip.addLocalFile(itemPath, '', item.name);
+      }
+    });
+
+    const zipName = `${prototype.name || prototype.id}.zip`;
+    const zipBuffer = zip.toBuffer();
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipName)}"`);
+    res.send(zipBuffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // 创建原型（所有已登录用户均可创建自己的原型）
-router.post('/', requireAuth, async (req, res) => {
-  const { name, description, githubUrl, categoryId, tags } = req.body;
+router.post('/', requireAuth, (req, res) => {
+  const { name, description, categoryId, tags } = req.body;
   
   if (!name) {
     return res.status(400).json({ success: false, message: '名称不能为空' });
@@ -144,34 +195,12 @@ router.post('/', requireAuth, async (req, res) => {
   
   const id = generateId();
   const prototype = createPrototype({
-    id, name, description, githubUrl, categoryId,
+    id, name, description, categoryId,
     createdBy: req.user.id
   });
   
   if (tags && tags.length > 0) {
     setPrototypeTags(id, tags);
-  }
-  
-  if (githubUrl) {
-    const parsed = parseGitHubUrl(githubUrl);
-    if (!parsed) {
-      return res.status(400).json({ success: false, message: 'GitHub链接格式不正确' });
-    }
-    
-    updatePrototype(id, { syncStatus: 'syncing' });
-    const result = await syncFromGitHub(id, githubUrl);
-    
-    if (result.success) {
-      const repoDir = path.join(__dirname, '../repos', id);
-      const entryFile = findEntryFile(repoDir);
-      updatePrototype(id, { entryFile, syncStatus: 'success' });
-      extractReadme(id);
-    } else {
-      updatePrototype(id, { syncStatus: 'failed', syncError: result.error });
-    }
-    
-    const updated = getPrototypeById(id);
-    return res.json({ success: true, data: updated });
   }
   
   res.json({ success: true, data: getPrototypeById(id) });
@@ -185,7 +214,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
   }
   
   // 权限检查：仅创建人或admin可上传
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -297,88 +326,6 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
   }
 });
 
-// 同步GitHub
-router.post('/:id/sync', requireAuth, async (req, res) => {
-  const prototype = getPrototypeById(req.params.id);
-  if (!prototype) {
-    return res.status(404).json({ success: false, message: '原型不存在' });
-  }
-  
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
-    return res.status(403).json({ success: false, message: '无权操作该原型' });
-  }
-  
-  if (!prototype.github_url) {
-    return res.status(400).json({ success: false, message: '该原型没有绑定GitHub链接' });
-  }
-  
-  if (!req.body.versionNote || !req.body.versionNote.trim()) {
-    return res.status(400).json({ success: false, message: '版本描述不能为空' });
-  }
-  
-  // 保存当前版本到历史
-  const repoDir = path.join(__dirname, '../repos', prototype.id);
-  let versionsBackupDir = null;
-  if (fs.existsSync(repoDir)) {
-    const latestVersion = getLatestVersionNumber(prototype.id);
-    const currentEntryFile = findEntryFile(repoDir);
-    const currentSize = getDirSizeKb(repoDir);
-    const saved = saveCurrentVersion(prototype.id, latestVersion + 1);
-    if (saved) {
-      createVersion({
-        prototypeId: prototype.id,
-        versionNumber: latestVersion + 1,
-        entryFile: currentEntryFile,
-        syncSource: 'github',
-        createdBy: req.user.id,
-        sizeKb: currentSize,
-        note: req.body.versionNote.trim(),
-        versionType: req.body.versionType
-      });
-    }
-    // 备份versions目录，防止syncFromGitHub中的removeRepoDir删除它
-    const versionsDir = path.join(repoDir, 'versions');
-    if (fs.existsSync(versionsDir)) {
-      versionsBackupDir = path.join(__dirname, '../uploads', `versions_backup_${prototype.id}_${Date.now()}`);
-      fs.renameSync(versionsDir, versionsBackupDir);
-    }
-  }
-  
-  let result;
-  try {
-    updatePrototype(prototype.id, { syncStatus: 'syncing' });
-    result = await syncFromGitHub(prototype.id, prototype.github_url);
-  } finally {
-    // 无论同步成功或失败，都确保恢复versions目录
-    if (versionsBackupDir && fs.existsSync(versionsBackupDir)) {
-      const restoredRepoDir = path.join(__dirname, '../repos', prototype.id);
-      const versionsDest = path.join(restoredRepoDir, 'versions');
-      try {
-        if (!fs.existsSync(restoredRepoDir)) {
-          fs.mkdirSync(restoredRepoDir, { recursive: true });
-        }
-        fs.renameSync(versionsBackupDir, versionsDest);
-      } catch (restoreErr) {
-        console.error(`[版本恢复] 失败 ${prototype.id}:`, restoreErr.message);
-      }
-    }
-  }
-  
-  if (result && result.success) {
-    const repoDir = path.join(__dirname, '../repos', prototype.id);
-    const entryFile = findEntryFile(repoDir);
-    updatePrototype(prototype.id, { entryFile, syncStatus: 'success' });
-    delete prototype.sync_error;
-    extractReadme(prototype.id);
-    // 清理旧版本，保留最近10个
-    cleanupOldVersions(prototype.id, 10);
-  } else {
-    updatePrototype(prototype.id, { syncStatus: 'failed', syncError: result ? result.error : '同步异常' });
-  }
-  
-  res.json({ success: result && result.success, data: getPrototypeById(prototype.id) });
-});
-
 // 版本管理API
 
 // 获取版本列表
@@ -397,7 +344,7 @@ router.post('/:id/versions/:versionId/rollback', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -435,7 +382,7 @@ router.delete('/:id/versions/:versionId', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -460,7 +407,7 @@ router.put('/:id/versions/:versionId/note', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
@@ -501,7 +448,7 @@ router.post('/:id/shares', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
@@ -549,7 +496,7 @@ router.delete('/:id/shares/:userId', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
 
@@ -565,12 +512,12 @@ router.put('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
   
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
-  const { name, description, githubUrl, categoryId } = req.body;
-  const updated = updatePrototype(prototype.id, { name, description, githubUrl, categoryId });
+  const { name, description, categoryId } = req.body;
+  const updated = updatePrototype(prototype.id, { name, description, categoryId });
   
   res.json({ success: true, data: updated });
 });
@@ -583,7 +530,7 @@ router.delete('/:id', requireAuth, (req, res) => {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
   
-  if (!isAdmin(req) && prototype.created_by !== req.user.id) {
+  if (!canEditPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   
@@ -798,6 +745,9 @@ router.get('/:id/stats', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
   const stats = getVisitStats(req.params.id);
   res.json({ success: true, data: stats });
 });
@@ -808,10 +758,7 @@ router.post('/:id/visit', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
-  const admin = isAdmin(req);
-  const isCreator = prototype.created_by === req.user.id;
-  const isShared = getSharedUserIds(prototype.id).includes(req.user.id);
-  if (!admin && !isCreator && !isShared) {
+  if (!canAccessPrototype(req, prototype)) {
     return res.status(403).json({ success: false, message: '无权访问该原型' });
   }
   recordVisit({
