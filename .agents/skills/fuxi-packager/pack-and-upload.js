@@ -16,7 +16,7 @@ const os = require('os');
 const readline = require('readline');
 const { execSync } = require('child_process');
 
-const API_BASE = process.env.FUXI_API_URL || 'http://8.145.49.128'; // 线上伏羲平台
+const API_BASE = process.env.FUXI_API_URL || 'http://192.168.2.145'; // 内网伏羲平台
 const CREDENTIALS_FILE = path.join(__dirname, '.credentials.json');
 
 function request(options, data) {

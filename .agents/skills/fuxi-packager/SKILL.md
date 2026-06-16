@@ -80,13 +80,12 @@ node .agents/skills/fuxi-packager/pack-and-upload.js AuthComponent "权限校验
 
 ## 环境要求
 
-- 伏羲平台默认地址：`http://8.145.49.128`（IP 直接访问，无需备案）
-- 域名 `fuxi.space` 备案通过后可改用域名访问
+- 伏羲平台默认地址：`http://192.168.2.145`（内网服务器）
 - 后端已初始化默认管理员账号 `admin / admin123`
 - 支持通过环境变量 `FUXI_API_URL` 自定义平台地址，例如：
   ```bash
-  # 切换到域名（备案通过后）
-  set FUXI_API_URL=http://fuxi.space
+  # 切换到其他服务器
+  set FUXI_API_URL=http://192.168.2.145
   node pack-and-upload.js AuthComponent
 
   # 回本地开发环境
