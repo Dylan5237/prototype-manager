@@ -32,9 +32,11 @@ function isCollaborator(req, prototypeId) {
   return getSharedUserIds(prototypeId).includes(req.user.id);
 }
 
-// 是否有权访问原型（查看/预览/下载）
+// 是否有权访问原型（查看/预览/下载/统计）
 function canAccessPrototype(req, prototype) {
-  return isAdmin(req) || prototype.created_by === req.user.id || isCollaborator(req, prototype.id);
+  if (isAdmin(req) || prototype.created_by === req.user.id || isCollaborator(req, prototype.id)) return true;
+  // 已登录的普通用户（viewer/uploader）可通过分享链接访问任意原型
+  return req.user.roles.some(r => ['viewer', 'uploader'].includes(r));
 }
 
 // 是否有权编辑原型（修改/上传/版本管理/删除/协作）
