@@ -12,7 +12,7 @@ import RecycleBinView from '../views/RecycleBinView.vue'
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
   { path: '/', name: 'home', component: HomeView },
-  { path: '/prototype/:id', name: 'prototype', component: PrototypeDetail },
+  { path: '/prototype/:id', name: 'prototype', component: PrototypeDetail, meta: { allowGuest: true } },
   { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
   { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },
@@ -38,8 +38,17 @@ router.beforeEach(async (to, from, next) => {
   if (!authStore.isLoggedIn || !authStore.user) {
     const success = await authStore.fetchUser()
     if (!success) {
-      next('/login')
-      return
+      // 免登录分享链接：允许匿名访问原型详情，自动以 guest 账号登录
+      if (to.meta.allowGuest) {
+        const guestLoginSuccess = await authStore.login('user', '111111')
+        if (!guestLoginSuccess) {
+          next('/login')
+          return
+        }
+      } else {
+        next('/login')
+        return
+      }
     }
   }
   

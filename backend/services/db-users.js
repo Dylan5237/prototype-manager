@@ -100,6 +100,19 @@ function initDefaultAdmin() {
   }
 }
 
+function initGuestUser() {
+  const guest = findUserByUsername('user');
+  if (!guest) {
+    createUser({
+      username: 'user',
+      password: '111111',
+      nickname: '访客',
+      role: ['viewer']
+    });
+    console.log('[系统] 默认访客账号已创建: user / 111111');
+  }
+}
+
 module.exports = {
   createUser,
   findUserByUsername,
@@ -109,5 +122,6 @@ module.exports = {
   updateUser,
   deleteUser,
   verifyPassword,
-  initDefaultAdmin
+  initDefaultAdmin,
+  initGuestUser
 };

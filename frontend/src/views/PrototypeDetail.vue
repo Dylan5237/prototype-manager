@@ -29,6 +29,10 @@
           <el-icon><Share /></el-icon>
           分享
         </el-button>
+        <el-button text @click="copyShareLink">
+          <el-icon><Link /></el-icon>
+          分享链接
+        </el-button>
         <el-button v-if="canEdit && prototype.github_url" @click="handleSync" :loading="syncing">
           <el-icon><Refresh /></el-icon>
           同步GitHub
@@ -349,7 +353,7 @@
 import { ref, onMounted, computed, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Clock, ChatDotSquare, ArrowDown } from '@element-plus/icons-vue'
+import { Document, Clock, ChatDotSquare, ArrowDown, Link } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
 import { getGroups } from '../api/groups'
@@ -769,7 +773,24 @@ function getStatusText(status) {
   return map[status] || status
 }
 
-async function copyId(id) {
+async function copyShareLink() {
+  const url = `${window.location.origin}/prototype/${prototype.value.id}`
+  try {
+    navigator.clipboard.writeText(url).then(() => {
+      ElMessage.success('分享链接已复制')
+    })
+  } catch (e) {
+    const input = document.createElement('input')
+    input.value = url
+    document.body.appendChild(input)
+    input.select()
+    document.execCommand('copy')
+    document.body.removeChild(input)
+    ElMessage.success('分享链接已复制')
+  }
+}
+
+function copyId(id) {
   try {
     await navigator.clipboard.writeText(id)
     ElMessage.success('ID 已复制到剪贴板')

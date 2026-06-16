@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 
 const { initDatabase } = require('./database/db');
-const { initDefaultAdmin } = require('./services/db-users');
+const { initDefaultAdmin, initGuestUser } = require('./services/db-users');
 const { migrateFromJson } = require('./routes/prototypes');
 const authRoutes = require('./routes/auth');
 const { router: prototypeRoutes } = require('./routes/prototypes');
@@ -33,6 +33,9 @@ async function startServer() {
   
   // 初始化默认管理员
   initDefaultAdmin();
+  
+  // 初始化默认访客账号（用于免登录分享链接）
+  initGuestUser();
   
   // 迁移旧数据（如果存在）
   const oldDataPath = path.join(__dirname, 'data', 'prototypes.json');
