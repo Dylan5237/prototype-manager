@@ -773,36 +773,39 @@ function getStatusText(status) {
   return map[status] || status
 }
 
-async function copyShareLink() {
+function copyShareLink() {
   const url = `${window.location.origin}/prototype/${prototype.value.id}`
-  try {
+  if (navigator.clipboard) {
     navigator.clipboard.writeText(url).then(() => {
       ElMessage.success('分享链接已复制')
+    }).catch(() => {
+      fallbackCopy(url, '分享链接已复制')
     })
-  } catch (e) {
-    const input = document.createElement('input')
-    input.value = url
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    document.body.removeChild(input)
-    ElMessage.success('分享链接已复制')
+  } else {
+    fallbackCopy(url, '分享链接已复制')
   }
 }
 
 function copyId(id) {
-  try {
-    await navigator.clipboard.writeText(id)
-    ElMessage.success('ID 已复制到剪贴板')
-  } catch (e) {
-    const input = document.createElement('input')
-    input.value = id
-    document.body.appendChild(input)
-    input.select()
-    document.execCommand('copy')
-    document.body.removeChild(input)
-    ElMessage.success('ID 已复制到剪贴板')
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(id).then(() => {
+      ElMessage.success('ID 已复制到剪贴板')
+    }).catch(() => {
+      fallbackCopy(id, 'ID 已复制到剪贴板')
+    })
+  } else {
+    fallbackCopy(id, 'ID 已复制到剪贴板')
   }
+}
+
+function fallbackCopy(text, successMsg) {
+  const input = document.createElement('input')
+  input.value = text
+  document.body.appendChild(input)
+  input.select()
+  document.execCommand('copy')
+  document.body.removeChild(input)
+  ElMessage.success(successMsg)
 }
 
 function formatDateTime(dateStr) {
