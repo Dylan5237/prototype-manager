@@ -74,22 +74,24 @@ const commentImageUpload = multer({
 // scope: my（我创建的，默认）| shared（分享给我的）| all（全部可访问的原型：管理员为全部，普通用户为自己的+分享给我的）
 router.get('/', requireAuth, (req, res) => {
   const { keyword, category_id, scope } = req.query;
+  const page = parseInt(req.query.page, 10) || 1;
+  const pageSize = parseInt(req.query.pageSize, 10) || 12;
   const admin = isAdmin(req);
-  let prototypes;
+  let result;
 
   if (scope === 'shared') {
-    prototypes = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id });
+    result = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id, page, pageSize });
   } else if (scope === 'all' && admin) {
-    prototypes = getPrototypes({ keyword, categoryId: category_id });
+    result = getPrototypes({ keyword, categoryId: category_id, page, pageSize });
   } else if (scope === 'all') {
     // 普通用户查看全部：自己创建的 + 分享给我的
-    prototypes = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id });
+    result = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id, page, pageSize });
   } else {
     // 默认返回自己创建的
-    prototypes = getPrototypes({ keyword, categoryId: category_id, createdBy: req.user.id });
+    result = getPrototypes({ keyword, categoryId: category_id, createdBy: req.user.id, page, pageSize });
   }
 
-  res.json({ success: true, data: prototypes });
+  res.json({ success: true, data: result.list, total: result.total });
 });
 
 // ========== 回收站 ==========

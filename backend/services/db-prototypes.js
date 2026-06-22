@@ -1,41 +1,60 @@
 const { query, queryOne, run } = require('../database/db');
 
-function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy } = {}) {
-  let sql = `
-    SELECT p.*, c.name as category_name, u.nickname as creator_name,
-      (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
-      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version,
-      (SELECT version_label FROM prototype_versions WHERE prototype_id = p.id ORDER BY version_number DESC LIMIT 1) as version_label
+function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy, page, pageSize } = {}) {
+  const selectFields = `
+    p.*, c.name as category_name, u.nickname as creator_name,
+    (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
+    (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = p.id) as version,
+    (SELECT version_label FROM prototype_versions WHERE prototype_id = p.id ORDER BY version_number DESC LIMIT 1) as version_label
+  `;
+  const fromSql = `
     FROM prototypes p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN users u ON p.created_by = u.id
     WHERE 1=1
   `;
+  let whereSql = '';
   const params = [];
 
   if (keyword) {
-    sql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
+    whereSql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
     params.push(`%${keyword}%`, `%${keyword}%`);
   }
   if (categoryId) {
-    sql += ` AND p.category_id = ?`;
+    whereSql += ` AND p.category_id = ?`;
     params.push(categoryId);
   }
   if (createdBy) {
-    sql += ` AND p.created_by = ?`;
+    whereSql += ` AND p.created_by = ?`;
     params.push(createdBy);
   }
   if (sharedTo) {
-    sql += ` AND p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?)`;
+    whereSql += ` AND p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?)`;
     params.push(sharedTo);
   }
   if (accessibleBy) {
-    sql += ` AND (p.created_by = ? OR p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?))`;
+    whereSql += ` AND (p.created_by = ? OR p.id IN (SELECT prototype_id FROM prototype_shares WHERE user_id = ?))`;
     params.push(accessibleBy, accessibleBy);
   }
 
-  sql += ` AND p.deleted_at IS NULL ORDER BY p.updated_at DESC`;
-  return query(sql, params);
+  whereSql += ` AND p.deleted_at IS NULL`;
+  const orderSql = ` ORDER BY p.updated_at DESC`;
+
+  // 总数统计
+  const countSql = `SELECT COUNT(*) as total` + fromSql + whereSql;
+  const countRow = queryOne(countSql, params);
+  const total = countRow ? countRow.total : 0;
+
+  // 分页数据
+  const currentPage = Math.max(1, parseInt(page, 10) || 1);
+  const limit = Math.max(1, parseInt(pageSize, 10) || 12);
+  const offset = (currentPage - 1) * limit;
+
+  const dataSql = `SELECT ${selectFields}` + fromSql + whereSql + orderSql + ` LIMIT ? OFFSET ?`;
+  const dataParams = [...params, limit, offset];
+  const list = query(dataSql, dataParams);
+
+  return { list, total };
 }
 
 function getPrototypeById(id) {

@@ -1,20 +1,23 @@
 <template>
   <div class="home-page">
     <div class="page-header">
-      <h2 class="page-title">{{ tabTitle }}</h2>
+      <div class="page-title-wrapper">
+        <h2 class="page-title">{{ tabTitle }}</h2>
+        <el-tag type="info" effect="plain" size="large" class="title-count">{{ total }}</el-tag>
+      </div>
       <div class="page-toolbar">
         <el-input
           v-model="searchKeyword"
           placeholder="搜索原型名称"
           clearable
           class="search-input"
-          @keyup.enter="loadData"
+          @keyup.enter="handleSearch"
         >
           <template #suffix>
-            <el-icon @click="loadData" style="cursor:pointer"><Search /></el-icon>
+            <el-icon @click="handleSearch" style="cursor:pointer"><Search /></el-icon>
           </template>
         </el-input>
-        <el-select v-model="filterCategory" placeholder="按类别筛选" clearable class="category-select" @change="loadData">
+        <el-select v-model="filterCategory" placeholder="按类别筛选" clearable class="category-select" @change="handleCategoryChange">
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
         <el-button v-if="authStore.isAdmin || authStore.isUploader" type="primary" @click="openCreateDialog">
@@ -135,7 +138,7 @@ const searchKeyword = ref('')
 const filterCategory = ref(null)
 const filterCreator = ref(null)
 const currentPage = ref(1)
-const pageSize = 8
+const pageSize = 12
 const total = ref(0)
 const loading = ref(false)
 
@@ -170,6 +173,16 @@ const filteredPrototypes = computed(() => {
   if (filterCreator.value === null) return prototypes.value
   return prototypes.value.filter(p => p.created_by === filterCreator.value)
 })
+
+function handleSearch() {
+  currentPage.value = 1
+  loadData()
+}
+
+function handleCategoryChange() {
+  currentPage.value = 1
+  loadData()
+}
 
 function toggleCreator(id) {
   filterCreator.value = filterCreator.value === id ? null : id
@@ -314,11 +327,21 @@ onMounted(() => {
   gap: 16px;
 }
 
+.page-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .page-title {
   font-size: 22px;
   font-weight: 700;
   color: #1a202c;
   margin: 0;
+}
+
+.title-count {
+  font-weight: 600;
 }
 
 .page-toolbar {
