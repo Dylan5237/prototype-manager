@@ -12,6 +12,10 @@ export function getProject(id) {
   return api.get(`/projects/${id}`)
 }
 
+export function getProjectPortal(id) {
+  return api.get(`/projects/${id}/portal`)
+}
+
 export function updateProject(id, data) {
   return api.put(`/projects/${id}`, data)
 }

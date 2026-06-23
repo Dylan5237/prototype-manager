@@ -2,7 +2,7 @@
   <div class="app">
     <div class="app-bg"></div>
     <el-container>
-      <el-header v-if="!isLoginPage" class="app-header">
+      <el-header v-if="!isLoginPage && !isProjectPreview" class="app-header">
         <div class="header-content">
           <div class="logo">
             <img src="/favicon.svg" class="logo-img" alt="logo" />
@@ -40,7 +40,7 @@
           </div>
         </div>
       </el-header>
-      <el-main :class="['app-main', { 'app-main--login': isLoginPage }]">
+      <el-main :class="['app-main', { 'app-main--login': isLoginPage || isProjectPreview }]">
         <!-- 登录页 -->
         <router-view v-if="isLoginPage" />
         <!-- 系统管理页 -->
@@ -74,6 +74,7 @@ const isLoginPage = computed(() => route.path === '/login')
 const isAdminPage = computed(() => route.path.startsWith('/admin'))
 const isHomePage = computed(() => route.path === '/')
 const isProjectPage = computed(() => route.path.startsWith('/projects') || route.path.startsWith('/project/'))
+const isProjectPreview = computed(() => /^\/project\/[^/]+\/preview$/.test(route.path))
 
 const userRoles = computed(() => {
   const roles = authStore.user?.role

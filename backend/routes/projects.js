@@ -104,6 +104,32 @@ router.post('/', requireAuth, (req, res) => {
   }
 });
 
+// 公开门户预览数据（只读，隐藏成员/权限等敏感信息）
+router.get('/:id/portal', requireAuth, (req, res) => {
+  const project = getProjectById(req.params.id);
+  if (!project || project.deleted_at) {
+    return res.status(404).json({ success: false, message: '项目不存在' });
+  }
+  const prototypes = getProjectPrototypes(project.id).map(pp => ({
+    prototype_id: pp.prototype_id,
+    prototype_name: pp.prototype_name,
+    menu_path: pp.menu_path,
+    entry_file: pp.entry_file,
+    version_label: pp.version_label,
+    version_number: pp.version_number
+  }));
+  res.json({
+    success: true,
+    data: {
+      id: project.id,
+      name: project.name,
+      description: project.description,
+      menu_config: project.menu_config,
+      prototypes
+    }
+  });
+});
+
 // 项目详情
 router.get('/:id', requireAuth, requireProjectAccess, (req, res) => {
   const project = req.project;

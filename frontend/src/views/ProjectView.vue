@@ -24,6 +24,10 @@
           <el-icon><User /></el-icon>
           成员
         </el-button>
+        <el-button type="success" @click="openFullPreview">
+          <el-icon><FullScreen /></el-icon>
+          全屏预览
+        </el-button>
       </div>
     </div>
 
@@ -189,7 +193,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  ArrowLeft, Edit, Camera, Lock, Unlock, CircleClose, Link, User
+  ArrowLeft, Edit, Camera, Lock, Unlock, CircleClose, Link, User, FullScreen
 } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
@@ -414,6 +418,10 @@ async function handleForceRelease() {
 
 function goPrototype(id) {
   router.push(`/prototype/${id}`)
+}
+
+function openFullPreview() {
+  window.open(`/project/${route.params.id}/preview`, '_blank')
 }
 
 async function openSnapshotDialog() {
