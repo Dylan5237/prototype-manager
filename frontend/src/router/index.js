@@ -8,11 +8,15 @@ import AdminDistribution from '../views/AdminDistribution.vue'
 import AdminCategories from '../views/AdminCategories.vue'
 import AdminGroups from '../views/AdminGroups.vue'
 import RecycleBinView from '../views/RecycleBinView.vue'
+import ProjectsView from '../views/ProjectsView.vue'
+import ProjectView from '../views/ProjectView.vue'
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },
   { path: '/', name: 'home', component: HomeView },
   { path: '/prototype/:id', name: 'prototype', component: PrototypeDetail, meta: { allowGuest: true } },
+  { path: '/projects', name: 'projects', component: ProjectsView },
+  { path: '/project/:id', name: 'project', component: ProjectView, meta: { allowGuest: true } },
   { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
   { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },

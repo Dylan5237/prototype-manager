@@ -206,6 +206,82 @@ function createTables() {
       UNIQUE(group_id, user_id)
     )
   `);
+
+  // 项目表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      menu_config TEXT,
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT DEFAULT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
+  // 项目-原型关联表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_prototypes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      prototype_id TEXT NOT NULL,
+      menu_path TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE,
+      UNIQUE(project_id, prototype_id, menu_path)
+    )
+  `);
+
+  // 项目成员表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL DEFAULT 'editor',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(project_id, user_id)
+    )
+  `);
+
+  // 项目签出表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_checkouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      project_prototype_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      checked_out_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      note TEXT,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_prototype_id) REFERENCES project_prototypes(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 项目快照表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      version_label TEXT,
+      snapshot_data TEXT NOT NULL,
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式

@@ -1,0 +1,714 @@
+<template>
+  <div class="project-portal">
+    <div class="portal-header">
+      <div class="header-left">
+        <el-button text @click="$router.push('/projects')">
+          <el-icon><ArrowLeft /></el-icon>
+        </el-button>
+        <div class="title-block">
+          <h1>{{ project.name }}</h1>
+          <p class="sub">{{ project.description || '暂无描述' }}</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <el-tag v-if="roleLabel" size="small" effect="plain" type="info">{{ roleLabel }}</el-tag>
+        <el-button v-if="canManage" text @click="showMenuDialog = true">
+          <el-icon><Edit /></el-icon>
+          管理菜单
+        </el-button>
+        <el-button v-if="canManage" text @click="openSnapshotDialog">
+          <el-icon><Camera /></el-icon>
+          快照
+        </el-button>
+        <el-button v-if="canManage" text @click="openMembersDialog">
+          <el-icon><User /></el-icon>
+          成员
+        </el-button>
+      </div>
+    </div>
+
+    <div class="portal-body">
+      <div class="portal-menu">
+        <div v-for="group in project.menu_config?.items" :key="group.key" class="menu-group">
+          <div class="group-label">{{ group.label }}</div>
+          <div
+            v-for="item in group.children"
+            :key="item.key"
+            :class="['menu-item', { active: isActive(group, item) }]"
+            @click="selectMenu(group, item)"
+          >
+            <span class="item-label">{{ item.label }}</span>
+            <el-tag v-if="getCheckoutStatus(group, item)" :type="getCheckoutStatus(group, item).type" size="small" effect="dark">
+              {{ getCheckoutStatus(group, item).text }}
+            </el-tag>
+          </div>
+        </div>
+        <el-empty v-if="!hasMenu" description="暂无菜单配置" />
+      </div>
+
+      <div class="portal-content">
+        <div v-if="!activeItem" class="empty-content">
+          <el-empty description="请从左侧选择一个菜单项" />
+        </div>
+        <div v-else-if="!currentBinding" class="bind-panel">
+          <el-empty description="该菜单项尚未绑定原型">
+            <template #description>
+              <p>该菜单项尚未绑定原型</p>
+              <p v-if="canManage" class="bind-tip">选择一个原型绑定到「{{ activePathLabel }}」</p>
+            </template>
+          </el-empty>
+          <div v-if="canManage" class="bind-form">
+            <el-select
+              v-model="selectedPrototypeId"
+              filterable
+              placeholder="选择原型"
+              style="width: 320px"
+              :loading="prototypesLoading"
+            >
+              <el-option
+                v-for="p in availablePrototypes"
+                :key="p.id"
+                :label="p.name"
+                :value="p.id"
+              />
+            </el-select>
+            <el-button type="primary" @click="handleBind" :loading="binding">绑定</el-button>
+          </div>
+        </div>
+        <div v-else class="preview-panel">
+          <div class="preview-toolbar">
+            <div class="preview-info">
+              <span class="prototype-name">{{ currentBinding.prototype_name }}</span>
+              <span class="version">v{{ currentBinding.version_label || currentBinding.version_number }}</span>
+            </div>
+            <div class="preview-actions">
+              <template v-if="canEdit">
+                <el-button v-if="!currentBinding.checkout" type="primary" size="small" @click="handleCheckout">
+                  <el-icon><Lock /></el-icon>
+                  签出
+                </el-button>
+                <template v-else-if="isMyCheckout">
+                  <el-button type="success" size="small" @click="handleCheckin">
+                    <el-icon><Unlock /></el-icon>
+                    签入
+                  </el-button>
+                  <span class="expire-tip">{{ expireTip }}</span>
+                </template>
+                <el-button v-else-if="canManage" type="warning" size="small" @click="handleForceRelease">
+                  <el-icon><CircleClose /></el-icon>
+                  强制释放
+                </el-button>
+              </template>
+              <el-button text size="small" @click="goPrototype(currentBinding.prototype_id)">
+                <el-icon><Link /></el-icon>
+                原型详情
+              </el-button>
+            </div>
+          </div>
+          <div class="preview-frame-wrapper">
+            <iframe v-if="previewUrl" :src="previewUrl" class="preview-frame" frameborder="0"></iframe>
+            <el-empty v-else description="原型没有可预览的入口文件" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 管理菜单弹窗 -->
+    <ProjectFormDialog
+      v-model:visible="showMenuDialog"
+      :project="project"
+      @saved="loadProject"
+    />
+
+    <!-- 快照弹窗 -->
+    <el-dialog v-model="snapshotVisible" title="项目快照" width="640px">
+      <div class="snapshot-form" v-if="canManage">
+        <el-input v-model="snapshotName" placeholder="快照名称，例如：v1.0 基线" style="width: 280px" />
+        <el-button type="primary" @click="handleCreateSnapshot" :loading="creatingSnapshot">创建快照</el-button>
+      </div>
+      <el-table :data="snapshots" style="width: 100%; margin-top: 16px" v-loading="snapshotsLoading">
+        <el-table-column prop="name" label="名称" />
+        <el-table-column prop="version_label" label="版本标签" />
+        <el-table-column prop="creator_name" label="创建者" />
+        <el-table-column prop="created_at" label="时间" :formatter="formatDate" />
+        <el-table-column label="操作" width="160">
+          <template #default="{ row }">
+            <el-button text type="primary" size="small" @click="handleRestoreSnapshot(row)">恢复</el-button>
+            <el-button v-if="canManage" text type="danger" size="small" @click="handleDeleteSnapshot(row)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+
+    <!-- 成员管理弹窗 -->
+    <el-dialog v-model="membersVisible" title="项目成员" width="560px">
+      <div class="member-form">
+        <el-select
+          v-model="memberUsername"
+          filterable
+          remote
+          reserve-keyword
+          placeholder="输入用户名搜索"
+          :remote-method="handleMemberSearch"
+          :loading="memberSearching"
+          style="width: 220px"
+        >
+          <el-option
+            v-for="u in memberOptions"
+            :key="u.id"
+            :label="`${u.nickname || u.username} (${u.username})`"
+            :value="u.username"
+          />
+        </el-select>
+        <el-select v-model="memberRole" style="width: 120px">
+          <el-option label="编辑者" value="editor" />
+          <el-option label="查看者" value="viewer" />
+        </el-select>
+        <el-button type="primary" @click="handleAddMember" :loading="addingMember">添加</el-button>
+      </div>
+      <el-table :data="members" style="width: 100%; margin-top: 16px" v-loading="membersLoading">
+        <el-table-column prop="nickname" label="昵称" />
+        <el-table-column prop="username" label="账号" />
+        <el-table-column prop="role" label="角色">
+          <template #default="{ row }">
+            {{ row.role === 'editor' ? '编辑者' : '查看者' }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80">
+          <template #default="{ row }">
+            <el-button text type="danger" size="small" @click="handleRemoveMember(row.user_id)">移除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import {
+  ArrowLeft, Edit, Camera, Lock, Unlock, CircleClose, Link, User
+} from '@element-plus/icons-vue'
+import { useAuthStore } from '../stores/auth'
+import { getPrototypes } from '../api/prototypes'
+import { searchUsers } from '../api/auth'
+import {
+  getProject, bindPrototype, removeProjectPrototype,
+  checkoutPrototype, checkinPrototype, releaseCheckout,
+  getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
+  getProjectMembers, addProjectMember, removeProjectMember
+} from '../api/projects'
+import ProjectFormDialog from '../components/ProjectFormDialog.vue'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+const project = ref({ menu_config: { items: [] }, prototypes: [] })
+const loading = ref(false)
+const role = ref(null)
+
+const activeGroup = ref(null)
+const activeItem = ref(null)
+
+const showMenuDialog = ref(false)
+
+const prototypes = ref([])
+const prototypesLoading = ref(false)
+const selectedPrototypeId = ref('')
+const binding = ref(false)
+
+const snapshotVisible = ref(false)
+const snapshots = ref([])
+const snapshotsLoading = ref(false)
+const snapshotName = ref('')
+const creatingSnapshot = ref(false)
+
+const membersVisible = ref(false)
+const members = ref([])
+const membersLoading = ref(false)
+const memberUsername = ref('')
+const memberRole = ref('editor')
+const memberOptions = ref([])
+const memberSearching = ref(false)
+const addingMember = ref(false)
+
+onMounted(() => {
+  loadProject()
+  loadPrototypes()
+})
+
+async function loadProject() {
+  loading.value = true
+  try {
+    const res = await getProject(route.params.id)
+    project.value = res.data.data
+    role.value = res.data.data.role
+  } catch (err) {
+    ElMessage.error('加载项目失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function loadPrototypes() {
+  prototypesLoading.value = true
+  try {
+    const res = await getPrototypes({})
+    prototypes.value = res.data.data || []
+  } catch (err) {
+    ElMessage.error('加载原型列表失败')
+  } finally {
+    prototypesLoading.value = false
+  }
+}
+
+const hasMenu = computed(() => {
+  return project.value.menu_config?.items?.some(g => g.children?.length > 0)
+})
+
+const canManage = computed(() => {
+  return role.value === 'owner' || role.value === 'admin'
+})
+
+const canEdit = computed(() => {
+  return role.value === 'owner' || role.value === 'admin' || role.value === 'editor'
+})
+
+const roleLabel = computed(() => {
+  const map = { owner: '创建者', admin: '管理员', editor: '编辑者', viewer: '查看者' }
+  return map[role.value] || ''
+})
+
+function menuPath(group, item) {
+  return `${group.key}/${item.key}`
+}
+
+function menuPathLabel(group, item) {
+  return `${group.label} / ${item.label}`
+}
+
+const activePath = computed(() => {
+  if (!activeGroup.value || !activeItem.value) return null
+  return menuPath(activeGroup.value, activeItem.value)
+})
+
+const activePathLabel = computed(() => {
+  if (!activeGroup.value || !activeItem.value) return ''
+  return menuPathLabel(activeGroup.value, activeItem.value)
+})
+
+const currentBinding = computed(() => {
+  if (!activePath.value) return null
+  return project.value.prototypes?.find(pp => pp.menu_path === activePath.value) || null
+})
+
+const availablePrototypes = computed(() => {
+  const boundIds = new Set(project.value.prototypes?.map(pp => pp.prototype_id) || [])
+  return prototypes.value.filter(p => !boundIds.has(p.id))
+})
+
+const previewUrl = computed(() => {
+  const pp = currentBinding.value
+  if (!pp || !pp.entry_file) return null
+  const token = authStore.token || ''
+  return `/preview/${pp.prototype_id}/${pp.entry_file}?token=${token}`
+})
+
+const isMyCheckout = computed(() => {
+  const c = currentBinding.value?.checkout
+  return c && c.user_id === authStore.user?.id
+})
+
+const expireTip = computed(() => {
+  const c = currentBinding.value?.checkout
+  if (!c) return ''
+  const exp = new Date(c.expires_at)
+  const now = new Date()
+  const diff = Math.ceil((exp - now) / (1000 * 60))
+  if (diff <= 0) return '已超时'
+  if (diff < 60) return `${diff} 分钟后自动释放`
+  return `${Math.floor(diff / 60)} 小时后释放`
+})
+
+function selectMenu(group, item) {
+  activeGroup.value = group
+  activeItem.value = item
+  selectedPrototypeId.value = ''
+}
+
+function isActive(group, item) {
+  return activeGroup.value?.key === group.key && activeItem.value?.key === item.key
+}
+
+function getCheckoutStatus(group, item) {
+  const path = menuPath(group, item)
+  const pp = project.value.prototypes?.find(p => p.menu_path === path)
+  if (!pp || !pp.checkout) return null
+  const isMe = pp.checkout.user_id === authStore.user?.id
+  return {
+    type: isMe ? 'success' : 'warning',
+    text: isMe ? '我签出' : `${pp.checkout.nickname || pp.checkout.username} 签出`
+  }
+}
+
+async function handleBind() {
+  if (!selectedPrototypeId.value) {
+    ElMessage.warning('请选择原型')
+    return
+  }
+  binding.value = true
+  try {
+    await bindPrototype(route.params.id, {
+      prototypeId: selectedPrototypeId.value,
+      menuPath: activePath.value,
+      sortOrder: 0
+    })
+    ElMessage.success('绑定成功')
+    selectedPrototypeId.value = ''
+    loadProject()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '绑定失败')
+  } finally {
+    binding.value = false
+  }
+}
+
+async function handleCheckout() {
+  if (!currentBinding.value) return
+  try {
+    await checkoutPrototype(route.params.id, currentBinding.value.id, { note: '' })
+    ElMessage.success('签出成功')
+    loadProject()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '签出失败')
+  }
+}
+
+async function handleCheckin() {
+  if (!currentBinding.value) return
+  try {
+    await checkinPrototype(route.params.id, currentBinding.value.id)
+    ElMessage.success('签入成功')
+    loadProject()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '签入失败')
+  }
+}
+
+async function handleForceRelease() {
+  if (!currentBinding.value) return
+  try {
+    await ElMessageBox.confirm(`确定强制释放「${currentBinding.value.prototype_name}」的签出锁吗？`, '强制释放', { type: 'warning' })
+    await releaseCheckout(route.params.id, currentBinding.value.id)
+    ElMessage.success('已强制释放')
+    loadProject()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || '释放失败')
+    }
+  }
+}
+
+function goPrototype(id) {
+  router.push(`/prototype/${id}`)
+}
+
+async function openSnapshotDialog() {
+  snapshotVisible.value = true
+  snapshotName.value = ''
+  loadSnapshots()
+}
+
+async function loadSnapshots() {
+  snapshotsLoading.value = true
+  try {
+    const res = await getProjectSnapshots(route.params.id)
+    snapshots.value = res.data.data || []
+  } catch (err) {
+    ElMessage.error('加载快照失败')
+  } finally {
+    snapshotsLoading.value = false
+  }
+}
+
+async function handleCreateSnapshot() {
+  if (!snapshotName.value.trim()) {
+    ElMessage.warning('请输入快照名称')
+    return
+  }
+  creatingSnapshot.value = true
+  try {
+    await createProjectSnapshot(route.params.id, { name: snapshotName.value.trim() })
+    ElMessage.success('快照创建成功')
+    snapshotName.value = ''
+    loadSnapshots()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '创建失败')
+  } finally {
+    creatingSnapshot.value = false
+  }
+}
+
+async function handleRestoreSnapshot(row) {
+  try {
+    await ElMessageBox.confirm(`确定恢复到快照「${row.name}」吗？当前菜单结构和原型版本将被覆盖。`, '恢复快照', { type: 'warning' })
+    await restoreProjectSnapshot(route.params.id, row.id)
+    ElMessage.success('恢复成功')
+    loadProject()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || '恢复失败')
+    }
+  }
+}
+
+async function handleDeleteSnapshot(row) {
+  try {
+    await ElMessageBox.confirm('确定删除该快照吗？', '删除快照', { type: 'warning' })
+    await deleteProjectSnapshot(route.params.id, row.id)
+    ElMessage.success('删除成功')
+    loadSnapshots()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || '删除失败')
+    }
+  }
+}
+
+async function openMembersDialog() {
+  membersVisible.value = true
+  memberUsername.value = ''
+  memberOptions.value = []
+  loadMembers()
+}
+
+async function loadMembers() {
+  membersLoading.value = true
+  try {
+    const res = await getProjectMembers(route.params.id)
+    members.value = res.data.data || []
+  } catch (err) {
+    ElMessage.error('加载成员失败')
+  } finally {
+    membersLoading.value = false
+  }
+}
+
+async function handleMemberSearch(keyword) {
+  if (!keyword) {
+    memberOptions.value = []
+    return
+  }
+  memberSearching.value = true
+  try {
+    const res = await searchUsers(keyword)
+    memberOptions.value = (res.data.data || []).filter(u => u.id !== authStore.user?.id)
+  } catch (err) {
+    memberOptions.value = []
+  } finally {
+    memberSearching.value = false
+  }
+}
+
+async function handleAddMember() {
+  if (!memberUsername.value) {
+    ElMessage.warning('请选择用户')
+    return
+  }
+  const user = memberOptions.value.find(u => u.username === memberUsername.value)
+  if (!user) {
+    ElMessage.warning('用户不存在')
+    return
+  }
+  addingMember.value = true
+  try {
+    await addProjectMember(route.params.id, { userId: user.id, role: memberRole.value })
+    ElMessage.success('添加成功')
+    memberUsername.value = ''
+    memberOptions.value = []
+    loadMembers()
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '添加失败')
+  } finally {
+    addingMember.value = false
+  }
+}
+
+async function handleRemoveMember(userId) {
+  try {
+    await ElMessageBox.confirm('确定移除该成员吗？', '移除成员', { type: 'warning' })
+    await removeProjectMember(route.params.id, userId)
+    ElMessage.success('已移除')
+    loadMembers()
+  } catch (err) {
+    if (err !== 'cancel') {
+      ElMessage.error(err.response?.data?.message || '移除失败')
+    }
+  }
+}
+
+function formatDate(row, col, val) {
+  if (!val) return ''
+  const d = new Date(val)
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+}
+</script>
+
+<style scoped>
+.project-portal {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 56px);
+  background: #f5f7fa;
+}
+.portal-header {
+  height: 60px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+}
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.title-block h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a202c;
+}
+.title-block .sub {
+  font-size: 12px;
+  color: #718096;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.portal-body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+.portal-menu {
+  width: 240px;
+  background: #fff;
+  border-right: 1px solid #e4e7ed;
+  overflow-y: auto;
+  padding: 12px 0;
+}
+.menu-group {
+  margin-bottom: 8px;
+}
+.group-label {
+  padding: 8px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+  text-transform: uppercase;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 10px 28px;
+  font-size: 14px;
+  color: #303133;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.menu-item:hover {
+  background: #f5f7fa;
+}
+.menu-item.active {
+  background: #ecf5ff;
+  color: #409eff;
+  font-weight: 600;
+}
+.item-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.portal-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.empty-content,
+.bind-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+.bind-tip {
+  color: #909399;
+  font-size: 13px;
+  margin-top: 8px;
+}
+.bind-form {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.preview-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.preview-toolbar {
+  height: 48px;
+  background: #fff;
+  border-bottom: 1px solid #e4e7ed;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+}
+.preview-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.prototype-name {
+  font-weight: 600;
+  color: #1a202c;
+}
+.version {
+  color: #909399;
+  font-size: 12px;
+}
+.preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.expire-tip {
+  font-size: 12px;
+  color: #e6a23c;
+}
+.preview-frame-wrapper {
+  flex: 1;
+  position: relative;
+}
+.preview-frame {
+  width: 100%;
+  height: 100%;
+}
+.snapshot-form,
+.member-form {
+  display: flex;
+  gap: 10px;
+}
+</style>

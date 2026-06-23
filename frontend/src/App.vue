@@ -15,9 +15,13 @@
             </div>
           </div>
           <div class="nav" v-if="authStore.isLoggedIn">
-            <router-link to="/" :class="{ active: !isAdminPage }">
+            <router-link to="/" :class="{ active: isHomePage }">
               <el-icon><Files /></el-icon>
               原型列表
+            </router-link>
+            <router-link to="/projects" :class="{ active: isProjectPage }">
+              <el-icon><FolderOpened /></el-icon>
+              项目
             </router-link>
             <router-link v-if="authStore.isAdmin" to="/admin/users" :class="{ active: isAdminPage }">
               <el-icon><Setting /></el-icon>
@@ -62,13 +66,14 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import AdminLayout from './components/AdminLayout.vue'
 import PrototypeLayout from './components/PrototypeLayout.vue'
-import { Files, Setting, SwitchButton } from '@element-plus/icons-vue'
+import { Files, FolderOpened, Setting, SwitchButton } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 const route = useRoute()
 const isLoginPage = computed(() => route.path === '/login')
 const isAdminPage = computed(() => route.path.startsWith('/admin'))
 const isHomePage = computed(() => route.path === '/')
+const isProjectPage = computed(() => route.path.startsWith('/projects') || route.path.startsWith('/project/'))
 
 const userRoles = computed(() => {
   const roles = authStore.user?.role

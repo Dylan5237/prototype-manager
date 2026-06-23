@@ -9,6 +9,7 @@ const { migrateFromJson } = require('./routes/prototypes');
 const authRoutes = require('./routes/auth');
 const { router: prototypeRoutes } = require('./routes/prototypes');
 const groupRoutes = require('./routes/groups');
+const projectRoutes = require('./routes/projects');
 const previewRoutes = require('./routes/preview');
 const { initProxy } = require('./services/github');
 
@@ -58,6 +59,7 @@ async function startServer() {
   app.use('/api/auth', authRoutes);
   app.use('/api/groups', groupRoutes);
   app.use('/api/prototypes', prototypeRoutes);
+  app.use('/api/projects', projectRoutes);
   
   // 静态文件服务 - 用于预览原型
   app.use('/preview', previewRoutes);
