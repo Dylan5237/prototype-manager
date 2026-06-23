@@ -38,11 +38,11 @@ export const useAuthStore = defineStore('auth', () => {
     if (!roles) return false
     return Array.isArray(roles) ? roles.includes('admin') : roles === 'admin'
   })
-  const isUploader = computed(() => {
+  const isEditor = computed(() => {
     const roles = user.value?.role
     if (!roles) return false
     const roleArr = Array.isArray(roles) ? roles : [roles]
-    return roleArr.includes('uploader') || roleArr.includes('admin')
+    return roleArr.includes('editor') || roleArr.includes('uploader') || roleArr.includes('admin')
   })
 
   async function login(username, password) {
@@ -80,7 +80,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   return {
-    token, user, isLoggedIn, isAdmin, isUploader,
+    token, user, isLoggedIn, isAdmin, isEditor,
     login, fetchUser, logout
   }
 })

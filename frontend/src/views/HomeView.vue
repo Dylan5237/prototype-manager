@@ -20,7 +20,7 @@
         <el-select v-model="filterCategory" placeholder="按类别筛选" clearable class="category-select" @change="handleCategoryChange">
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
-        <el-button v-if="authStore.isAdmin || authStore.isUploader" type="primary" @click="openCreateDialog">
+        <el-button v-if="authStore.isAdmin || authStore.isEditor" type="primary" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>新建原型
         </el-button>
       </div>

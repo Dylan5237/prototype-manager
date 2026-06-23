@@ -1,13 +1,40 @@
 const { query, queryOne, run } = require('../database/db');
 
 function getGroups() {
-  return query(`
+  const groups = query(`
     SELECT g.*, u.nickname as creator_name,
       (SELECT COUNT(*) FROM user_group_members m WHERE m.group_id = g.id) as member_count
     FROM user_groups g
     LEFT JOIN users u ON g.created_by = u.id
     ORDER BY g.created_at DESC
   `);
+  if (groups.length === 0) return groups;
+
+  const groupIds = groups.map(g => g.id);
+  const placeholders = groupIds.map(() => '?').join(',');
+  const members = query(`
+    SELECT m.group_id, u.id as user_id, u.nickname, u.username
+    FROM user_group_members m
+    JOIN users u ON u.id = m.user_id
+    WHERE m.group_id IN (${placeholders})
+    ORDER BY u.nickname, u.username
+  `, groupIds);
+
+  const memberMap = {};
+  members.forEach(m => {
+    if (!memberMap[m.group_id]) memberMap[m.group_id] = [];
+    memberMap[m.group_id].push(m);
+  });
+
+  return groups.map(g => {
+    const list = memberMap[g.id] || [];
+    return {
+      ...g,
+      member_count: list.length,
+      member_preview: list.slice(0, 3).map(m => m.nickname || m.username),
+      members: list.map(m => ({ user_id: m.user_id, nickname: m.nickname, username: m.username }))
+    };
+  });
 }
 
 function getGroupById(id) {

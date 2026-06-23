@@ -1,9 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
-const { createUser, findUserByUsername, findUserById, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
+const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
+const { setGroupMembers } = require('../services/db-groups');
 
+// uploader 与 editor 等价，数据库统一保存为 uploader，显示层统一展示为「编辑者」
 const VALID_ROLES = ['admin', 'uploader', 'viewer'];
+
+function normalizeRoles(role) {
+  const arr = Array.isArray(role) ? role : [role];
+  return arr.map(r => r === 'editor' ? 'uploader' : r);
+}
 
 // 登录
 router.post('/login', (req, res) => {
@@ -47,8 +54,10 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
     return res.status(400).json({ success: false, message: '密码至少4位' });
   }
   
+  const { groupIds } = req.body;
+
   // role 支持数组和单值
-  const roleArray = Array.isArray(role) ? role : [role || 'viewer'];
+  const roleArray = normalizeRoles(Array.isArray(role) ? role : [role || 'viewer']);
   const invalidRole = roleArray.find(r => !VALID_ROLES.includes(r));
   if (invalidRole) {
     return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
@@ -56,7 +65,10 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
   
   try {
     const user = createUser({ username, password, nickname, role: roleArray });
-    res.json({ success: true, data: user });
+    if (groupIds !== undefined) {
+      setGroupMembers(user.id, Array.isArray(groupIds) ? groupIds : []);
+    }
+    res.json({ success: true, data: findUserByIdWithGroups(user.id) });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
       return res.status(400).json({ success: false, message: '账号已存在' });
@@ -67,7 +79,7 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
 
 // 获取当前用户
 router.get('/me', requireAuth, (req, res) => {
-  const user = findUserById(req.user.id);
+  const user = findUserByIdWithGroups(req.user.id);
   if (!user) {
     return res.status(401).json({ success: false, message: '用户不存在' });
   }
@@ -91,7 +103,7 @@ router.get('/users/search', requireAuth, (req, res) => {
 // 更新用户（仅admin）
 router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
   console.log('[PUT /users/:id] params:', req.params, 'body:', req.body);
-  const { nickname, role, password } = req.body;
+  const { nickname, role, password, groupIds } = req.body;
   const userId = parseInt(req.params.id);
 
   const user = findUserById(userId);
@@ -101,7 +113,7 @@ router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
 
   // role 支持数组和单值
   if (role !== undefined) {
-    const roleArray = Array.isArray(role) ? role : [role];
+    const roleArray = normalizeRoles(Array.isArray(role) ? role : [role]);
     const invalidRole = roleArray.find(r => !VALID_ROLES.includes(r));
     if (invalidRole) {
       return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
@@ -113,8 +125,11 @@ router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
   }
 
   try {
-    const updated = updateUser(userId, { nickname, role: role || user.role, password });
-    res.json({ success: true, data: updated });
+    const updated = updateUser(userId, { nickname, role: role !== undefined ? role : user.role, password });
+    if (groupIds !== undefined) {
+      setGroupMembers(userId, Array.isArray(groupIds) ? groupIds : []);
+    }
+    res.json({ success: true, data: findUserByIdWithGroups(userId) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

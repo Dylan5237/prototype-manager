@@ -82,8 +82,8 @@ const userRoles = computed(() => {
   return Array.isArray(roles) ? roles : [roles]
 })
 
-const roleLabelMap = { admin: '管理员', uploader: '上传者', viewer: '查看者' }
-const roleTagTypeMap = { admin: 'primary', uploader: 'success', viewer: 'info' }
+const roleLabelMap = { admin: '管理员', uploader: '编辑者', editor: '编辑者', viewer: '查看者' }
+const roleTagTypeMap = { admin: 'primary', uploader: 'success', editor: 'success', viewer: 'info' }
 
 function getRoleLabel(role) {
   return roleLabelMap[role] || role

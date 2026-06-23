@@ -22,7 +22,7 @@
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="username" label="账号" width="150" />
       <el-table-column prop="nickname" label="昵称" width="150" />
-      <el-table-column label="角色" width="260">
+      <el-table-column label="角色" width="220">
         <template #default="{ row }">
           <el-tag
             v-for="r in getRolesArray(row.role)"
@@ -32,6 +32,21 @@
             effect="light"
             class="role-tag"
           >{{ getRoleLabel(r) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="所属组" min-width="200">
+        <template #default="{ row }">
+          <div v-if="row.groups && row.groups.length" class="group-tags">
+            <el-tag
+              v-for="g in row.groups"
+              :key="g.id"
+              size="small"
+              effect="plain"
+              type="info"
+              class="group-tag"
+            >{{ g.name }}</el-tag>
+          </div>
+          <span v-else class="text-muted">未分配</span>
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180">
@@ -54,7 +69,7 @@
     </el-table>
 
     <!-- 新建用户弹窗 -->
-    <el-dialog v-model="showCreateDialog" title="新建用户" width="420px" destroy-on-close>
+    <el-dialog v-model="showCreateDialog" title="新建用户" width="460px" destroy-on-close>
       <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="80px">
         <el-form-item label="账号" prop="username">
           <el-input v-model="createForm.username" placeholder="登录账号" />
@@ -68,8 +83,18 @@
         <el-form-item label="角色" prop="roles">
           <el-select v-model="createForm.roles" multiple placeholder="选择角色（可多选）" style="width:100%">
             <el-option label="管理员" value="admin" />
-            <el-option label="上传者" value="uploader" />
+            <el-option label="编辑者" value="uploader" />
             <el-option label="查看者" value="viewer" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属组">
+          <el-select v-model="createForm.groupIds" multiple placeholder="选择所属用户组（可多选）" style="width:100%">
+            <el-option
+              v-for="g in groups"
+              :key="g.id"
+              :label="g.name"
+              :value="g.id"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -80,7 +105,7 @@
     </el-dialog>
 
     <!-- 编辑用户弹窗 -->
-    <el-dialog v-model="showEditDialog" title="编辑用户" width="420px" destroy-on-close>
+    <el-dialog v-model="showEditDialog" title="编辑用户" width="460px" destroy-on-close>
       <el-form :model="editForm" :rules="editRules" ref="editFormRef" label-width="80px">
         <el-form-item label="账号">
           <el-input v-model="editForm.username" disabled />
@@ -91,8 +116,18 @@
         <el-form-item label="角色" prop="roles">
           <el-select v-model="editForm.roles" multiple placeholder="选择角色（可多选）" style="width:100%">
             <el-option label="管理员" value="admin" />
-            <el-option label="上传者" value="uploader" />
+            <el-option label="编辑者" value="uploader" />
             <el-option label="查看者" value="viewer" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属组">
+          <el-select v-model="editForm.groupIds" multiple placeholder="选择所属用户组（可多选）" style="width:100%">
+            <el-option
+              v-for="g in groups"
+              :key="g.id"
+              :label="g.name"
+              :value="g.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="重置密码">
@@ -111,17 +146,20 @@
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUsers, registerUser, updateUser, deleteUser } from '../api/auth'
+import { getGroups } from '../api/groups'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
 
 const users = ref([])
+const groups = ref([])
 const loading = ref(false)
+const groupsLoading = ref(false)
 const searchKeyword = ref('')
 
-// 将 role 统一转为数组
+// 将 role 统一转为数组，并把 editor 映射为 uploader
 function getRolesArray(role) {
   if (!role) return ['viewer']
-  if (Array.isArray(role)) return role
-  return [role]
+  const arr = Array.isArray(role) ? role : [role]
+  return arr.map(r => r === 'editor' ? 'uploader' : r)
 }
 
 /* ========== 新建 ========== */
@@ -132,7 +170,8 @@ const createForm = ref({
   username: '',
   password: '',
   nickname: '',
-  roles: ['viewer']
+  roles: ['viewer'],
+  groupIds: []
 })
 const createRules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
@@ -141,7 +180,7 @@ const createRules = {
 }
 
 function openCreateDialog() {
-  createForm.value = { username: '', password: '', nickname: '', roles: ['viewer'] }
+  createForm.value = { username: '', password: '', nickname: '', roles: ['viewer'], groupIds: [] }
   showCreateDialog.value = true
 }
 
@@ -154,7 +193,8 @@ async function handleCreate() {
       username: createForm.value.username,
       password: createForm.value.password,
       nickname: createForm.value.nickname,
-      role: createForm.value.roles
+      role: createForm.value.roles,
+      groupIds: createForm.value.groupIds
     })
     ElMessage.success('创建成功')
     showCreateDialog.value = false
@@ -175,6 +215,7 @@ const editForm = ref({
   username: '',
   nickname: '',
   roles: ['viewer'],
+  groupIds: [],
   password: ''
 })
 const editRules = {
@@ -188,6 +229,7 @@ function openEditDialog(row) {
     username: row.username,
     nickname: row.nickname || '',
     roles: getRolesArray(row.role),
+    groupIds: (row.groups || []).map(g => g.id),
     password: ''
   }
   showEditDialog.value = true
@@ -200,7 +242,8 @@ async function handleEdit() {
   try {
     const payload = {
       nickname: editForm.value.nickname,
-      role: editForm.value.roles
+      role: editForm.value.roles,
+      groupIds: editForm.value.groupIds
     }
     if (editForm.value.password) {
       payload.password = editForm.value.password
@@ -261,13 +304,25 @@ async function loadData() {
   }
 }
 
+async function loadGroups() {
+  groupsLoading.value = true
+  try {
+    const res = await getGroups()
+    groups.value = res.data.data || []
+  } catch (err) {
+    console.error('加载用户组失败', err)
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
 function getRoleLabel(role) {
-  const map = { admin: '管理员', uploader: '上传者', viewer: '查看者' }
+  const map = { admin: '管理员', uploader: '编辑者', editor: '编辑者', viewer: '查看者' }
   return map[role] || role
 }
 
 function getRoleType(role) {
-  const map = { admin: 'danger', uploader: 'success', viewer: 'info' }
+  const map = { admin: 'danger', uploader: 'success', editor: 'success', viewer: 'info' }
   return map[role] || 'info'
 }
 
@@ -278,7 +333,10 @@ function formatDate(dateStr) {
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  loadGroups()
+})
 </script>
 
 <style scoped>
@@ -316,6 +374,21 @@ onMounted(loadData)
 
 .role-tag {
   margin-right: 4px;
+}
+
+.group-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.group-tag {
+  margin-right: 0;
+}
+
+.text-muted {
+  color: #999;
+  font-size: 13px;
 }
 
 .table-actions {
