@@ -25,9 +25,9 @@
           <el-icon><Share /></el-icon>
           协作
         </el-button>
-        <el-button text @click="copyShareLink">
+        <el-button text :disabled="!previewUrl" @click="copyShareLink">
           <el-icon><Link /></el-icon>
-          分享链接
+          免登录链接
         </el-button>
         <el-button text @click="handleDownload">
           <el-icon><Download /></el-icon>
@@ -323,7 +323,7 @@ import { getGroups } from '../api/groups'
 import {
   getPrototype, downloadPrototype, getReadme, updatePrototype, getCategories,
   getVersions, rollbackVersion, deleteVersion, updateVersionNote,
-  getPrototypeShares, sharePrototype, unsharePrototype,
+  getPrototypeShares, sharePrototype, unsharePrototype, getPublicShareLink,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
 } from '../api/prototypes'
@@ -681,16 +681,27 @@ function getStatusText(status) {
   return map[status] || status
 }
 
-function copyShareLink() {
-  const url = `${window.location.origin}/prototype/${prototype.value.id}`
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => {
-      ElMessage.success('分享链接已复制')
-    }).catch(() => {
-      fallbackCopy(url, '分享链接已复制')
-    })
-  } else {
-    fallbackCopy(url, '分享链接已复制')
+async function copyShareLink() {
+  if (!prototype.value) return
+  try {
+    const res = await getPublicShareLink(prototype.value.id)
+    const link = res.data.data?.url
+    if (!link) {
+      ElMessage.error('生成链接失败')
+      return
+    }
+    const fullUrl = `${window.location.origin}${link}`
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        ElMessage.success('免登录查看链接已复制')
+      }).catch(() => {
+        fallbackCopy(fullUrl, '免登录查看链接已复制')
+      })
+    } else {
+      fallbackCopy(fullUrl, '免登录查看链接已复制')
+    }
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '生成链接失败')
   }
 }
 

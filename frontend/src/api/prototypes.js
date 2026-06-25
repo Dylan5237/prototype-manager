@@ -89,6 +89,11 @@ export function transferPrototype(id, newOwnerId) {
   return api.put(`/prototypes/${id}/transfer`, { new_owner_id: newOwnerId })
 }
 
+// 生成免登录查看链接
+export function getPublicShareLink(id) {
+  return api.get(`/prototypes/${id}/public-link`)
+}
+
 // 版本管理API
 export function getVersions(id) {
   return api.get(`/prototypes/${id}/versions`)

@@ -20,6 +20,23 @@ function generateToken(user) {
   );
 }
 
+// 生成长期有效的分享 token（用于免登录查看链接）
+function generateShareToken(user) {
+  let roles = user.role;
+  if (typeof roles === 'string') {
+    try {
+      roles = JSON.parse(roles);
+    } catch (e) {
+      roles = [roles];
+    }
+  }
+  return jwt.sign(
+    { id: user.id, username: user.username, roles },
+    JWT_SECRET,
+    { expiresIn: '365d' }
+  );
+}
+
 function verifyToken(token) {
   try {
     return jwt.verify(token, JWT_SECRET);
@@ -135,6 +152,7 @@ function requireRole(roles) {
 
 module.exports = {
   generateToken,
+  generateShareToken,
   verifyToken,
   requireAuth,
   requireRole

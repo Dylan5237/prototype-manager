@@ -4,7 +4,8 @@ const AdmZip = require('adm-zip');
 const path = require('path');
 const fs = require('fs');
 const router = express.Router();
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, generateShareToken } = require('../middleware/auth');
+const { findUserByUsername, initGuestUser } = require('../services/db-users');
 const {
   getPrototypes, getPrototypeById, createPrototype, updatePrototype, deletePrototype,
   softDeletePrototype, getRecycleBinPrototypes, restorePrototype, hardDeletePrototype,
@@ -660,6 +661,36 @@ router.put('/:id/transfer', requireAuth, requireRole(['admin']), (req, res) => {
   }
   const updated = transferPrototype(prototype.id, new_owner_id);
   res.json({ success: true, data: updated });
+});
+
+// 生成免登录查看链接（仅原型归属者/管理员/协作者可生成）
+router.get('/:id/public-link', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!canEditPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权操作该原型' });
+  }
+  if (!prototype.entry_file) {
+    return res.status(400).json({ success: false, message: '原型尚未上传入口文件，无法生成查看链接' });
+  }
+
+  // 确保默认访客账号存在
+  initGuestUser();
+  const guest = findUserByUsername('user');
+  if (!guest) {
+    return res.status(500).json({ success: false, message: '系统未配置默认访客账号' });
+  }
+
+  // 默认访客需要被分享才能访问，若未分享则自动添加
+  if (!isAdmin({ user: guest }) && prototype.created_by !== guest.id && !getSharedUserIds(prototype.id).includes(guest.id)) {
+    addPrototypeShare(prototype.id, guest.id);
+  }
+
+  const token = generateShareToken(guest);
+  const url = `/preview/${prototype.id}/${prototype.entry_file}?token=${token}`;
+  res.json({ success: true, data: { url, token } });
 });
 
 // ========== 评论反馈 ==========
