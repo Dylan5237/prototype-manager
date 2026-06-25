@@ -65,8 +65,8 @@ async function startServer() {
   // 静态文件服务 - 用于预览原型
   app.use('/preview', previewRoutes);
 
-  // 免登录分享短链重定向 - 访问 /s/:code 时种 Cookie 并跳转到预览页
-  app.use('/s', shareRoutes);
+  // 免登录分享短链重定向 - 访问 /api/s/:code 时种 Cookie 并跳转到预览页
+  app.use('/api/s', shareRoutes);
   
   // 健康检查
   app.get('/api/health', (req, res) => {

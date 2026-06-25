@@ -6,7 +6,7 @@ const { generateShareToken, serializeCookie } = require('../middleware/auth');
 
 const PREVIEW_COOKIE_NAME = 'fuxi_token';
 
-// 访问 /s/:code → 用默认访客账号生成 token → 种 Cookie → 302 重定向到预览页
+// 访问 /api/s/:code → 用默认访客账号生成 token → 种 Cookie → 302 重定向到预览页
 // 这样免登录链接短小（不含 token），且 Cookie 在 /preview 路径下自动生效
 router.get('/:code', (req, res) => {
   const record = getShareLinkByCode(req.params.code);

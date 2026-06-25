@@ -682,7 +682,7 @@ router.get('/:id/public-link', requireAuth, (req, res) => {
   // 复用已有的短码（同一原型 + 同一入口文件），避免每次生成都创建新记录
   const existing = findShareLink(prototype.id, prototype.entry_file);
   if (existing) {
-    return res.json({ success: true, data: { url: `/s/${existing.code}`, code: existing.code } });
+    return res.json({ success: true, data: { url: `/api/s/${existing.code}`, code: existing.code } });
   }
 
   // 确保默认访客账号存在
@@ -705,7 +705,7 @@ router.get('/:id/public-link', requireAuth, (req, res) => {
   }
   createShareLink({ code, prototypeId: prototype.id, entryFile: prototype.entry_file, createdBy: req.user.id });
 
-  res.json({ success: true, data: { url: `/s/${code}`, code } });
+  res.json({ success: true, data: { url: `/api/s/${code}`, code } });
 });
 
 // ========== 评论反馈 ==========
