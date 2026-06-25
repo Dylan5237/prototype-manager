@@ -273,6 +273,27 @@ function removePrototypeShare(prototypeId, userId) {
   return getPrototypeShares(prototypeId);
 }
 
+// ===== 免登录分享短链 =====
+function createShareLink({ code, prototypeId, entryFile, createdBy }) {
+  const now = new Date().toISOString();
+  run(`
+    INSERT INTO share_links (code, prototype_id, entry_file, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `, [code, prototypeId, entryFile, createdBy || null, now]);
+  return queryOne(`SELECT * FROM share_links WHERE code = ?`, [code]);
+}
+
+function getShareLinkByCode(code) {
+  return queryOne(`SELECT * FROM share_links WHERE code = ?`, [code]);
+}
+
+function findShareLink(prototypeId, entryFile) {
+  return queryOne(
+    `SELECT * FROM share_links WHERE prototype_id = ? AND entry_file = ? ORDER BY created_at DESC LIMIT 1`,
+    [prototypeId, entryFile]
+  );
+}
+
 function getLatestVersionNumber(prototypeId) {
   const result = queryOne(`SELECT MAX(version_number) as max_version FROM prototype_versions WHERE prototype_id = ?`, [prototypeId]);
   return result && result.max_version ? result.max_version : 0;
@@ -349,5 +370,8 @@ module.exports = {
   getPrototypeShares,
   getSharedUserIds,
   addPrototypeShare,
-  removePrototypeShare
+  removePrototypeShare,
+  createShareLink,
+  getShareLinkByCode,
+  findShareLink
 };

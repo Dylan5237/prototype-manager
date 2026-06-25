@@ -282,6 +282,20 @@ function createTables() {
       FOREIGN KEY (created_by) REFERENCES users(id)
     )
   `);
+
+  // 原型分享短链表（免登录查看链接）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS share_links (
+      code TEXT PRIMARY KEY,
+      prototype_id TEXT NOT NULL,
+      entry_file TEXT NOT NULL,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE
+    )
+  `);
+  // 为已存在的旧库补建索引（若表已存在则跳过）
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_share_links_prototype ON share_links(prototype_id)`); } catch (e) {}
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式

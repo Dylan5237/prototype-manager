@@ -155,5 +155,7 @@ module.exports = {
   generateShareToken,
   verifyToken,
   requireAuth,
-  requireRole
+  requireRole,
+  serializeCookie,
+  PREVIEW_COOKIE_NAME
 };

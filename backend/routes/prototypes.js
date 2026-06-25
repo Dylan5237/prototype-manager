@@ -6,13 +6,15 @@ const fs = require('fs');
 const router = express.Router();
 const { requireAuth, requireRole, generateShareToken } = require('../middleware/auth');
 const { findUserByUsername, initGuestUser } = require('../services/db-users');
+const crypto = require('crypto');
 const {
   getPrototypes, getPrototypeById, createPrototype, updatePrototype, deletePrototype,
   softDeletePrototype, getRecycleBinPrototypes, restorePrototype, hardDeletePrototype,
   setPrototypeTags, getCategories, getCategoryById, createCategory, updateCategory, deleteCategory,
   getReadme, migrateFromJson, transferPrototype,
   getVersions, createVersion, deleteVersion, updateVersionNote, getLatestVersionNumber,
-  getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare
+  getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare,
+  createShareLink, getShareLinkByCode, findShareLink
 } = require('../services/db-prototypes');
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
@@ -664,6 +666,7 @@ router.put('/:id/transfer', requireAuth, requireRole(['admin']), (req, res) => {
 });
 
 // 生成免登录查看链接（仅原型归属者/管理员/协作者可生成）
+// 返回短码链接 /s/:code，访问短码时后端自动种 Cookie 并重定向到预览页
 router.get('/:id/public-link', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
@@ -674,6 +677,12 @@ router.get('/:id/public-link', requireAuth, (req, res) => {
   }
   if (!prototype.entry_file) {
     return res.status(400).json({ success: false, message: '原型尚未上传入口文件，无法生成查看链接' });
+  }
+
+  // 复用已有的短码（同一原型 + 同一入口文件），避免每次生成都创建新记录
+  const existing = findShareLink(prototype.id, prototype.entry_file);
+  if (existing) {
+    return res.json({ success: true, data: { url: `/s/${existing.code}`, code: existing.code } });
   }
 
   // 确保默认访客账号存在
@@ -688,9 +697,15 @@ router.get('/:id/public-link', requireAuth, (req, res) => {
     addPrototypeShare(prototype.id, guest.id);
   }
 
-  const token = generateShareToken(guest);
-  const url = `/preview/${prototype.id}/${prototype.entry_file}?token=${token}`;
-  res.json({ success: true, data: { url, token } });
+  // 生唯一短码（8 字符 base64url）
+  let code;
+  for (let i = 0; i < 5; i++) {
+    code = crypto.randomBytes(6).toString('base64url').slice(0, 8);
+    if (!getShareLinkByCode(code)) break;
+  }
+  createShareLink({ code, prototypeId: prototype.id, entryFile: prototype.entry_file, createdBy: req.user.id });
+
+  res.json({ success: true, data: { url: `/s/${code}`, code } });
 });
 
 // ========== 评论反馈 ==========
