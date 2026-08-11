@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'nvwa-secret-key-change-in-production';
 const PREVIEW_COOKIE_NAME = 'fuxi_token';
 
-function generateToken(user) {
+function generateToken(user, options = {}) {
   // user.role 可能是 JSON 数组字符串或普通字符串
   let roles = user.role;
   if (typeof roles === 'string') {
@@ -16,7 +16,7 @@ function generateToken(user) {
   return jwt.sign(
     { id: user.id, username: user.username, roles },
     JWT_SECRET,
-    { expiresIn: '7d' }
+    { expiresIn: options.expiresIn || '7d' }
   );
 }
 

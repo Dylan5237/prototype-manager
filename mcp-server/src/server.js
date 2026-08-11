@@ -1,0 +1,779 @@
+#!/usr/bin/env node
+
+const fs = require('fs');
+const path = require('path');
+const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
+
+const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+let cachedToken = process.env.FUXI_TOKEN || '';
+let nextId = 1;
+
+class ToolError extends Error {
+  constructor(code, message, details = {}) {
+    super(message);
+    this.code = code;
+    this.details = details;
+  }
+}
+
+const tools = [
+  {
+    name: 'check_connection',
+    description: 'Check whether the Fuxi backend is reachable.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'list_prototypes',
+    description: 'List prototypes accessible to the configured Fuxi account.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword: { type: 'string' },
+        categoryId: { type: 'string' },
+        scope: { type: 'string', enum: ['my', 'shared', 'all'] },
+        page: { type: 'number' },
+        pageSize: { type: 'number' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'create_prototype',
+    description: 'Create a Fuxi prototype record.',
+    inputSchema: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: { type: 'string' },
+        description: { type: 'string' },
+        categoryId: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string' } }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_prototype',
+    description: 'Read one prototype detail, including file tree metadata.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId'],
+      properties: {
+        prototypeId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_readme',
+    description: 'Read the README extracted for a prototype.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId'],
+      properties: {
+        prototypeId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_preview_url',
+    description: 'Create or reuse a browser-ready share URL for a prototype preview.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId'],
+      properties: {
+        prototypeId: { type: 'string' },
+        entryFile: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'upload_zip',
+    description: 'Upload an existing ZIP file to a Fuxi prototype as a new version.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'zipPath', 'versionNote'],
+      properties: {
+        prototypeId: { type: 'string' },
+        zipPath: { type: 'string' },
+        versionNote: { type: 'string' },
+        versionType: { type: 'string', enum: ['major', 'minor', 'patch'] }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'list_projects',
+    description: 'List projects accessible to the configured Fuxi account.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        keyword: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_project',
+    description: 'Read one accessible project with prototype bindings, members, and checkout status.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId'],
+      properties: {
+        projectId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'bind_prototype_to_project',
+    description: 'Bind an existing prototype into a project menu as a new project-prototype entry.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'prototypeId', 'menuPath'],
+      properties: {
+        projectId: { type: 'string' },
+        prototypeId: { type: 'string' },
+        menuPath: { type: 'string' },
+        sortOrder: { type: 'number' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'checkout_prototype',
+    description: 'Check out a bound project prototype for exclusive editing.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'projectPrototypeId'],
+      properties: {
+        projectId: { type: 'string' },
+        projectPrototypeId: { type: 'number' },
+        note: { type: 'string' },
+        durationHours: { type: 'number' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'checkin_prototype',
+    description: 'Check in a project prototype that the current user checked out.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'projectPrototypeId'],
+      properties: {
+        projectId: { type: 'string' },
+        projectPrototypeId: { type: 'number' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'create_snapshot',
+    description: 'Create a named project snapshot of menu configuration and bound prototype versions.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'name'],
+      properties: {
+        projectId: { type: 'string' },
+        name: { type: 'string' },
+        versionLabel: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'restore_snapshot',
+    description: 'Restore a project snapshot. Requires explicit confirm: true and a production backup gate.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'snapshotId', 'confirm'],
+      properties: {
+        projectId: { type: 'string' },
+        snapshotId: { type: 'number' },
+        confirm: { type: 'boolean' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'delete_prototype',
+    description: 'Move a prototype to the recycle bin. Requires explicit confirm: true.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'confirm'],
+      properties: {
+        prototypeId: { type: 'string' },
+        confirm: { type: 'boolean' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'rollback_version',
+    description: 'Roll a prototype back to a previous version. Requires explicit confirm: true and a backup gate for production.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'versionId', 'confirm'],
+      properties: {
+        prototypeId: { type: 'string' },
+        versionId: { type: 'string' },
+        confirm: { type: 'boolean' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'force_release_checkout',
+    description: 'Force-release a checked-out project prototype. Owner/admin only; requires explicit confirm: true.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'projectPrototypeId', 'confirm'],
+      properties: {
+        projectId: { type: 'string' },
+        projectPrototypeId: { type: 'number' },
+        confirm: { type: 'boolean' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'validate_project',
+    description: 'Validate a local project directory for Fuxi upload compatibility without modifying it.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectPath'],
+      properties: {
+        projectPath: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'validate_zip',
+    description: 'Inspect an existing ZIP file for Fuxi upload compatibility.',
+    inputSchema: {
+      type: 'object',
+      required: ['zipPath'],
+      properties: {
+        zipPath: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'pack_project',
+    description: 'Create a Fuxi-compatible ZIP from a built project directory.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectPath', 'outputZipPath'],
+      properties: {
+        projectPath: { type: 'string' },
+        outputZipPath: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'upload_project',
+    description: 'Validate a ZIP then upload it to an explicit prototype as a new version.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'zipPath', 'versionNote'],
+      properties: {
+        prototypeId: { type: 'string' },
+        zipPath: { type: 'string' },
+        versionNote: { type: 'string' },
+        versionType: { type: 'string', enum: ['major', 'minor', 'patch'] }
+      },
+      additionalProperties: false
+    }
+  }
+];
+
+function send(message) {
+  process.stdout.write(`${JSON.stringify(message)}\n`);
+}
+
+function result(id, value) {
+  send({ jsonrpc: '2.0', id, result: value });
+}
+
+function error(id, code, message) {
+  send({ jsonrpc: '2.0', id, error: { code, message } });
+}
+
+async function request(apiPath, options = {}) {
+  const url = new URL(apiPath, `${API_URL}/`);
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (cause) {
+    throw new ToolError('CONNECTION_FAILED', 'Unable to reach the Fuxi backend', {
+      apiUrl: API_URL
+    });
+  }
+  const text = await response.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch (e) {
+    body = text;
+  }
+  if (!response.ok || (body && body.success === false)) {
+    const message = body && body.message ? body.message : `${response.status} ${response.statusText}`;
+    let code = 'PLATFORM_REQUEST_FAILED';
+    if (response.status === 401) code = 'AUTHENTICATION_FAILED';
+    else if (response.status === 403) code = 'PERMISSION_DENIED';
+    else if (response.status === 404) code = 'RESOURCE_NOT_FOUND';
+    else if (response.status === 400) code = 'INVALID_REQUEST';
+    else if (response.status === 409) code = 'CONFLICT';
+    throw new ToolError(code, message, { httpStatus: response.status });
+  }
+  return body;
+}
+
+async function getToken() {
+  if (cachedToken) return cachedToken;
+  const username = process.env.FUXI_USERNAME;
+  const password = process.env.FUXI_PASSWORD;
+  if (!username || !password) {
+    throw new ToolError(
+      'AUTHENTICATION_REQUIRED',
+      'FUXI_TOKEN or FUXI_USERNAME/FUXI_PASSWORD is required'
+    );
+  }
+  const body = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  cachedToken = body.data.token;
+  return cachedToken;
+}
+
+async function authed(apiPath, options = {}) {
+  const token = await getToken();
+  return request(apiPath, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${token}`
+    }
+  });
+}
+
+function contentJson(data, isError = false) {
+  const value = {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify(data, null, 2)
+      }
+    ]
+  };
+  if (isError) value.isError = true;
+  return value;
+}
+
+function toolFailure(errorValue) {
+  const error = errorValue instanceof ToolError
+    ? errorValue
+    : new ToolError('INTERNAL_ERROR', errorValue.message || 'Unexpected MCP tool failure');
+  return contentJson({
+    ok: false,
+    error: {
+      code: error.code,
+      message: error.message,
+      ...error.details
+    }
+  }, true);
+}
+
+function prototypeFields(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      prototypeId: null,
+      entryFile: null,
+      previewUrl: null,
+      readmeStatus: null,
+      versionNumber: null,
+      projectId: null
+    };
+  }
+  const readmeStatus = Array.isArray(data.files)
+    ? (data.files.some(f => f.type === 'file' && /^(README|readme|docs\/README)\.md$/.test(f.path)) ? 'present' : 'missing')
+    : null;
+  return {
+    prototypeId: data.id,
+    entryFile: data.entry_file || null,
+    previewUrl: null,
+    readmeStatus,
+    versionNumber: data.version !== undefined ? data.version : (data.version_number || null),
+    projectId: null
+  };
+}
+
+function projectFields(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      prototypeId: null,
+      entryFile: null,
+      previewUrl: null,
+      readmeStatus: null,
+      versionNumber: null,
+      projectId: null
+    };
+  }
+  return {
+    prototypeId: null,
+    entryFile: null,
+    previewUrl: null,
+    readmeStatus: null,
+    versionNumber: null,
+    projectId: data.id
+  };
+}
+
+function projectActionFields(data) {
+  if (!data || typeof data !== 'object') {
+    return {
+      prototypeId: null,
+      entryFile: null,
+      previewUrl: null,
+      readmeStatus: null,
+      versionNumber: null,
+      projectId: null
+    };
+  }
+  return {
+    prototypeId: data.prototype_id || null,
+    entryFile: null,
+    previewUrl: null,
+    readmeStatus: null,
+    versionNumber: null,
+    projectId: data.project_id || data.id || null
+  };
+}
+
+function withFields(payload, fields) {
+  return { ...payload, fields };
+}
+
+async function callTool(name, args) {
+  if (name === 'check_connection') {
+    const data = await request('/api/health');
+    return contentJson({ apiUrl: API_URL, health: data });
+  }
+
+  if (name === 'list_prototypes') {
+    const params = new URLSearchParams();
+    if (args.keyword) params.set('keyword', args.keyword);
+    if (args.categoryId) params.set('category_id', args.categoryId);
+    if (args.scope) params.set('scope', args.scope);
+    if (args.page) params.set('page', String(args.page));
+    if (args.pageSize) params.set('pageSize', String(args.pageSize));
+    const suffix = params.toString() ? `?${params}` : '';
+    return contentJson(await authed(`/api/prototypes${suffix}`));
+  }
+
+  if (name === 'create_prototype') {
+    const created = await authed('/api/prototypes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: args.name,
+        description: args.description || '',
+        categoryId: args.categoryId,
+        tags: args.tags || []
+      })
+    });
+    return contentJson(withFields(created, prototypeFields(created.data)));
+  }
+
+  if (name === 'get_prototype') {
+    const detail = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}`);
+    return contentJson(withFields(detail, prototypeFields(detail.data)));
+  }
+
+  if (name === 'get_readme') {
+    const readme = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/readme`);
+    return contentJson(withFields(readme, {
+      ...prototypeFields(readme.data || {}),
+      prototypeId: args.prototypeId,
+      readmeStatus: readme.data && readme.data.content ? 'present' : 'missing'
+    }));
+  }
+
+  if (name === 'get_preview_url') {
+    const prototype = (await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}`)).data;
+    if (!prototype.entry_file) {
+      throw new ToolError('PREVIEW_NOT_READY', 'Prototype has no entry file yet');
+    }
+    if (args.entryFile && args.entryFile !== prototype.entry_file) {
+      throw new ToolError('ENTRY_FILE_MISMATCH', 'Requested entry file is not the current prototype entry');
+    }
+    const share = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/public-link`);
+    return contentJson({
+      apiUrl: API_URL,
+      prototypeId: args.prototypeId,
+      entryFile: prototype.entry_file.replace(/\\/g, '/'),
+      previewUrl: new URL(share.data.url, `${API_URL}/`).toString(),
+      access: 'share-link',
+      fields: {
+        prototypeId: args.prototypeId,
+        entryFile: prototype.entry_file.replace(/\\/g, '/'),
+        previewUrl: new URL(share.data.url, `${API_URL}/`).toString(),
+        readmeStatus: null,
+        versionNumber: prototype.version !== undefined ? prototype.version : null,
+        projectId: null
+      }
+    });
+  }
+
+  if (name === 'upload_zip') {
+    const zipPath = path.resolve(args.zipPath);
+    if (!fs.existsSync(zipPath)) {
+      throw new ToolError('FILE_NOT_FOUND', 'ZIP file not found', {
+        fileName: path.basename(zipPath)
+      });
+    }
+    validateZipFile(zipPath);
+    const bytes = fs.readFileSync(zipPath);
+    const form = new FormData();
+    form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    form.set('versionNote', args.versionNote);
+    form.set('versionType', args.versionType || 'patch');
+    const uploaded = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/upload`, {
+      method: 'POST',
+      body: form
+    });
+    return contentJson(withFields(uploaded, prototypeFields(uploaded.data)));
+  }
+
+  if (name === 'list_projects') {
+    const params = new URLSearchParams();
+    if (args.keyword) params.set('keyword', args.keyword);
+    const suffix = params.toString() ? `?${params}` : '';
+    return contentJson(await authed(`/api/projects${suffix}`));
+  }
+
+  if (name === 'get_project') {
+    const project = await authed(`/api/projects/${encodeURIComponent(args.projectId)}`);
+    return contentJson(withFields(project, projectFields(project.data)));
+  }
+
+  if (name === 'bind_prototype_to_project') {
+    const bound = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prototypeId: args.prototypeId,
+        menuPath: args.menuPath,
+        sortOrder: args.sortOrder || 0
+      })
+    });
+    return contentJson(withFields(bound, projectActionFields(bound.data)));
+  }
+
+  if (name === 'checkout_prototype') {
+    const checkout = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes/${args.projectPrototypeId}/checkout`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        note: args.note || '',
+        durationHours: args.durationHours || 24
+      })
+    });
+    return contentJson(withFields(checkout, projectActionFields(checkout.data)));
+  }
+
+  if (name === 'checkin_prototype') {
+    const checkin = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes/${args.projectPrototypeId}/checkin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    return contentJson(withFields(checkin, projectActionFields(checkin.data)));
+  }
+
+  if (name === 'create_snapshot') {
+    const snapshot = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/snapshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: args.name,
+        versionLabel: args.versionLabel || ''
+      })
+    });
+    return contentJson(withFields(snapshot, projectActionFields(snapshot.data)));
+  }
+
+  if (name === 'restore_snapshot') {
+    if (args.confirm !== true) {
+      throw new ToolError('CONFIRMATION_REQUIRED', 'restore_snapshot requires confirm: true; it rebuilds bindings and rolls back prototype files');
+    }
+    const restored = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/snapshots/${args.snapshotId}/restore`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    return contentJson({
+      ...restored,
+      fields: {
+        prototypeId: null,
+        entryFile: null,
+        previewUrl: null,
+        readmeStatus: null,
+        versionNumber: null,
+        projectId: args.projectId
+      }
+    });
+  }
+
+  if (name === 'delete_prototype') {
+    if (args.confirm !== true) {
+      throw new ToolError('CONFIRMATION_REQUIRED', 'delete_prototype requires confirm: true; it moves the prototype to the recycle bin');
+    }
+    const deleted = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}`, {
+      method: 'DELETE'
+    });
+    return contentJson({
+      ...deleted,
+      fields: {
+        prototypeId: args.prototypeId,
+        entryFile: null,
+        previewUrl: null,
+        readmeStatus: null,
+        versionNumber: null,
+        projectId: null
+      }
+    });
+  }
+
+  if (name === 'rollback_version') {
+    if (args.confirm !== true) {
+      throw new ToolError('CONFIRMATION_REQUIRED', 'rollback_version requires confirm: true; it replaces current prototype files with the target version');
+    }
+    const rolledBack = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/versions/${encodeURIComponent(args.versionId)}/rollback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    return contentJson(withFields(rolledBack, prototypeFields(rolledBack.data)));
+  }
+
+  if (name === 'force_release_checkout') {
+    if (args.confirm !== true) {
+      throw new ToolError('CONFIRMATION_REQUIRED', 'force_release_checkout requires confirm: true and owner/admin role');
+    }
+    const released = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes/${args.projectPrototypeId}/release`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    return contentJson(withFields(released, projectActionFields(released.data)));
+  }
+
+  if (name === 'validate_project') {
+    return contentJson(validateProject(args.projectPath));
+  }
+
+  if (name === 'validate_zip') {
+    return contentJson(validateZipFile(args.zipPath));
+  }
+
+  if (name === 'pack_project') {
+    return contentJson(packProject(args.projectPath, args.outputZipPath));
+  }
+
+  if (name === 'upload_project') {
+    const zipPath = path.resolve(args.zipPath);
+    const validation = validateZipFile(zipPath);
+    if (!validation.ok) {
+      throw new ZipError(validation.errors.join('; ') || 'ZIP validation failed', 'VALIDATION_FAILED');
+    }
+    const bytes = fs.readFileSync(zipPath);
+    const form = new FormData();
+    form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    form.set('versionNote', args.versionNote);
+    form.set('versionType', args.versionType || 'patch');
+    const uploaded = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/upload`, {
+      method: 'POST',
+      body: form
+    });
+    const detail = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}`);
+    return contentJson({
+      ok: true,
+      prototypeId: args.prototypeId,
+      entryFile: detail.data.entry_file,
+      version: uploaded.data && uploaded.data.version_label ? uploaded.data.version_label : null,
+      readme: 'uploaded' in uploaded ? 'uploaded' : detail.data.entry_file ? 'check' : 'pending',
+      affectedScope: 'target-prototype-only',
+      fields: {
+        prototypeId: args.prototypeId,
+        entryFile: detail.data.entry_file,
+        previewUrl: null,
+        readmeStatus: null,
+        versionNumber: uploaded.data && uploaded.data.version !== undefined ? uploaded.data.version : null,
+        projectId: null
+      },
+      validation
+    });
+  }
+
+  throw new Error(`Unknown tool: ${name}`);
+}
+
+async function handle(message) {
+  if (message.method === 'initialize') {
+    result(message.id, {
+      protocolVersion: message.params && message.params.protocolVersion || '2024-11-05',
+      capabilities: { tools: {} },
+      serverInfo: { name: 'fuxi-platform-mcp-server', version: '0.1.0' }
+    });
+    return;
+  }
+
+  if (message.method === 'tools/list') {
+    result(message.id, { tools });
+    return;
+  }
+
+  if (message.method === 'tools/call') {
+    try {
+      const toolResult = await callTool(message.params.name, message.params.arguments || {});
+      result(message.id, toolResult);
+    } catch (e) {
+      result(message.id, toolFailure(e));
+    }
+    return;
+  }
+
+  if (message.id !== undefined) {
+    error(message.id, -32601, `Method not found: ${message.method}`);
+  }
+}
+
+let buffer = '';
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', chunk => {
+  buffer += chunk;
+  let index;
+  while ((index = buffer.indexOf('\n')) >= 0) {
+    const line = buffer.slice(0, index).trim();
+    buffer = buffer.slice(index + 1);
+    if (!line) continue;
+    try {
+      handle(JSON.parse(line));
+    } catch (e) {
+      error(nextId++, -32700, e.message);
+    }
+  }
+});

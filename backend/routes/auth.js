@@ -18,16 +18,16 @@ router.post('/login', (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
   }
-  
+
   const user = findUserByUsername(username);
   if (!user) {
     return res.status(401).json({ success: false, message: '账号或密码错误' });
   }
-  
+
   if (!verifyPassword(user, password)) {
     return res.status(401).json({ success: false, message: '账号或密码错误' });
   }
-  
+
   const token = generateToken(user);
   res.json({
     success: true,
@@ -49,11 +49,11 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
   }
-  
+
   if (password.length < 4) {
     return res.status(400).json({ success: false, message: '密码至少4位' });
   }
-  
+
   const { groupIds } = req.body;
 
   // role 支持数组和单值
@@ -62,7 +62,7 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
   if (invalidRole) {
     return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
   }
-  
+
   try {
     const user = createUser({ username, password, nickname, role: roleArray });
     if (groupIds !== undefined) {
@@ -84,6 +84,24 @@ router.get('/me', requireAuth, (req, res) => {
     return res.status(401).json({ success: false, message: '用户不存在' });
   }
   res.json({ success: true, data: user });
+});
+
+// 生成短期 MCP 接入 token，避免用户向 AI 助手提供长期 JWT 或账号密码
+router.get('/mcp-token', requireAuth, (req, res) => {
+  const user = findUserById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, message: '用户不存在' });
+  }
+  const expiresInSeconds = 60 * 60; // 1 小时
+  const token = generateToken(user, { expiresIn: `${expiresInSeconds}s` });
+  res.json({
+    success: true,
+    data: {
+      token,
+      expiresIn: expiresInSeconds,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+    }
+  });
 });
 
 // 用户列表（仅admin）

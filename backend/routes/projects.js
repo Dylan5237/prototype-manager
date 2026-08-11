@@ -5,7 +5,7 @@ const {
   createProject, getProjects, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
   addProjectMember, getProjectMember, getProjectMembers, removeProjectMember,
-  checkoutPrototype, checkinPrototype, forceReleaseCheckout, getProjectCheckouts,
+  checkoutPrototype, checkinPrototype, forceReleaseCheckout, getActiveCheckout, getProjectCheckouts,
   createSnapshot, getProjectSnapshots, getSnapshotById, restoreSnapshot, deleteSnapshot
 } = require('../services/db-projects');
 const { getPrototypeById } = require('../services/db-prototypes');
