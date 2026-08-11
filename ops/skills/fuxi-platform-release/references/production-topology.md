@@ -14,6 +14,7 @@ Read this file before probing, deploying, or rolling back production.
 | Shared data root | `/zoesoft/fuxi/shared` |
 | Backup root | `/zoesoft/fuxi/backups` |
 | PM2 app | `fuxi-backend` |
+| PM2 executable | `/root/.npm-global/bin/pm2`; non-login SSH does not include it in `PATH` |
 | Backend | Node.js `20.20.2`, port `3001` |
 | Frontend | Nginx port `80`, root below legacy project path |
 | Nginx config | `/etc/nginx/sites-available/fuxi` |

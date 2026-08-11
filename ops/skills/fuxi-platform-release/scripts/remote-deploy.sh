@@ -8,6 +8,8 @@ RELEASE_ID=
 BASELINE=
 CONFIRM=
 PM2_APP=fuxi-backend
+PM2_BIN=/root/.npm-global/bin/pm2
+export PATH="/usr/local/n/versions/node/20.20.2/bin:/usr/local/bin:/root/.npm-global/bin:/usr/bin:/bin"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="$2"; shift 2 ;;
@@ -23,6 +25,7 @@ done
 [[ "$RELEASE_ID" =~ ^[0-9]{8}-[0-9]{6}-[0-9a-f]{8}$ ]] || { echo 'Invalid release ID.' >&2; exit 2; }
 [[ -f "$ARCHIVE" && -f "$BASELINE" && -n "$SHA256" ]] || { echo 'Archive, baseline, or checksum missing.' >&2; exit 2; }
 [[ "$ROOT" == /zoesoft/fuxi ]] || { echo 'Unexpected production root.' >&2; exit 2; }
+[[ -x "$PM2_BIN" ]] || { echo 'Pinned PM2 executable is missing.' >&2; exit 2; }
 
 PROJECT="$ROOT/fuxi-platform"
 RELEASE_ROOT="$ROOT/releases"
@@ -73,7 +76,7 @@ restore_previous() {
     fi
   fi
   if [[ "$SHARED_CREATED" == true ]]; then rm -rf "$SHARED"; fi
-  if [[ "$STOPPED" == true ]]; then pm2 restart "$PM2_APP" --update-env >/dev/null 2>&1 || true; fi
+  if [[ "$STOPPED" == true ]]; then "$PM2_BIN" restart "$PM2_APP" --update-env >/dev/null 2>&1 || true; fi
   printf 'deployment_status=restored\nfailed_state=%s\nbackup_id=%s\n' "$STATE" "$BACKUP_ID" >&2
 }
 on_error() { local code=$?; restore_previous; cleanup_lock; exit "$code"; }
@@ -117,7 +120,7 @@ printf '%s\n' "$active_root" > "$BACKUP/previous-target"
 printf '%s\n' "$RELEASE_ID" > "$BACKUP/candidate-release"
 git -C "$active_root" status --porcelain > "$BACKUP/legacy-git-status.txt" 2>/dev/null || true
 git -C "$active_root" diff -- backend/package-lock.json frontend/package-lock.json > "$BACKUP/legacy-lockfiles.diff" 2>/dev/null || true
-pm2 stop "$PM2_APP"
+"$PM2_BIN" stop "$PM2_APP"
 STOPPED=true
 tar -czf "$BACKUP/persistent.tar.gz" -C "$active_root/backend" data repos uploads
 tar -tzf "$BACKUP/persistent.tar.gz" >/dev/null
@@ -173,7 +176,7 @@ set -a
 # shellcheck disable=SC1090
 source "$SHARED/backend.env"
 set +a
-pm2 restart "$PM2_APP" --update-env
+"$PM2_BIN" restart "$PM2_APP" --update-env
 STOPPED=false
 
 STATE=health

@@ -6,6 +6,8 @@ BACKUP_ID=
 RESTORE_DATA=false
 CONFIRM=
 PM2_APP=fuxi-backend
+PM2_BIN=/root/.npm-global/bin/pm2
+export PATH="/usr/local/n/versions/node/20.20.2/bin:/usr/local/bin:/root/.npm-global/bin:/usr/bin:/bin"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --root) ROOT="$2"; shift 2 ;;
@@ -18,6 +20,7 @@ done
 [[ "$CONFIRM" == ROLLBACK_FUXI_PRODUCTION ]] || { echo 'Production rollback confirmation missing.' >&2; exit 2; }
 [[ "$BACKUP_ID" =~ ^[0-9]{8}-[0-9]{6}-pre-[0-9]{8}-[0-9]{6}-[0-9a-f]{8}$ ]] || { echo 'Invalid backup ID.' >&2; exit 2; }
 [[ "$ROOT" == /zoesoft/fuxi ]] || { echo 'Unexpected production root.' >&2; exit 2; }
+[[ -x "$PM2_BIN" ]] || { echo 'Pinned PM2 executable is missing.' >&2; exit 2; }
 
 PROJECT="$ROOT/fuxi-platform"
 SHARED="$ROOT/shared"
@@ -28,7 +31,7 @@ STOPPED=false
 mkdir "$LOCK" 2>/dev/null || { echo 'Another release operation is active.' >&2; exit 3; }
 on_error() {
   local code=$?
-  if [[ "$STOPPED" == true ]]; then pm2 restart "$PM2_APP" --update-env >/dev/null 2>&1 || true; fi
+  if [[ "$STOPPED" == true ]]; then "$PM2_BIN" restart "$PM2_APP" --update-env >/dev/null 2>&1 || true; fi
   printf 'rollback_status=failed\nbackup_id=%s\n' "$BACKUP_ID" >&2
   exit "$code"
 }
@@ -37,7 +40,7 @@ trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 previous="$(cat "$BACKUP/previous-target")"
 [[ "$previous" == "$ROOT"/* ]] || { echo 'Backup previous target is outside Fuxi root.' >&2; exit 3; }
-pm2 stop "$PM2_APP"
+"$PM2_BIN" stop "$PM2_APP"
 STOPPED=true
 
 if [[ -d "$BACKUP/legacy-tree" ]]; then
@@ -67,7 +70,7 @@ else
   fi
 fi
 
-pm2 restart "$PM2_APP" --update-env
+"$PM2_BIN" restart "$PM2_APP" --update-env
 STOPPED=false
 health=000
 for _ in $(seq 1 30); do
