@@ -625,7 +625,7 @@ requires:
 
 ### 阶段 10：Tiangong 规范解耦与多实现验证
 
-状态：`in-progress`
+状态：`completed`
 
 目标：
 - Tiangong 只描述设计语义，同一规范可以由 SkyUI 或 Element Plus 实现。
@@ -775,6 +775,9 @@ requires:
 - 当前本机仓库仅配置 GitHub `origin`，没有项目规则所述的 `zoesoftgitlab` 远端；SSH 端口可达，但应用凭据不能用于服务器登录。发布需要用户确认目标远端/分支并提供现有部署入口或服务器账号。
 - 新增维护者专用 `fuxi-platform-release` Skill：平台仓库保存可版本化源码，并安装到 Codex Skills；内置本地全量门禁/不可变发布包、固定主机指纹的只读探查、文件级备份、原子切换、失败恢复和显式回滚脚本。
 - 现场确认旧 `/zoesoft/fuxi/update-intranet.sh` 采用原地 `git pull/npm install/PM2 reload`，无数据备份与失败回滚，且生产 Git 有两个 lockfile 修改；新版发布禁止直接运行旧脚本或用 `git checkout -- .` 清理未知改动。
+- 发布 Skill commit `3b660da`；仓库源码与安装目录 `C:\Users\howyo\.codex\skills\fuxi-platform-release` 的 13 个文件逐一 SHA-256 相同，两处均通过官方 `quick_validate.py`。
+- Skill 自举生成本地候选 `20260811-205156-3b660da2`：平台 commit `3b660da2513fb785ac425a3981fc581c1f75ddf5`、技能 commit `52ed07b3a0ae4dc485d2112eaac7eed873c10167`，发布包 176 个条目、禁止项 0、SHA-256 `f9e665243be162aa47173c27703614badd99b36bd45f552832cf158782b3a316`；候选仅在本地 `.release/`，未上传生产。
+- 新脚本真实只读前向测试通过：生产 commit `afd9570`、Git dirty `2`、健康 `200`、bootstrap `404`、release/shared/MCP/Skill 配置均未启用；认证基线采集得到 51 个原型/1 个项目，发布后核验对旧生产按预期在 bootstrap 门禁失败。
 
 剩余运维建议：
 - API 备份不能替代服务器文件级备份；生产应定期一致性备份 `backend/data/app.db` 与 `backend/repos/`，并演练恢复。
@@ -793,7 +796,7 @@ requires:
 截至 2026-08-11：
 
 - `FuxiPlatform` 当前分支：`feature/project-collaboration`。
-- 平台历史清理、MCP 核心和首页接入入口已分别提交为 `4faa993`、`5bfef47`、`226d048`；没有推送远端，也没有连接生产环境执行写入。
+- 平台阶段 11-12 与维护者发布 Skill 已提交为 `18ca76b`、`b6ec2f9`、`3b660da`；尚未推送远端或部署生产。阶段 13 仅在生产创建并更新全新验收原型，未写任何发布前既有原型。
 - 本文档位于 `docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - 技能包目录已重构为：
   - `AGENTS.md`
@@ -802,7 +805,8 @@ requires:
   - `acceptance/stage10/`
   - `prototype-specs/tiangong/`
   - `prototype-specs/static-html/`
-- `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，最新 commit 为 `e1615b8`，尚未配置远端。
+- `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，最新 commit 为 `52ed07b`，尚未配置远端。
+- 生产仍运行 `afd9570`，`/api/health` 为 `200`、`/api/integrations/agent-bootstrap` 为 `404`；阶段 13 只有在候选正式上传、切换并通过完整生产验收后才能完成。
 - `sky-ui-docs` 的确定性 Node CLI 已内置到单一入口 Skill；外部 GitLab 项目仍是上游来源。
 
 ## 更新规则
