@@ -8,6 +8,7 @@
 |---|---|---|
 | 管理平台 | http://localhost:3000 | 前端界面 |
 | 后端API | http://localhost:3001 | API服务 |
+| MCP Server | `mcp-server/` | Agent 结构化操作入口 |
 | 默认账号 | `admin / admin123` | 首次登录使用 |
 | 访客账号 | `user / 111111` | 免登录分享链接自动使用 |
 
@@ -37,7 +38,7 @@ npm run dev
 
 | 功能 | 说明 |
 |---|---|
-| **原型管理** | 创建原型、删除；原型文件统一由 `.agents/skills/fuxi-packager` Skill 打包上传 |
+| **原型管理** | 创建原型、删除；原型文件由伏羲 MCP 工具上传和管理 |
 | **ZIP 下载** | 原型详情页一键下载当前版本源码 ZIP |
 | **分类系统** | 支持按业务线/产品线分类，首页可筛选 |
 | **搜索功能** | 按原型名称、描述实时搜索 |
@@ -82,9 +83,9 @@ npm run dev
 │   ├── src/api/          # API封装（自动携带Token）
 │   └── public/           # 静态资源（favicon.svg）
 │
-└── .agents/skills/fuxi-packager/  # 打包上传技能
-    ├── SKILL.md          # 技能说明
-    └── pack-and-upload.js # 一键打包上传脚本
+└── mcp-server/           # 伏羲 MCP：面向 Agent 的结构化平台工具
+    ├── README.md         # MCP 配置与工具说明
+    └── src/server.js     # stdio MCP server
 ```
 
 ## 权限矩阵
@@ -130,6 +131,25 @@ npm run dev
 
 打开 http://localhost:3000，使用默认账号登录。
 
+### 4. 配置 MCP（Agent 使用）
+
+```bash
+cd mcp-server
+node src/server.js
+```
+
+MCP Host 需要配置环境变量：
+
+| 环境变量 | 说明 | 默认值 |
+|---|---|---|
+| `FUXI_API_URL` | 后端 API 地址 | `http://localhost:3001` |
+| `FUXI_TOKEN` | 平台生成的短期 MCP token（`/api/auth/mcp-token`），优先使用 | 无 |
+| `FUXI_USERNAME` / `FUXI_PASSWORD` | 无 token 时自动登录 | 无 |
+
+当前 MCP 工具覆盖连接检查、原型列表、创建原型、读取详情、读取 README、生成预览 URL、上传 ZIP、ZIP/项目校验与打包，以及只读的项目列表和项目详情。
+
+登录平台后，点击首页“接入平台MCP”按钮即可复制带短期 token 的自动接入提示词，无需手动编辑配置或提供长期账号密码。
+
 
 
 ## 数据库Schema
@@ -160,7 +180,7 @@ npm run dev
 
 1. **JWT Secret**：生产部署时务必通过环境变量设置强密钥
 2. **密码安全**：首次部署后建议立即修改默认管理员密码
-3. **README提取**：Skill 上传后自动扫描 `README.md` / `readme.md` / `docs/README.md`
+3. **README提取**：MCP/平台上传后自动扫描 `README.md` / `readme.md` / `docs/README.md`
 4. **后端重启生效**：涉及数据库表结构、权限判断的修改（如协作者、用户组、分享链接访问）需要重启后端服务才能生效
 5. **SQLite限制**：单进程安全，未来如需多进程部署建议迁移至PostgreSQL/MySQL
 
