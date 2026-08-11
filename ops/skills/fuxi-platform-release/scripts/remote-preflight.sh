@@ -5,7 +5,7 @@ ROOT="${1:-/zoesoft/fuxi}"
 PROJECT="$ROOT/fuxi-platform"
 
 emit() { printf '%s=%s\n' "$1" "$2"; }
-size_bytes() { du -sb "$1" 2>/dev/null | awk '{print $1}' || printf '0'; }
+size_bytes() { du -sbL "$1" 2>/dev/null | awk '{print $1}' || printf '0'; }
 
 emit probe_mode read-only
 emit host "$(hostname)"
@@ -13,9 +13,17 @@ emit timestamp "$(date -Iseconds)"
 emit project_path "$PROJECT"
 emit project_exists "$(test -e "$PROJECT" && echo true || echo false)"
 emit project_target "$(readlink -f "$PROJECT" 2>/dev/null || true)"
-emit git_commit "$(git -C "$PROJECT" rev-parse HEAD 2>/dev/null || true)"
-emit git_branch "$(git -C "$PROJECT" branch --show-current 2>/dev/null || true)"
-emit git_dirty_count "$(git -C "$PROJECT" status --porcelain 2>/dev/null | wc -l | tr -d ' ')"
+if git -C "$PROJECT" rev-parse HEAD >/dev/null 2>&1; then
+  emit git_managed true
+  emit git_commit "$(git -C "$PROJECT" rev-parse HEAD)"
+  emit git_branch "$(git -C "$PROJECT" branch --show-current)"
+  emit git_dirty_count "$(git -C "$PROJECT" status --porcelain | wc -l | tr -d ' ')"
+else
+  emit git_managed false
+  emit git_commit ''
+  emit git_branch ''
+  emit git_dirty_count ''
+fi
 emit pm2_pid "$(pgrep -f "node $PROJECT/backend/server.js" | head -1 || true)"
 emit health_status "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/health 2>/dev/null || echo 000)"
 emit bootstrap_route_status "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/integrations/agent-bootstrap 2>/dev/null || echo 000)"
