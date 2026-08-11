@@ -2,7 +2,7 @@
 
 > 更新日期：2026-08-11
 > 文档定位：伏羲原型体系的持续事实入口，包含但不限于整体架构、环境信息、使用手册、详细设计、数据安全、兼容策略、验收证据和迭代计划
-> 当前阶段：Tiangong 设计语义与组件实现已完成结构解耦；正在补同需求双 profile 产物验收
+> 当前阶段：阶段 10 双 profile 同题验收已完成；下一步进入阶段 11 MCP 安全编排与更新保护
 
 ## 文档维护约定
 
@@ -510,7 +510,7 @@ requires:
 
 ### 阶段 7：体系文档与双项目版本治理
 
-状态：`in-progress`
+状态：`done`
 
 目标：
 - 建立本文档作为伏羲原型体系的持续事实入口。
@@ -650,9 +650,10 @@ requires:
 - 所有主入口到一层 references 的链接存在；`git diff --check` 和 UTF-8 字节卫生通过。
 - 技能 commits：`b9de8f8`、`7fea899`。
 
-待完成：
-- 用同一页面需求生成一个 `vue3-skyui` 和一个 `vue3-element-plus` 产物，分别执行 build、Fuxi adapter 校验和桌面/移动布局对照。
-- 输出 profile 迁移说明，明确旧 Tiangong 默认 Element Plus 项目不会因新默认值被静默迁移。
+补充完成：
+- 冻结员工管理需求并生成 `vue3-skyui` / `vue3-element-plus` 两个独立产物；两边使用相同的组织、页签、字段、4 条初始数据、状态和新增/编辑结果。
+- 新增 profile 兼容说明：按 README、依赖、源码识别既有实现；冲突时停止，普通更新不迁移，SkyUI 单一入口拒绝静默改写 Element Plus 项目。
+- 新增可重复执行的语义/依赖/Fuxi ZIP 门禁和隔离 MCP 双上传脚本；验收源码、锁文件和脚本保存在 `acceptance/stage10/`。
 
 验收方法：
 1. 冻结一份组件无关的验收需求，至少包含侧栏与页签、筛选区、紧凑表格、状态展示、新增/编辑弹窗、校验/空态/加载态、原型说明和窄屏适配；两次生成只能改变 `runtime_profile`。
@@ -669,9 +670,15 @@ requires:
 - 两个产物表达相同设计意图，且都通过同一个 `fuxi-adapter`。
 - 既有 Tiangong 使用方式有迁移说明，不静默破坏旧调用。
 
-计划 commit：
-- `feat(规范): 解耦天宫设计语义与组件实现`
-- `feat(规范): 增加SkyUI与Element Plus双实现配置`
+最终验收证据：
+- 官方 Skill 校验：Tiangong 与 `fuxi-skyui-prototype` 均为 `Skill is valid!`；`sky-ui-docs` 为 `38/38` tests pass。
+- 双构建：SkyUI `604 modules transformed`，Element Plus `1410 modules transformed`；两边类型检查和 Vite build 均通过，仅保留大于 500 kB 的已知 chunk warning。
+- 确定性门禁：两边均命中 `20` 个语义标记和 `6` 个共享 test ID；组件依赖互斥；通用 Tiangong references 无组件库 API。
+- Fuxi adapter：SkyUI ZIP `560015` bytes、Element Plus ZIP `368714` bytes，入口均为 `index.html`，README 存在，warnings 均为 `[]`。
+- 隔离 MCP：新建并上传 `msok2eo70dbtnr` / `msok2esiv0lyq1`，两边版本、入口、README、预览回读均 verified；临时目录已删除，`productionTouched: false`。
+- 浏览器桌面 `1440x900`：两边 body 宽度等于 viewport、0 控件重叠、4 行初始数据；加载、空态、必填校验、新增员工均通过。
+- 浏览器移动 `390x844`：两边 body `390/390`、0 控件重叠、表格只在内部从约 `364/365` 滚动到 `910`；SkyUI/Element Plus 弹窗内容宽度分别为 `366` / `334`，主操作可达。
+- 技能 commits：兼容保护 `43b382d`，双 profile 闭环 `e1615b8`；生成依赖、构建物和本地 pnpm 缓存已清理，工作区干净。
 
 ### 阶段 11：MCP 安全编排与更新保护
 
@@ -758,9 +765,10 @@ requires:
   - `AGENTS.md`
   - `SKILLS-README.md`
   - `fuxi-adapter/`
+  - `acceptance/stage10/`
   - `prototype-specs/tiangong/`
   - `prototype-specs/static-html/`
-- `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，最新 commit 为 `7fea899`，尚未配置远端。
+- `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，最新 commit 为 `e1615b8`，尚未配置远端。
 - `sky-ui-docs` 的确定性 Node CLI 已内置到单一入口 Skill；外部 GitLab 项目仍是上游来源。
 
 ## 更新规则
