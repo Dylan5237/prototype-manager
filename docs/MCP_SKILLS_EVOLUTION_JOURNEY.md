@@ -2,7 +2,7 @@
 
 > 更新日期：2026-08-11
 > 文档定位：伏羲原型体系的持续事实入口，包含但不限于整体架构、环境信息、使用手册、详细设计、数据安全、兼容策略、验收证据和迭代计划
-> 当前阶段：SkyUI 文档查询与真实原型闭环已完成；下一阶段为 Tiangong 设计语义与组件实现解耦
+> 当前阶段：Tiangong 设计语义与组件实现已完成结构解耦；正在补同需求双 profile 产物验收
 
 ## 文档维护约定
 
@@ -623,7 +623,7 @@ requires:
 
 ### 阶段 10：Tiangong 规范解耦与多实现验证
 
-状态：`todo`
+状态：`in-progress`
 
 目标：
 - Tiangong 只描述设计语义，同一规范可以由 SkyUI 或 Element Plus 实现。
@@ -633,6 +633,24 @@ requires:
 - 保留视觉、布局、交互、原型说明系统和内容规则作为稳定规范。
 - 新增 `vue3-skyui` 与兼容 `vue3-element-plus` profile。
 - 更新元数据契约与选择规则，默认 profile 切换必须有兼容说明。
+
+已完成：
+- Tiangong `SKILL.md` 从 `227` 行收缩为 `51` 行的组件无关入口，只保留 metadata、profile 选择、渐进式引用和稳定设计合同。
+- 通用颜色、布局、交互和原型说明 references 已移除 `el-*` 选择器与组件 API。
+- 原有 Element Plus 组件模式和 `828` 行说明系统实现完整迁入 `vue3-element-plus` / `prototype-annotation-element-plus` 专属 profile，保留既有兼容知识。
+- 新增 `vue3-skyui` profile，映射 Button/Input/Form/Table/Modal/Icon，并明确文档查询、字体资源和相对构建要求。
+- 元数据合同新增 `supported_profiles` / `preferred_profile`；一次生成必须只选择一个 profile，默认新 Fuxi 原型为 `vue3-skyui`，既有项目更新保持原 profile。
+- 单一入口 Skill 的 Tiangong 副本同步表格、动作栏、响应式和原型说明语义，不引入 Element Plus 名称。
+
+验收证据：
+- Tiangong 与 `fuxi-skyui-prototype` 均通过 `skill-creator/scripts/quick_validate.py` 官方校验。
+- 通用 references 耦合扫描无 `<el-*`、`.el-*`、`el-table`、`el-dialog` 或 `el-drawer`；主入口只在 profile 选择说明中出现 Element Plus 名称。
+- 所有主入口到一层 references 的链接存在；`git diff --check` 和 UTF-8 字节卫生通过。
+- 技能 commits：`b9de8f8`、`7fea899`。
+
+待完成：
+- 用同一页面需求生成一个 `vue3-skyui` 和一个 `vue3-element-plus` 产物，分别执行 build、Fuxi adapter 校验和桌面/移动布局对照。
+- 输出 profile 迁移说明，明确旧 Tiangong 默认 Element Plus 项目不会因新默认值被静默迁移。
 
 验收标准：
 - 同一页面需求可分别生成 SkyUI 和 Element Plus 原型。
