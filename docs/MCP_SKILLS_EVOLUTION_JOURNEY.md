@@ -472,9 +472,10 @@ requires:
 - 用户无需手动编辑 JSON 配置。
 
 验收证据：
-- 隔离后端验证 `GET /api/auth/mcp-token` 返回 200、`data.token`、`expiresIn: 3600`、`expiresAt`，且该 token 调用 `/api/auth/me` 返回 200。
+- 隔离后端验证 `GET /api/auth/mcp-token` 返回 200、`data.token`、`expiresIn: 3600`、`expiresAt`，且 token-only MCP 可成功调用 `list_prototypes`。
 - 前端 `HomeView.vue` 打开对话框时调用 `getMcpToken()`，提示词包含短期 token 与过期时间。
 - `frontend npm run build` 通过。
+- 平台 commits：MCP 核心与短期令牌 `5bfef47`，首页接入入口 `226d048`。
 
 ### 阶段 6：清理旧分发物与提交收口
 
@@ -494,11 +495,12 @@ requires:
 - 删除 `prototype-manager-skills.zip`（46 KB）并从 Git 索引移除。
 - 删除 `backend/uploads/temp_flat_1776936509223/`（14,637 个文件、约 210 MB，含 `node_modules/` 与 `dist/`）并从 Git 索引解跟踪；`git ls-files 'backend/uploads/temp_flat_*'` 为 0。
 - `backend/uploads` 已在 `.gitignore` 覆盖，后续上传临时目录不会再被跟踪。
+- 清理作为独立 commit `4faa993` 提交，共删除 14,642 个历史跟踪项，未混入平台功能代码。
 
-清理执行条件：
-- 等待用户在最终汇报后明确确认。
-- 删除后 `git rm` 或等效操作，并重新核对 `git status --short`。
-- 不删除仍需复核的现场证据；生产验收完成前旧快照保留为回退证据。
+清理安全约束：
+- 清理范围经用户明确确认后才执行，并在提交前核对分类与数量。
+- 删除记录使用独立 commit，提交前后均核对 `git status --short`。
+- 未删除生产数据库、`backend/repos` 或任何既有原型；生产验收前仍保留必要的回退证据。
 
 验收标准：
 - 平台文档只指向 MCP。
@@ -652,6 +654,16 @@ requires:
 - 用同一页面需求生成一个 `vue3-skyui` 和一个 `vue3-element-plus` 产物，分别执行 build、Fuxi adapter 校验和桌面/移动布局对照。
 - 输出 profile 迁移说明，明确旧 Tiangong 默认 Element Plus 项目不会因新默认值被静默迁移。
 
+验收方法：
+1. 冻结一份组件无关的验收需求，至少包含侧栏与页签、筛选区、紧凑表格、状态展示、新增/编辑弹窗、校验/空态/加载态、原型说明和窄屏适配；两次生成只能改变 `runtime_profile`。
+2. 分别生成 `vue3-skyui` 与 `vue3-element-plus` 两个独立目录；根 README 必须记录相同的 `prototype_spec: tiangong` 和各自唯一的 `runtime_profile`。
+3. 执行依赖隔离扫描：SkyUI 产物不得依赖或引用 Element Plus，Element Plus 产物不得依赖或引用 SkyUI；共享设计 references 不得出现任一组件库 API。
+4. 两个产物分别执行类型检查和生产 build；然后通过同一个 MCP `validate_project -> pack_project -> validate_zip` 链路，要求 `ok: true`、入口和 README 存在、无禁止文件、静态资源使用相对路径。
+5. 在隔离伏羲后端各创建一个全新原型并上传 ZIP，回读 prototype ID、版本、入口、README 和预览 URL；不得使用生产既有 prototype ID。
+6. 在 `1440x900` 与 `390x844` 两个视口对照验收，操作筛选、页签、表格、新增/编辑弹窗和原型说明；要求无白屏/404/控制台错误、无控件重叠、无 body 横向溢出，关键操作在窄屏仍可达。
+7. 使用语义清单比较信息架构、字段、状态、操作、校验和交互结果。允许组件 DOM/类名不同，不允许业务语义或设计层级因 profile 改变。
+8. 补迁移说明并执行旧项目更新演练：README 已是 `vue3-element-plus` 时继续使用 Element Plus，除非用户明确批准迁移。以上门禁全部通过后阶段 10 才能标记 `done`。
+
 验收标准：
 - 同一页面需求可分别生成 SkyUI 和 Element Plus 原型。
 - 两个产物表达相同设计意图，且都通过同一个 `fuxi-adapter`。
@@ -740,16 +752,16 @@ requires:
 截至 2026-08-11：
 
 - `FuxiPlatform` 当前分支：`feature/project-collaboration`。
-- 平台仓库当前不是干净工作区，包含此前平台/MCP/清理工作留下的已跟踪与未跟踪改动；提交前必须按阶段逐项圈定，不能一次性全量加入。
-- 本文档当前位于 `docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`，尚未提交；`.gitignore` 已仅放行该 docs 文件，但 `.gitignore` 自身还有既有改动。
+- 平台历史清理、MCP 核心和首页接入入口已分别提交为 `4faa993`、`5bfef47`、`226d048`；没有推送远端，也没有连接生产环境执行写入。
+- 本文档位于 `docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - 技能包目录已重构为：
   - `AGENTS.md`
   - `SKILLS-README.md`
   - `fuxi-adapter/`
   - `prototype-specs/tiangong/`
   - `prototype-specs/static-html/`
-- `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，基线 commit 为 `d93aea9`，尚未配置远端。
-- `sky-ui-docs` 仍位于外部 GitLab 项目，尚未纳入单一入口 Skill。
+- `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，最新 commit 为 `7fea899`，尚未配置远端。
+- `sky-ui-docs` 的确定性 Node CLI 已内置到单一入口 Skill；外部 GitLab 项目仍是上游来源。
 
 ## 更新规则
 
