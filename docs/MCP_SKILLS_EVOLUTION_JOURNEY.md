@@ -2,7 +2,7 @@
 
 > 更新日期：2026-08-11
 > 文档定位：伏羲原型体系的持续事实入口，包含但不限于整体架构、环境信息、使用手册、详细设计、数据安全、兼容策略、验收证据和迭代计划
-> 当前阶段：单一入口 Skill 骨架已完成；下一阶段为 SkyUI 文档查询内置与真实原型闭环
+> 当前阶段：SkyUI 文档查询与真实原型闭环已完成；下一阶段为 Tiangong 设计语义与组件实现解耦
 
 ## 文档维护约定
 
@@ -578,7 +578,7 @@ requires:
 
 ### 阶段 9：SkyUI 文档与原型生成闭环
 
-状态：`todo`
+状态：`done`
 
 目标：
 - 生成的 Vue 3 原型严格基于真实 SkyUI 文档，并可在伏羲静态预览环境运行。
@@ -589,6 +589,28 @@ requires:
 - 定义 SkyUI 组件查询摘要、图标查询和 API 证据要求。
 - 创建最小 SkyUI 原型夹具，覆盖表单、表格、弹窗、图标和静态资源。
 - 验证 Vite 相对路径、构建产物、iconfont、字体和无外部运行时依赖。
+
+已完成：
+- 将内部 `sky-web-skill/sky-ui-docs` commit `92dc88a` 的确定性 Node CLI 内置到单一 Skill 的 `scripts/sky-ui-docs/`，用户无需安装第二个 Skill。
+- 修复仅因 docs 缺失就隐式重装 SkyUI 的行为：只有包完全缺失时才安装；已安装但缺 docs 时明确失败。
+- 对齐 `@sky/sky-ui@latest` 正式依赖安装实现与测试，并新增 `@sky/sky-ui >=2.1.145` 版本门禁。
+- 按 `skill-creator` 渐进式披露原则保持入口精简：流程在 `SKILL.md`，详细契约在一层 references，确定性查询在 scripts，可复制工程在 assets，UI 元数据在 `agents/openai.yaml`。
+- 新增 `assets/vue3-skyui-starter/`，固定已验证的 SkyUI `2.2.44`、Vue `3.5.41`、Vite `5.4.21`；模板不包含 `.npmrc`、依赖、构建物或 ZIP。
+- 基于真实 SkyUI 文档查询 Button/Input/Table/Modal 示例与 API，并查询 `commonicon_plus` 后生成管理型原型。
+- pnpm 11 使用项目级 `allowBuilds: { esbuild: true }`，仅允许必要构建脚本，不启用全局构建脚本放行。
+
+验收证据：
+- `sky-ui-docs`：`38` tests / `38` pass / `0` fail，覆盖查询、CLI、安装策略、缺 docs、低版本和图标。
+- `skill-creator/scripts/quick_validate.py`：使用临时 PyYAML 与 `PYTHONUTF8=1` 运行，结果 `Skill is valid!`；临时依赖随后删除。
+- 真实构建：`vue-tsc --noEmit && vite build` 通过，`604 modules transformed`；SkyUI WOFF2/WOFF/TTF 均进入 `dist/assets`。
+- MCP 本地交付：`validate_project`、`pack_project`、`validate_zip` 均 `ok: true`、零 warning/零 error；ZIP `558318` bytes，入口 `index.html`，README 存在。
+- 浏览器桌面验收：页面标题、SkyUI Table、按钮、图标、搜索和 Modal 均可见可操作；控制台零 error/warning，body 宽度不超过 viewport。
+- 隔离伏羲后端验收：使用临时 SQLite/repos/uploads 和全部 `21` 个 MCP 工具上传真实 SkyUI ZIP；版本历史、README、分享预览、项目读取、协作和结构化错误均 verified，临时目录已清理。
+- 技能 commits：`6170b33`、`89ad30f`。
+
+遗留但不阻断：
+- Vite 提示主 JS chunk 大于 `500 kB`，后续按页面拆分和按需加载优化。
+- 浏览器移动视口重载被本地 URL 安全策略拦截，响应式 CSS 已存在，但移动截图验收尚未完成。
 
 验收标准：
 - `sky-ui-docs` 测试全绿。
