@@ -146,9 +146,9 @@ MCP Host 需要配置环境变量：
 | `FUXI_TOKEN` | 平台生成的短期 MCP token（`/api/auth/mcp-token`），优先使用 | 无 |
 | `FUXI_USERNAME` / `FUXI_PASSWORD` | 无 token 时自动登录 | 无 |
 
-当前 MCP 工具覆盖连接检查、原型列表、创建原型、读取详情、读取 README、生成预览 URL、上传 ZIP、ZIP/项目校验与打包，以及只读的项目列表和项目详情。
+当前 MCP 提供 22 个工具，覆盖连接检查、原型与项目读取、协作锁、快照/回滚、校验/打包，以及带幂等、乐观版本和回读确认的 `deliver_project` 安全交付。
 
-登录平台后，点击首页“接入平台MCP”按钮即可复制带短期 token 的自动接入提示词，无需手动编辑配置或提供长期账号密码。
+登录平台后，点击首页“接入平台MCP”按钮即可复制一段短期提示词。AI 助手会按自身客户端的原生机制安装单一 `fuxi-skyui-prototype` Skill、下载并配置伏羲 MCP，再调用 `check_connection` 验证连接；用户无需手工编辑配置或提供长期账号密码。
 
 
 
@@ -175,6 +175,8 @@ MCP Host 需要配置环境变量：
 |---|---|---|
 | `PORT` | 后端服务端口 | `3001` |
 | `JWT_SECRET` | JWT密钥（生产环境必须修改） | `fuxi-secret-key-change-in-production` |
+| `FUXI_SKILL_DIR` | 可分发的 `fuxi-skyui-prototype` Skill 目录，必须包含 `SKILL.md` | 无，未配置时关闭一键接入 |
+| `FUXI_MCP_DIR` | 可分发的伏羲 MCP 目录，必须包含 `src/server.js` | 仓库内 `mcp-server` |
 
 ## 注意事项
 

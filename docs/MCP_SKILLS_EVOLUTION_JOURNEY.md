@@ -682,7 +682,7 @@ requires:
 
 ### 阶段 11：MCP 安全编排与更新保护
 
-状态：`todo`
+状态：`completed`
 
 目标：
 - 单一 Skill 能可靠创建、更新和回读伏羲原型，同时保护已有数据。
@@ -721,6 +721,14 @@ requires:
 
 计划 commit：
 - `feat(接入): 支持一键安装原型Skill与伏羲MCP`
+
+完成证据（2026-08-11）：
+- 后端新增受登录鉴权保护的接入提示词、Skill ZIP 和 MCP ZIP 三个接口；短期 token 有效期为 1 小时。
+- Skill 来源由 `FUXI_SKILL_DIR` 指向独立技能项目，平台不复制技能源码；MCP 默认从平台项目的 `mcp-server` 分发，也可由 `FUXI_MCP_DIR` 覆盖。
+- 提示词要求 AI 助手识别宿主的原生 Skill/MCP 机制，不绑死配置路径；安装后必须验证 `check_connection`、`deliver_project` 和单一 Skill 可发现性。
+- 分发包过滤 `.git`、`.npmrc`、凭据文件、`node_modules`、构建产物、测试和日志；token 过期返回 `401`。
+- `npm run build` 通过；MCP 隔离集成测试通过，输出 `agentBootstrap/skillPackage/mcpPackage: verified`，并回归全部 22 个工具。
+- “最近验证时间”暂不落库：平台无法可靠观察用户本机 AI 客户端的最终配置状态，避免展示推测状态；以 AI 助手当次 `check_connection` 回执为准。
 
 ### 阶段 13：生产兼容、发布与知识收口
 

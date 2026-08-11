@@ -12,6 +12,7 @@ const groupRoutes = require('./routes/groups');
 const projectRoutes = require('./routes/projects');
 const previewRoutes = require('./routes/preview');
 const shareRoutes = require('./routes/share');
+const integrationRoutes = require('./routes/integrations');
 const { initProxy } = require('./services/github');
 
 const app = express();
@@ -61,6 +62,7 @@ async function startServer() {
   app.use('/api/groups', groupRoutes);
   app.use('/api/prototypes', prototypeRoutes);
   app.use('/api/projects', projectRoutes);
+  app.use('/api/integrations', integrationRoutes);
   
   // 静态文件服务 - 用于预览原型
   app.use('/preview', previewRoutes);

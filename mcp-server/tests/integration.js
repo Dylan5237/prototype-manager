@@ -167,6 +167,14 @@ async function main() {
     assert(packedEntries.some(e => e.name === 'README.md'));
     assert(packedEntries.some(e => e.name === 'assets/app.js'));
 
+    const distributedSkillDir = path.join(tempRoot, 'fuxi-skyui-prototype');
+    fs.mkdirSync(path.join(distributedSkillDir, 'references'), { recursive: true });
+    fs.mkdirSync(path.join(distributedSkillDir, 'node_modules'), { recursive: true });
+    fs.writeFileSync(path.join(distributedSkillDir, 'SKILL.md'), '# Fuxi SkyUI Prototype\n');
+    fs.writeFileSync(path.join(distributedSkillDir, 'references', 'workflow.md'), '# Workflow\n');
+    fs.writeFileSync(path.join(distributedSkillDir, '.npmrc'), 'secret=must-not-ship\n');
+    fs.writeFileSync(path.join(distributedSkillDir, 'node_modules', 'ignored.js'), '');
+
     const port = await getFreePort();
     const apiUrl = `http://127.0.0.1:${port}`;
     backend = spawn(process.execPath, [path.join(isolatedBackend, 'server.js')], {
@@ -175,7 +183,9 @@ async function main() {
         ...process.env,
         PORT: String(port),
         NODE_PATH: path.join(backendRoot, 'node_modules'),
-        JWT_SECRET: 'integration-test-secret'
+        JWT_SECRET: 'integration-test-secret',
+        FUXI_SKILL_DIR: distributedSkillDir,
+        FUXI_MCP_DIR: mcpRoot
       },
       stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -298,6 +308,46 @@ async function main() {
     });
     const login = await loginResponse.json();
     assert.equal(loginResponse.status, 200);
+    const bootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const bootstrap = await bootstrapResponse.json();
+    assert.equal(bootstrapResponse.status, 200);
+    assert.equal(bootstrap.data.skillName, 'fuxi-skyui-prototype');
+    assert(bootstrap.data.prompt.includes('check_connection'));
+    assert(bootstrap.data.prompt.includes('deliver_project'));
+    assert(bootstrap.data.prompt.includes('AI 客户端原生'));
+    assert(bootstrap.data.prompt.includes('AUTHORIZATION_REQUIRED'));
+    assert(bootstrap.data.prompt.includes('AUTHENTICATION_FAILED'));
+    assert(!bootstrap.data.prompt.includes('admin123'));
+
+    const packageHeaders = { Authorization: `Bearer ${bootstrap.data.token}` };
+    const skillPackageResponse = await fetch(bootstrap.data.skillUrl, { headers: packageHeaders });
+    assert.equal(skillPackageResponse.status, 200);
+    const skillPackage = new AdmZip(Buffer.from(await skillPackageResponse.arrayBuffer()));
+    const skillEntries = skillPackage.getEntries().map(entry => entry.entryName);
+    assert(skillEntries.includes('fuxi-skyui-prototype/SKILL.md'));
+    assert(skillEntries.includes('fuxi-skyui-prototype/references/workflow.md'));
+    assert(!skillEntries.some(name => name.includes('.npmrc') || name.includes('node_modules')));
+
+    const mcpPackageResponse = await fetch(bootstrap.data.mcpUrl, { headers: packageHeaders });
+    assert.equal(mcpPackageResponse.status, 200);
+    const mcpPackage = new AdmZip(Buffer.from(await mcpPackageResponse.arrayBuffer()));
+    const mcpEntries = mcpPackage.getEntries().map(entry => entry.entryName);
+    assert(mcpEntries.includes('fuxi-platform-mcp/src/server.js'));
+    assert(mcpEntries.includes('fuxi-platform-mcp/src/fuxi-zip.js'));
+    assert(mcpEntries.includes('fuxi-platform-mcp/package.json'));
+    assert(!mcpEntries.some(name => name.includes('/tests/')));
+
+    const expiredBootstrapToken = jwt.sign(
+      { id: login.data.user.id, username: 'admin', roles: ['admin'] },
+      'integration-test-secret',
+      { expiresIn: -1 }
+    );
+    const expiredPackageResponse = await fetch(`${apiUrl}/api/integrations/skill-package`, {
+      headers: { Authorization: `Bearer ${expiredBootstrapToken}` }
+    });
+    assert.equal(expiredPackageResponse.status, 401);
     const mcpTokenResponse = await fetch(`${apiUrl}/api/auth/mcp-token`, {
       headers: { Authorization: `Bearer ${login.data.token}` }
     });
@@ -639,6 +689,9 @@ async function main() {
       readme: 'verified',
       preview: 'verified',
       shortLivedToken: 'verified',
+      agentBootstrap: 'verified',
+      skillPackage: 'verified',
+      mcpPackage: 'verified',
       safeDelivery: 'verified',
       idempotency: 'verified',
       optimisticVersion: 'verified',

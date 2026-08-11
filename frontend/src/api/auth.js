@@ -12,6 +12,10 @@ export function getMcpToken() {
   return api.get('/auth/mcp-token')
 }
 
+export function getAgentBootstrap() {
+  return api.get('/integrations/agent-bootstrap')
+}
+
 export function getUsers() {
   return api.get('/auth/users')
 }
