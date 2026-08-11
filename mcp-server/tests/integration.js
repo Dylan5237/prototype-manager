@@ -14,6 +14,7 @@ const platformRoot = path.resolve(mcpRoot, '..');
 const backendRoot = path.join(platformRoot, 'backend');
 const backendRequire = createRequire(path.join(backendRoot, 'package.json'));
 const AdmZip = backendRequire('adm-zip');
+const jwt = backendRequire('jsonwebtoken');
 
 function getFreePort() {
   return new Promise((resolve, reject) => {
@@ -112,6 +113,8 @@ async function main() {
   let mcp;
   let tokenMcp;
   let invalidMcp;
+  let expiredMcp;
+  let failMcp;
   let secondMcp;
 
   try {
@@ -187,7 +190,7 @@ async function main() {
     const initialized = await mcp.send('initialize', { protocolVersion: '2024-11-05' });
     assert.equal(initialized.result.serverInfo.name, 'fuxi-platform-mcp-server');
     const listedTools = await mcp.send('tools/list');
-    assert.equal(listedTools.result.tools.length, 21);
+    assert.equal(listedTools.result.tools.length, 22);
 
     const health = await callTool(mcp, 'check_connection');
     assert.equal(health.body.health.status, 'ok');
@@ -226,6 +229,67 @@ async function main() {
     assert(uploadProjectResult.body.fields.versionNumber >= 1);
     const detailAfter = await callTool(mcp, 'get_prototype', { prototypeId: uploadTarget.body.data.id });
     assert.equal(detailAfter.body.data.entry_file, 'index.html');
+
+    const deliveredCreate = await callTool(mcp, 'deliver_project', {
+      mode: 'create',
+      idempotencyKey: 'integration-create-0001',
+      name: 'MCP safe delivery create',
+      zipPath: packedZip,
+      versionNote: 'Safe create delivery',
+      versionType: 'minor'
+    });
+    assert.equal(deliveredCreate.body.status, 'COMPLETE');
+    assert.equal(deliveredCreate.body.versionBefore, null);
+    assert.equal(deliveredCreate.body.affectedScope, 'target-prototype-only');
+    const deliveredCreateReplay = await callTool(mcp, 'deliver_project', {
+      mode: 'create',
+      idempotencyKey: 'integration-create-0001',
+      name: 'MCP safe delivery create',
+      zipPath: packedZip,
+      versionNote: 'Safe create delivery',
+      versionType: 'minor'
+    });
+    assert.equal(deliveredCreateReplay.body.prototypeId, deliveredCreate.body.prototypeId);
+    assert.equal(deliveredCreateReplay.body.idempotentReplay, true);
+    const idempotencyConflictResponse = await mcp.send('tools/call', {
+      name: 'deliver_project',
+      arguments: {
+        mode: 'create', idempotencyKey: 'integration-create-0001', name: 'Different payload',
+        zipPath: packedZip, versionNote: 'Must conflict'
+      }
+    });
+    const idempotencyConflict = parseTool(idempotencyConflictResponse);
+    assert.equal(idempotencyConflict.result.isError, true);
+    assert.equal(idempotencyConflict.body.error.code, 'IDEMPOTENCY_CONFLICT');
+
+    const deliveredUpdate = await callTool(mcp, 'deliver_project', {
+      mode: 'update',
+      idempotencyKey: 'integration-update-0001',
+      prototypeId: uploadTarget.body.data.id,
+      expectedVersion: detailAfter.body.fields.versionNumber,
+      expectedEntryFile: 'index.html',
+      zipPath: packedZip,
+      versionNote: 'Safe update delivery',
+      versionType: 'patch'
+    });
+    assert(deliveredUpdate.body.versionAfter > deliveredUpdate.body.versionBefore);
+    const staleVersionResponse = await mcp.send('tools/call', {
+      name: 'deliver_project',
+      arguments: {
+        mode: 'update', idempotencyKey: 'integration-update-stale', prototypeId: uploadTarget.body.data.id,
+        expectedVersion: deliveredUpdate.body.versionBefore, zipPath: packedZip, versionNote: 'Must stop'
+      }
+    });
+    const staleVersion = parseTool(staleVersionResponse);
+    assert.equal(staleVersion.result.isError, true);
+    assert.equal(staleVersion.body.error.code, 'VERSION_CONFLICT');
+    const missingTargetResponse = await mcp.send('tools/call', {
+      name: 'deliver_project',
+      arguments: { mode: 'update', idempotencyKey: 'integration-missing-target', zipPath: packedZip, versionNote: 'Must stop' }
+    });
+    const missingTarget = parseTool(missingTargetResponse);
+    assert.equal(missingTarget.result.isError, true);
+    assert.equal(missingTarget.body.error.code, 'INVALID_REQUEST');
 
     const loginResponse = await fetch(`${apiUrl}/api/auth/login`, {
       method: 'POST',
@@ -271,6 +335,13 @@ async function main() {
     });
     const prototypeId = created.body.data.id;
     assert(prototypeId);
+    const projectInitialUpload = await callTool(mcp, 'upload_zip', {
+      prototypeId,
+      zipPath,
+      versionNote: 'Project-bound initial upload',
+      versionType: 'minor'
+    });
+    assert.equal(projectInitialUpload.body.data.entry_file, 'index.html');
 
     const bound = await callTool(mcp, 'bind_prototype_to_project', {
       projectId: project.data.id,
@@ -299,6 +370,21 @@ async function main() {
     });
     assert.equal(checkedOut.body.data.status, 'active');
     assert.equal(checkedOut.body.fields.projectId, project.data.id);
+    const projectBeforeDelivery = await callTool(mcp, 'get_prototype', { prototypeId });
+    const projectBoundDelivery = await callTool(mcp, 'deliver_project', {
+      mode: 'project-bound-update',
+      idempotencyKey: 'integration-project-update-0001',
+      prototypeId,
+      expectedVersion: projectBeforeDelivery.body.fields.versionNumber,
+      expectedEntryFile: 'index.html',
+      projectId: project.data.id,
+      projectPrototypeId,
+      zipPath: secondZipPath,
+      versionNote: 'Safe project-bound update',
+      versionType: 'minor'
+    });
+    assert.equal(projectBoundDelivery.body.affectedScope, 'target-project-binding-only');
+    assert(projectBoundDelivery.body.versionAfter > projectBoundDelivery.body.versionBefore);
 
     const registerResponse = await fetch(`${apiUrl}/api/auth/register`, {
       method: 'POST',
@@ -336,6 +422,17 @@ async function main() {
     const conflict = parseTool(conflictResponse);
     assert.equal(conflict.result.isError, true);
     assert.equal(conflict.body.error.code, 'CONFLICT');
+    const checkoutProtectedResponse = await secondMcp.send('tools/call', {
+      name: 'deliver_project',
+      arguments: {
+        mode: 'project-bound-update', idempotencyKey: 'integration-project-update-other-user', prototypeId,
+        expectedVersion: projectBoundDelivery.body.versionAfter, projectId: project.data.id, projectPrototypeId,
+        zipPath: packedZip, versionNote: 'Must require own checkout'
+      }
+    });
+    const checkoutProtected = parseTool(checkoutProtectedResponse);
+    assert.equal(checkoutProtected.result.isError, true);
+    assert.equal(checkoutProtected.body.error.code, 'CHECKOUT_REQUIRED');
 
     const checkedIn = await callTool(mcp, 'checkin_prototype', {
       projectId: project.data.id,
@@ -416,8 +513,8 @@ async function main() {
       headers: { Authorization: `Bearer ${login.data.token}` }
     });
     const versions = await versionsResponse.json();
-    assert.equal(versions.data.length, 1);
-    assert.equal(versions.data[0].version_number, 1);
+    assert.equal(versions.data.length, 3);
+    assert.equal(versions.data[0].version_number, 3);
 
     const detail = await callTool(mcp, 'get_prototype', { prototypeId });
     assert.equal(detail.body.data.entry_file, 'index.html');
@@ -425,7 +522,7 @@ async function main() {
     assert.equal(detail.body.fields.prototypeId, prototypeId);
     assert.equal(detail.body.fields.entryFile, 'index.html');
     assert.equal(detail.body.fields.readmeStatus, 'present');
-    assert.equal(detail.body.fields.versionNumber, 1);
+    assert.equal(detail.body.fields.versionNumber, 3);
 
     const readme = await callTool(mcp, 'get_readme', { prototypeId });
     assert.match(readme.body.data.content, /MCP Integration Fixture v2/);
@@ -486,6 +583,38 @@ async function main() {
     assert.equal(unauthorized.result.isError, true);
     assert.equal(unauthorized.body.error.code, 'AUTHENTICATION_FAILED');
 
+    const expiredToken = jwt.sign(
+      { id: login.data.user.id, username: 'admin', roles: ['admin'] },
+      'integration-test-secret',
+      { expiresIn: -1 }
+    );
+    expiredMcp = startMcp({ FUXI_API_URL: apiUrl, FUXI_TOKEN: expiredToken });
+    const expiredResponse = await expiredMcp.send('tools/call', { name: 'list_prototypes', arguments: {} });
+    const expired = parseTool(expiredResponse);
+    assert.equal(expired.result.isError, true);
+    assert.equal(expired.body.error.code, 'AUTHENTICATION_FAILED');
+
+    failMcp = startMcp({
+      FUXI_API_URL: apiUrl,
+      FUXI_USERNAME: 'admin',
+      FUXI_PASSWORD: 'admin123',
+      FUXI_TOKEN: '',
+      NODE_ENV: 'test',
+      FUXI_MCP_TEST_FAIL_AFTER_UPLOAD: '1'
+    });
+    const partialResponse = await failMcp.send('tools/call', {
+      name: 'deliver_project',
+      arguments: {
+        mode: 'create', idempotencyKey: 'integration-partial-failure', name: 'Partial failure fixture',
+        zipPath: packedZip, versionNote: 'Inject readback failure'
+      }
+    });
+    const partial = parseTool(partialResponse);
+    assert.equal(partial.result.isError, true);
+    assert.equal(partial.body.error.code, 'DELIVERY_PARTIAL_FAILURE');
+    assert.equal(partial.body.error.uploadApplied, true);
+    assert.equal(partial.body.error.stage, 'UPLOAD');
+
     const deleteWithoutConfirmResponse = await mcp.send('tools/call', {
       name: 'delete_prototype',
       arguments: {
@@ -510,6 +639,11 @@ async function main() {
       readme: 'verified',
       preview: 'verified',
       shortLivedToken: 'verified',
+      safeDelivery: 'verified',
+      idempotency: 'verified',
+      optimisticVersion: 'verified',
+      checkoutProtection: 'verified',
+      partialFailure: 'verified',
       projectReads: 'verified',
       collaboration: 'verified',
       structuredErrors: ['FILE_NOT_FOUND', 'AUTHENTICATION_FAILED'],
@@ -517,6 +651,8 @@ async function main() {
     }, null, 2));
   } finally {
     await stop(secondMcp && secondMcp.child);
+    await stop(failMcp && failMcp.child);
+    await stop(expiredMcp && expiredMcp.child);
     await stop(invalidMcp && invalidMcp.child);
     await stop(tokenMcp && tokenMcp.child);
     await stop(mcp && mcp.child);

@@ -38,6 +38,7 @@ short-lived token into `FUXI_TOKEN`; regenerate it in the platform when it expir
 - `validate_project`: validate a local project directory without modifying it.
 - `validate_zip`: inspect an existing ZIP without extracting it.
 - `pack_project`: build a Fuxi-compatible ZIP from a built project.
+- `deliver_project`: safely create/update/project-bound-update one prototype with idempotency, optimistic version checks, checkout protection, and mandatory readback.
 - `upload_project`: validate then upload a ZIP to an explicit prototype, then read back the result.
 
 Destructive tools always require `confirm: true`; otherwise they return `CONFIRMATION_REQUIRED`.
@@ -68,4 +69,4 @@ npm run check
 npm run test:integration
 ```
 
-The integration test runs a copied backend in a temporary isolated directory. It verifies short-lived token authentication, all 21 MCP tools, local validation and packaging, prototype version uploads, README and browser preview behavior, project collaboration, destructive-operation confirmation gates, and structured failures. It removes the temporary workspace afterward and does not modify the platform's current database or prototype repository.
+The integration test runs a copied backend in a temporary isolated directory. It verifies short-lived and expired-token authentication, all 22 MCP tools, local validation and packaging, idempotent create/update/project-bound delivery, optimistic version and checkout protection, partial-failure reporting, README and browser preview behavior, project collaboration, destructive-operation confirmation gates, and structured failures. It removes the temporary workspace afterward and does not modify the platform's current database or prototype repository.

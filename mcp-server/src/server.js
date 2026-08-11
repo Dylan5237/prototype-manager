@@ -7,6 +7,7 @@ const { validateProject, validateZipFile, packProject, ZipError } = require('./f
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 let cachedToken = process.env.FUXI_TOKEN || '';
 let nextId = 1;
+const deliveryCache = new Map();
 
 class ToolError extends Error {
   constructor(code, message, details = {}) {
@@ -281,6 +282,31 @@ const tools = [
     }
   },
   {
+    name: 'deliver_project',
+    description: 'Safely create or update one Fuxi prototype with idempotency, optimistic version checks, optional project checkout protection, and mandatory readback.',
+    inputSchema: {
+      type: 'object',
+      required: ['mode', 'idempotencyKey', 'zipPath', 'versionNote'],
+      properties: {
+        mode: { type: 'string', enum: ['create', 'update', 'project-bound-update'] },
+        idempotencyKey: { type: 'string', minLength: 8 },
+        zipPath: { type: 'string' },
+        versionNote: { type: 'string' },
+        versionType: { type: 'string', enum: ['major', 'minor', 'patch'] },
+        name: { type: 'string' },
+        description: { type: 'string' },
+        categoryId: { type: 'string' },
+        tags: { type: 'array', items: { type: 'string' } },
+        prototypeId: { type: 'string' },
+        expectedVersion: { type: 'number' },
+        expectedEntryFile: { type: 'string' },
+        projectId: { type: 'string' },
+        projectPrototypeId: { type: 'number' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
     name: 'upload_project',
     description: 'Validate a ZIP then upload it to an explicit prototype as a new version.',
     inputSchema: {
@@ -464,6 +490,201 @@ function projectActionFields(data) {
 
 function withFields(payload, fields) {
   return { ...payload, fields };
+}
+
+function stableFingerprint(value) {
+  if (Array.isArray(value)) return `[${value.map(stableFingerprint).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${stableFingerprint(value[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function deliveryVersion(detail) {
+  if (!detail || !detail.data) return null;
+  const value = detail.data.version !== undefined ? detail.data.version : detail.data.version_number;
+  return value === undefined || value === null ? null : Number(value);
+}
+
+async function uploadValidatedZip(prototypeId, args) {
+  const zipPath = path.resolve(args.zipPath);
+  const validation = validateZipFile(zipPath);
+  if (!validation.ok) {
+    throw new ToolError('VALIDATION_FAILED', validation.errors.join('; ') || 'ZIP validation failed', { stage: 'VALIDATE' });
+  }
+  const bytes = fs.readFileSync(zipPath);
+  const form = new FormData();
+  form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+  form.set('versionNote', args.versionNote);
+  form.set('versionType', args.versionType || 'patch');
+  const uploaded = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/upload`, {
+    method: 'POST',
+    body: form
+  });
+  return { uploaded, validation };
+}
+
+async function deliverProject(args) {
+  const fingerprint = stableFingerprint(args);
+  const cached = deliveryCache.get(args.idempotencyKey);
+  if (cached) {
+    if (cached.fingerprint !== fingerprint) {
+      throw new ToolError('IDEMPOTENCY_CONFLICT', 'The idempotency key was already used with different delivery arguments', {
+        stage: 'PREFLIGHT',
+        idempotencyKey: args.idempotencyKey
+      });
+    }
+    return { ...cached.result, idempotentReplay: true };
+  }
+
+  const mode = args.mode;
+  if (mode === 'create' && (!args.name || !args.name.trim())) {
+    throw new ToolError('INVALID_REQUEST', 'create mode requires a non-empty name', { stage: 'PREFLIGHT' });
+  }
+  if (mode !== 'create' && !args.prototypeId) {
+    throw new ToolError('INVALID_REQUEST', `${mode} requires an explicit prototypeId`, { stage: 'PREFLIGHT' });
+  }
+  if (mode === 'project-bound-update' && (!args.projectId || !Number.isInteger(args.projectPrototypeId))) {
+    throw new ToolError('INVALID_REQUEST', 'project-bound-update requires projectId and projectPrototypeId', { stage: 'PREFLIGHT' });
+  }
+
+  let stage = 'VALIDATE';
+  let prototypeId = args.prototypeId || null;
+  let versionBefore = null;
+  let uploadApplied = false;
+  let validation;
+  let existingSnapshot = null;
+  try {
+    validation = validateZipFile(path.resolve(args.zipPath));
+    if (!validation.ok) {
+      throw new ToolError('VALIDATION_FAILED', validation.errors.join('; ') || 'ZIP validation failed');
+    }
+
+    if (mode === 'create') {
+      stage = 'SNAPSHOT_EXISTING';
+      const before = await authed('/api/prototypes?scope=all&pageSize=10000');
+      existingSnapshot = new Map((before.data || []).map(item => [item.id, item.version ?? item.version_number ?? null]));
+      stage = 'CREATE_TARGET';
+      const created = await authed('/api/prototypes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: args.name.trim(), description: args.description, categoryId: args.categoryId, tags: args.tags })
+      });
+      prototypeId = created.data.id;
+    } else {
+      stage = 'READ_BEFORE';
+      const before = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}`);
+      versionBefore = deliveryVersion(before);
+      if (args.expectedVersion !== undefined && versionBefore !== args.expectedVersion) {
+        throw new ToolError('VERSION_CONFLICT', 'Prototype version changed before delivery', {
+          expectedVersion: args.expectedVersion,
+          actualVersion: versionBefore
+        });
+      }
+      if (args.expectedEntryFile && before.data.entry_file !== args.expectedEntryFile) {
+        throw new ToolError('ENTRY_FILE_MISMATCH', 'Prototype entry file changed before delivery', {
+          expectedEntryFile: args.expectedEntryFile,
+          actualEntryFile: before.data.entry_file || null
+        });
+      }
+    }
+
+    if (mode === 'project-bound-update') {
+      stage = 'VERIFY_PROJECT_CHECKOUT';
+      const [project, me] = await Promise.all([
+        authed(`/api/projects/${encodeURIComponent(args.projectId)}`),
+        authed('/api/auth/me')
+      ]);
+      const binding = (project.data.prototypes || []).find(item => item.id === args.projectPrototypeId);
+      if (!binding || binding.prototype_id !== prototypeId) {
+        throw new ToolError('TARGET_MISMATCH', 'Project binding does not match the requested prototype', {
+          projectId: args.projectId,
+          projectPrototypeId: args.projectPrototypeId,
+          prototypeId
+        });
+      }
+      if (!binding.checkout || binding.checkout.user_id !== me.data.id) {
+        throw new ToolError('CHECKOUT_REQUIRED', 'The project prototype must be actively checked out by the current user', {
+          projectId: args.projectId,
+          projectPrototypeId: args.projectPrototypeId
+        });
+      }
+    }
+
+    stage = 'UPLOAD';
+    const upload = await uploadValidatedZip(prototypeId, args);
+    uploadApplied = true;
+    validation = upload.validation;
+    if (process.env.NODE_ENV === 'test' && process.env.FUXI_MCP_TEST_FAIL_AFTER_UPLOAD === '1') {
+      throw new ToolError('TEST_READBACK_FAILURE', 'Injected readback failure for integration testing');
+    }
+
+    stage = 'READBACK_DETAIL';
+    const detail = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}`);
+    const versionAfter = deliveryVersion(detail);
+    if (mode !== 'create' && (versionAfter === null || versionBefore === null || versionAfter <= versionBefore)) {
+      throw new ToolError('VERSION_NOT_ADVANCED', 'Upload readback did not show a newer version', { versionBefore, versionAfter });
+    }
+    if (!detail.data.entry_file) {
+      throw new ToolError('ENTRY_FILE_MISSING', 'Upload readback has no entry file');
+    }
+
+    stage = 'READBACK_README';
+    const readme = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/readme`);
+    if (!readme.data) throw new ToolError('README_MISSING', 'Upload readback has no README');
+
+    stage = 'READBACK_PREVIEW';
+    const share = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/public-link`);
+    const previewUrl = new URL(share.data.url, `${API_URL}/`).toString();
+
+    if (mode === 'create') {
+      stage = 'VERIFY_EXISTING_UNCHANGED';
+      const after = await authed('/api/prototypes?scope=all&pageSize=10000');
+      const afterMap = new Map((after.data || []).map(item => [item.id, item.version ?? item.version_number ?? null]));
+      for (const [id, version] of existingSnapshot) {
+        if (!afterMap.has(id) || afterMap.get(id) !== version) {
+          throw new ToolError('EXISTING_PROTOTYPE_CHANGED', 'Create delivery changed an existing prototype', { existingPrototypeId: id });
+        }
+      }
+    }
+
+    const result = {
+      ok: true,
+      status: 'COMPLETE',
+      mode,
+      idempotencyKey: args.idempotencyKey,
+      idempotentReplay: false,
+      prototypeId,
+      versionBefore,
+      versionAfter,
+      entryFile: detail.data.entry_file,
+      readmeStatus: 'present',
+      previewUrl,
+      affectedScope: mode === 'project-bound-update' ? 'target-project-binding-only' : 'target-prototype-only',
+      projectId: args.projectId || null,
+      projectPrototypeId: args.projectPrototypeId || null,
+      validation,
+      stages: ['VALIDATE', mode === 'create' ? 'CREATE_TARGET' : 'READ_BEFORE', 'UPLOAD', 'READBACK_DETAIL', 'READBACK_README', 'READBACK_PREVIEW']
+    };
+    deliveryCache.set(args.idempotencyKey, { fingerprint, result });
+    return result;
+  } catch (error) {
+    if (uploadApplied) {
+      throw new ToolError('DELIVERY_PARTIAL_FAILURE', 'Upload may have succeeded but mandatory readback did not complete', {
+        stage,
+        mode,
+        prototypeId,
+        versionBefore,
+        uploadApplied: true,
+        causeCode: error.code || 'INTERNAL_ERROR',
+        recovery: 'Read back this exact prototypeId before retrying with a new idempotency key'
+      });
+    }
+    if (error instanceof ToolError) {
+      error.details = { stage, mode, prototypeId, uploadApplied: false, ...error.details };
+    }
+    throw error;
+  }
 }
 
 async function callTool(name, args) {
@@ -726,6 +947,10 @@ async function callTool(name, args) {
       },
       validation
     });
+  }
+
+  if (name === 'deliver_project') {
+    return contentJson(await deliverProject(args));
   }
 
   throw new Error(`Unknown tool: ${name}`);
