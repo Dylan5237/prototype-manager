@@ -178,6 +178,10 @@ MCP Host 需要配置环境变量：
 | `FUXI_SKILL_DIR` | 可分发的 `fuxi-skyui-prototype` Skill 目录，必须包含 `SKILL.md` | 无，未配置时关闭一键接入 |
 | `FUXI_MCP_DIR` | 可分发的伏羲 MCP 目录，必须包含 `src/server.js` | 仓库内 `mcp-server` |
 
+## 维护者发布 Skill
+
+新版生产发布使用 `ops/skills/fuxi-platform-release/`。该 Skill 内置发布包构建、只读生产预检、不可变 release 部署和显式回滚脚本；默认只读，生产上传、切换和回滚必须在当前会话获得明确确认。正式发布不再直接运行服务器旧 `update-intranet.sh`。
+
 ## 注意事项
 
 1. **JWT Secret**：生产部署时务必通过环境变量设置强密钥

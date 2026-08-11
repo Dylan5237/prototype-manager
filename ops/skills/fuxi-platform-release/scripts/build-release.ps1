@@ -1,0 +1,77 @@
+<#
+.SYNOPSIS
+Builds an immutable Fuxi release archive from two clean committed repositories.
+#>
+[CmdletBinding()]
+param(
+  [string]$PlatformRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path,
+  [Parameter(Mandatory)][string]$SkillsRepositoryRoot,
+  [string]$OutputDirectory = (Join-Path $PlatformRoot '.release')
+)
+$ErrorActionPreference = 'Stop'
+function Invoke-Checked([string]$File, [string[]]$Arguments, [string]$WorkingDirectory) {
+  Push-Location $WorkingDirectory
+  try {
+    & $File @Arguments
+    if ($LASTEXITCODE -ne 0) { throw "$File failed with exit code $LASTEXITCODE" }
+  } finally { Pop-Location }
+}
+function Assert-Clean([string]$Root, [string]$Label) {
+  $status = & git -c 'core.excludesFile=' -C $Root status --porcelain
+  if ($LASTEXITCODE -ne 0) { throw "$Label is not a Git repository: $Root" }
+  if ($status) { throw "$Label worktree is not clean. Commit or remove task residue before packaging.`n$($status -join "`n")" }
+}
+
+$PlatformRoot = (Resolve-Path $PlatformRoot).Path
+$SkillsRepositoryRoot = (Resolve-Path $SkillsRepositoryRoot).Path
+Assert-Clean $PlatformRoot 'Platform'
+Assert-Clean $SkillsRepositoryRoot 'Skills'
+if (-not (Test-Path (Join-Path $SkillsRepositoryRoot 'fuxi-skyui-prototype\SKILL.md'))) {
+  throw 'Skills repository does not contain fuxi-skyui-prototype/SKILL.md.'
+}
+Invoke-Checked npm @('run','build') (Join-Path $PlatformRoot 'frontend')
+Invoke-Checked npm @('run','check') (Join-Path $PlatformRoot 'mcp-server')
+Invoke-Checked npm @('run','test:integration') (Join-Path $PlatformRoot 'mcp-server')
+Assert-Clean $PlatformRoot 'Platform after verification'
+Assert-Clean $SkillsRepositoryRoot 'Skills after verification'
+
+$platformCommit = (& git -c 'core.excludesFile=' -C $PlatformRoot rev-parse HEAD).Trim()
+$skillCommit = (& git -c 'core.excludesFile=' -C $SkillsRepositoryRoot rev-parse HEAD).Trim()
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$releaseId = "$stamp-$($platformCommit.Substring(0,8))"
+$tempRoot = Join-Path ([IO.Path]::GetTempPath()) "fuxi-release-$releaseId"
+$stage = Join-Path $tempRoot 'stage'
+$platformTar = Join-Path $tempRoot 'platform.tar'
+$skillTar = Join-Path $tempRoot 'skill.tar'
+New-Item -ItemType Directory -Force -Path (Join-Path $stage 'platform'),(Join-Path $stage 'skills') | Out-Null
+try {
+  Invoke-Checked git @('-c','core.excludesFile=','-C',$PlatformRoot,'archive','--format=tar',"--output=$platformTar",'HEAD') $PlatformRoot
+  Invoke-Checked tar @('-xf',$platformTar,'-C',(Join-Path $stage 'platform')) $PlatformRoot
+  Invoke-Checked git @('-c','core.excludesFile=','-C',$SkillsRepositoryRoot,'archive','--format=tar',"--output=$skillTar",'HEAD','fuxi-skyui-prototype') $SkillsRepositoryRoot
+  Invoke-Checked tar @('-xf',$skillTar,'-C',(Join-Path $stage 'skills')) $SkillsRepositoryRoot
+  $distSource = Join-Path $PlatformRoot 'frontend\dist'
+  if (-not (Test-Path (Join-Path $distSource 'index.html'))) { throw 'Frontend dist/index.html is missing after build.' }
+  Copy-Item -LiteralPath $distSource -Destination (Join-Path $stage 'platform\frontend\dist') -Recurse -Force
+
+  $manifest = [ordered]@{
+    schemaVersion = 1
+    releaseId = $releaseId
+    createdAt = (Get-Date).ToUniversalTime().ToString('o')
+    platformCommit = $platformCommit
+    skillCommit = $skillCommit
+    platformBranch = (& git -c 'core.excludesFile=' -C $PlatformRoot branch --show-current).Trim()
+    skillBranch = (& git -c 'core.excludesFile=' -C $SkillsRepositoryRoot branch --show-current).Trim()
+    verification = 'frontend-build+mcp-check+mcp-integration'
+    persistentPaths = @('backend/data','backend/repos','backend/uploads','backend/.env')
+  }
+  [IO.File]::WriteAllText((Join-Path $stage 'manifest.json'), ($manifest | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+  New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
+  $archive = Join-Path $OutputDirectory "fuxi-release-$releaseId.tar.gz"
+  Invoke-Checked tar @('-czf',$archive,'-C',$stage,'.') $PlatformRoot
+  $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+  [IO.File]::WriteAllText("$archive.sha256", "$hash  $([IO.Path]::GetFileName($archive))`n", [Text.UTF8Encoding]::new($false))
+  Copy-Item -LiteralPath (Join-Path $stage 'manifest.json') -Destination "$archive.manifest.json" -Force
+  [pscustomobject]@{ releaseId=$releaseId; archive=$archive; sha256=$hash; platformCommit=$platformCommit; skillCommit=$skillCommit; verification=$manifest.verification } | ConvertTo-Json
+} finally {
+  if (Test-Path $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force }
+}

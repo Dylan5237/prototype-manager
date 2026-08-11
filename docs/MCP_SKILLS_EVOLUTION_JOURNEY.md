@@ -773,6 +773,8 @@ requires:
 生产发布门禁：
 - 当前生产 `GET /api/integrations/agent-bootstrap` 返回 `404`，证明 `b6ec2f9` 尚未部署；阶段 13 在该接口、页面按钮和真实安装提示词通过生产验收前不得标记 `completed`。
 - 当前本机仓库仅配置 GitHub `origin`，没有项目规则所述的 `zoesoftgitlab` 远端；SSH 端口可达，但应用凭据不能用于服务器登录。发布需要用户确认目标远端/分支并提供现有部署入口或服务器账号。
+- 新增维护者专用 `fuxi-platform-release` Skill：平台仓库保存可版本化源码，并安装到 Codex Skills；内置本地全量门禁/不可变发布包、固定主机指纹的只读探查、文件级备份、原子切换、失败恢复和显式回滚脚本。
+- 现场确认旧 `/zoesoft/fuxi/update-intranet.sh` 采用原地 `git pull/npm install/PM2 reload`，无数据备份与失败回滚，且生产 Git 有两个 lockfile 修改；新版发布禁止直接运行旧脚本或用 `git checkout -- .` 清理未知改动。
 
 剩余运维建议：
 - API 备份不能替代服务器文件级备份；生产应定期一致性备份 `backend/data/app.db` 与 `backend/repos/`，并演练恢复。
