@@ -2,7 +2,7 @@
 
 > 更新日期：2026-08-11
 > 文档定位：伏羲原型体系的持续事实入口，包含但不限于整体架构、环境信息、使用手册、详细设计、数据安全、兼容策略、验收证据和迭代计划
-> 当前阶段：阶段 11-12 已完成；阶段 13 的生产兼容验收已通过，等待发布新平台代码与一键接入配置
+> 当前阶段：阶段 11-13 已完成；安全交付、一键接入、生产发布、兼容验收和知识收口均有可回读证据
 
 ## 文档维护约定
 
@@ -738,7 +738,7 @@ requires:
 
 ### 阶段 13：生产兼容、发布与知识收口
 
-状态：`in_progress`（生产兼容与知识收口已完成，生产发布待执行）
+状态：`completed`
 
 目标：
 - 在不影响已有原型的前提下完成真实生产验收，并让文档、代码和运行状态一致。
@@ -770,18 +770,21 @@ requires:
 - 项目数量保持 1，当前原型绑定 0、活动签出 0；本次使用 `create` / `update` 模式，未调用项目绑定或已有原型写接口。
 - 本地回归：前端 `npm run build`、MCP `npm run check`、MCP 隔离 `npm run test:integration` 均通过；集成输出覆盖 22 个工具及 `agentBootstrap/skillPackage/mcpPackage/safeDelivery`。
 
-生产发布门禁：
-- 当前生产 `GET /api/integrations/agent-bootstrap` 返回 `404`，证明 `b6ec2f9` 尚未部署；阶段 13 在该接口、页面按钮和真实安装提示词通过生产验收前不得标记 `completed`。
-- 当前本机仓库仅配置 GitHub `origin`，没有项目规则所述的 `zoesoftgitlab` 远端；SSH 端口可达，但应用凭据不能用于服务器登录。发布需要用户确认目标远端/分支并提供现有部署入口或服务器账号。
-- 新增维护者专用 `fuxi-platform-release` Skill：平台仓库保存可版本化源码，并安装到 Codex Skills；内置本地全量门禁/不可变发布包、固定主机指纹的只读探查、文件级备份、原子切换、失败恢复和显式回滚脚本。
-- 现场确认旧 `/zoesoft/fuxi/update-intranet.sh` 采用原地 `git pull/npm install/PM2 reload`，无数据备份与失败回滚，且生产 Git 有两个 lockfile 修改；新版发布禁止直接运行旧脚本或用 `git checkout -- .` 清理未知改动。
-- 发布 Skill commit `3b660da`；仓库源码与安装目录 `C:\Users\howyo\.codex\skills\fuxi-platform-release` 的 13 个文件逐一 SHA-256 相同，两处均通过官方 `quick_validate.py`。
-- Skill 自举生成本地候选 `20260811-205156-3b660da2`：平台 commit `3b660da2513fb785ac425a3981fc581c1f75ddf5`、技能 commit `52ed07b3a0ae4dc485d2112eaac7eed873c10167`，发布包 176 个条目、禁止项 0、SHA-256 `f9e665243be162aa47173c27703614badd99b36bd45f552832cf158782b3a316`；候选仅在本地 `.release/`，未上传生产。
-- 新脚本真实只读前向测试通过：生产 commit `afd9570`、Git dirty `2`、健康 `200`、bootstrap `404`、release/shared/MCP/Skill 配置均未启用；认证基线采集得到 51 个原型/1 个项目，发布后核验对旧生产按预期在 bootstrap 门禁失败。
+生产发布证据：
+- 维护者专用 `fuxi-platform-release` Skill 已版本化并安装到 `C:\Users\howyo\.codex\skills\fuxi-platform-release`；13 个文件逐一 SHA-256 相同，内置全量构建、固定指纹只读预检、一小时基线、文件级备份、不可变 release、失败恢复和显式回滚。
+- 正式候选 `20260811-210455-24264705` 固定平台 commit `24264705332b3fb39247b48be32fcf5e8ec68fd1`、技能 commit `52ed07b3a0ae4dc485d2112eaac7eed873c10167`，SHA-256 `2bd268f40a23f9188061ccdb30c9203a1787e9665e2eb3bc7ecf8034c260c44a`；本地前端 build、MCP check/集成和 22 工具回归全部通过。
+- 首次尝试因非登录 SSH 找不到 PM2，在停服/备份/切换前安全停止并报告 `deployment_status=restored`；生产持续健康 `200`。修复 commit `2426470` 固定 `/root/.npm-global/bin/pm2` 与 Node PATH，未复用失败候选。
+- 正式发布成功：`/zoesoft/fuxi/fuxi-platform` 和 `/zoesoft/fuxi/current` 分别指向成功 release 的 platform/root；PM2 PID `1875610`，健康 `200`，bootstrap 未登录 `401`，Nginx `200`，MCP 与 Skill 配置均生效。
+- 成功 backup ID `20260811-210601-pre-20260811-210455-24264705`，规模约 `1.8G`；持久化归档 `439,878,042` bytes 且 `sha256sum -c` 为 `OK`，同时保留旧完整 Git 工作区、env、基线和 lockfile diff，可执行首次 release 回滚。
+- 发布后只读核验：基线 51 个原型全部保留，15 个关键字段零差异，1 个项目的绑定/成员/签出状态一致；Skill ZIP `24,065` bytes、MCP ZIP `13,881` bytes，入口与禁止项检查通过。
+- 直接下载生产 MCP ZIP 后在临时目录启动：22 个工具、`check_connection`、`deliver_project create+update` 均通过；仅新增验收原型 `msoofhdfpb85dt`，版本 `0 → 1`、入口 `index.html`、README `present`、分享 `302 → 200`，发布前 51 个 ID 全保留。
+- 真实页面显示 52 个原型、新验收原型和“接入平台MCP”按钮；浏览器控制点击对话框时超时，但同一 bootstrap 提示词及 Skill/MCP 下载已由认证 API 与 ZIP 内容验证覆盖，不将超时写成 UI 通过证据。
+- 第一次失败的未启用 release、不完整 backup、`/tmp` 上传物和本地临时 MCP 均已清理；成功 release、成功 backup、最新本地候选与基线保留。
 
 剩余运维建议：
 - API 备份不能替代服务器文件级备份；生产应定期一致性备份 `backend/data/app.db` 与 `backend/repos/`，并演练恢复。
 - SkyUI 为私有依赖，构建机必须能够访问技能中声明的私有 registry；公开 npm 镜像不提供该包。
+- 非阻断日志告警：生产启动时 `backend/services/proxy.js` 在 Linux 尝试 Windows `reg query`，产生 `/bin/sh: reg: not found` 后正确降级为直连；error 日志最后修改于启动后的 `2026-08-11 21:07:01`，后续验收期间无新增。后续应按 `process.platform === 'win32'` 屏蔽该探测，避免污染 PM2 error log。
 
 ## Commit 规划原则
 
@@ -796,7 +799,7 @@ requires:
 截至 2026-08-11：
 
 - `FuxiPlatform` 当前分支：`feature/project-collaboration`。
-- 平台阶段 11-12 与维护者发布 Skill 已提交为 `18ca76b`、`b6ec2f9`、`3b660da`；尚未推送远端或部署生产。阶段 13 仅在生产创建并更新全新验收原型，未写任何发布前既有原型。
+- 平台阶段 11-12 与维护者发布 Skill 已提交并通过不可变 release 部署生产；生产业务代码固定在 `2426470`，后续本地 `8ecb5f6` 仅修正维护者只读探查统计，不改变线上业务行为。
 - 本文档位于 `docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - 技能包目录已重构为：
   - `AGENTS.md`
@@ -806,7 +809,7 @@ requires:
   - `prototype-specs/tiangong/`
   - `prototype-specs/static-html/`
 - `prototype-manager-skills` 已是独立 Git 仓库，当前分支 `master`，最新 commit 为 `52ed07b`，尚未配置远端。
-- 生产仍运行 `afd9570`，`/api/health` 为 `200`、`/api/integrations/agent-bootstrap` 为 `404`；阶段 13 只有在候选正式上传、切换并通过完整生产验收后才能完成。
+- 生产运行 release `20260811-210455-24264705`，`/api/health` 为 `200`、`/api/integrations/agent-bootstrap` 未登录为 `401`；MCP/Skill 分发和新数据验收均通过，发布前既有原型零漂移。
 - `sky-ui-docs` 的确定性 Node CLI 已内置到单一入口 Skill；外部 GitLab 项目仍是上游来源。
 
 ## 更新规则
