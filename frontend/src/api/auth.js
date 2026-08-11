@@ -8,6 +8,10 @@ export function getMe() {
   return api.get('/auth/me')
 }
 
+export function getMcpToken() {
+  return api.get('/auth/mcp-token')
+}
+
 export function getUsers() {
   return api.get('/auth/users')
 }

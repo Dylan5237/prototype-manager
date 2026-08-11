@@ -20,6 +20,9 @@
         <el-select v-model="filterCategory" placeholder="按类别筛选" clearable class="category-select" @change="handleCategoryChange">
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
+        <el-button @click="openMcpDialog">
+          <el-icon><Connection /></el-icon>接入平台MCP
+        </el-button>
         <el-button v-if="authStore.isAdmin || authStore.isEditor" type="primary" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>新建原型
         </el-button>
@@ -115,6 +118,44 @@
         <el-button type="primary" @click="handleCreate" :loading="creating">创建</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog v-model="showMcpDialog" title="接入平台MCP" width="720px">
+      <div class="mcp-dialog-body">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="复制下面的提示词发给你的 AI 助手，它会自动完成 MCP 接入和连通验证。"
+        />
+        <el-alert
+          v-if="mcpToken"
+          type="success"
+          :closable="false"
+          show-icon
+          :title="`已生成短期 MCP token（${mcpTokenExpiresAt} 前有效）。复制提示词发给 AI 助手后，它会自动写入配置并验证连通。`"
+        />
+        <el-alert
+          v-else
+          type="warning"
+          :closable="false"
+          show-icon
+          title="未获取到短期 token，请确认已登录后重试。提示词会要求 AI 助手向你索取 JWT。"
+        />
+        <el-input
+          v-model="mcpPrompt"
+          type="textarea"
+          :rows="14"
+          readonly
+          class="mcp-prompt"
+        />
+      </div>
+      <template #footer>
+        <el-button @click="showMcpDialog = false">关闭</el-button>
+        <el-button type="primary" @click="copyMcpPrompt">
+          <el-icon><DocumentCopy /></el-icon>复制提示词
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -123,9 +164,9 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype, deletePrototype } from '../api/prototypes'
-import { getUsers } from '../api/auth'
+import { getUsers, getMcpToken } from '../api/auth'
 import { getCategories } from '../api/prototypes'
-import { Search, Plus, User, Loading, Delete } from '@element-plus/icons-vue'
+import { Search, Plus, User, Loading, Delete, Connection, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()
@@ -145,6 +186,11 @@ const loading = ref(false)
 const showCreateDialog = ref(false)
 const newPrototype = ref({ name: '', description: '', category_ids: [] })
 const creating = ref(false)
+const showMcpDialog = ref(false)
+const mcpToken = ref('')
+const mcpTokenExpiresAt = ref('')
+const mcpLoading = ref(false)
+const mcpPrompt = computed(() => buildMcpPrompt())
 
 const activeTab = computed(() => route.query.tab || 'all')
 
@@ -254,6 +300,70 @@ function openCreateDialog() {
   showCreateDialog.value = true
 }
 
+function getFuxiApiUrl() {
+  const url = new URL(window.location.href)
+  if (url.port === '3000') {
+    url.port = '3001'
+  }
+  url.pathname = ''
+  url.search = ''
+  url.hash = ''
+  return url.origin
+}
+
+async function loadMcpToken() {
+  mcpLoading.value = true
+  try {
+    const res = await getMcpToken()
+    mcpToken.value = res.data.data.token
+    mcpTokenExpiresAt.value = res.data.data.expiresAt
+  } catch (err) {
+    mcpToken.value = ''
+    mcpTokenExpiresAt.value = ''
+    ElMessage.error('获取 MCP 接入 token 失败，请先登录')
+  } finally {
+    mcpLoading.value = false
+  }
+}
+
+function buildMcpPrompt() {
+  const apiUrl = getFuxiApiUrl()
+  const token = mcpToken.value
+  const tokenBlock = token
+    ? `     FUXI_TOKEN=${token}\n     # token 有效期至 ${mcpTokenExpiresAt.value}，过期后请回到平台重新生成`
+    : `     FUXI_TOKEN=<在这里粘贴平台生成的短期 token>`
+  return `请帮我自动接入伏羲平台 MCP，不要让我手动编辑配置文件。
+
+目标：
+- MCP 名称：fuxi-platform
+- 伏羲后端 API：${apiUrl}
+- MCP server 来自伏羲平台仓库的 mcp-server/src/server.js
+
+请你执行：
+1. 在当前机器或当前工作区中定位 FuxiPlatform/mcp-server/src/server.js；如果没有找到，请提示我提供平台仓库路径或安装包。
+2. 检查 Node.js 版本，需要 >= 18。
+3. 将该 stdio MCP server 写入你当前使用的 MCP Host 配置：
+     command: node
+     args: [<FuxiPlatform绝对路径>/mcp-server/src/server.js]
+     env:
+       FUXI_API_URL=${apiUrl}
+${tokenBlock}
+4. 不要把 token 写进仓库文件；只写入 MCP Host 的本地安全配置。
+5. 接入后调用 fuxi-platform 的 check_connection 工具验证连通性；如果 token 已过期，请告诉我重新到平台生成。
+6. 连通后列出可用工具，并告诉我后续上传原型应该使用 fuxi-adapter + 原型规范 skill 生成，再用 Fuxi MCP 上传。
+
+如果你的环境没有可写的 MCP 配置入口，请明确告诉我卡在哪一步，并给出需要我点击确认的最小操作。`
+}
+
+async function openMcpDialog() {
+  showMcpDialog.value = true
+  await loadMcpToken()
+}
+
+function copyMcpPrompt() {
+  copyText(mcpPrompt.value, 'MCP 接入提示词已复制')
+}
+
 async function handleCardCommand(command, p) {
   if (command === 'delete') {
     try {
@@ -287,6 +397,30 @@ async function handleCreate() {
   } finally {
     creating.value = false
   }
+}
+
+function copyText(text, successMsg) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(() => {
+      ElMessage.success(successMsg)
+    }).catch(() => {
+      fallbackCopy(text, successMsg)
+    })
+  } else {
+    fallbackCopy(text, successMsg)
+  }
+}
+
+function fallbackCopy(text, successMsg) {
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  document.body.appendChild(textarea)
+  textarea.select()
+  document.execCommand('copy')
+  document.body.removeChild(textarea)
+  ElMessage.success(successMsg)
 }
 
 watch(() => route.query.tab, () => {
@@ -357,6 +491,17 @@ onMounted(() => {
 
 .category-select {
   width: 150px;
+}
+
+.mcp-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.mcp-prompt :deep(textarea) {
+  font-family: Consolas, Monaco, 'Courier New', monospace;
+  line-height: 1.55;
 }
 
 /* 归属者筛选标签栏 */
