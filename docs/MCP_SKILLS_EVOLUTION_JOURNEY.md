@@ -2,7 +2,7 @@
 
 > 更新日期：2026-08-11
 > 文档定位：伏羲原型体系的持续事实入口，包含但不限于整体架构、环境信息、使用手册、详细设计、数据安全、兼容策略、验收证据和迭代计划
-> 当前阶段：既有 MCP 与平台迁移已完成；下一阶段为单一入口 SkyUI 原型 Skill 与可替换规范体系重构
+> 当前阶段：单一入口 Skill 骨架已完成；下一阶段为 SkyUI 文档查询内置与真实原型闭环
 
 ## 文档维护约定
 
@@ -544,7 +544,7 @@ requires:
 
 ### 阶段 8：单一入口 Skill 骨架
 
-状态：`todo`
+状态：`done`
 
 目标：
 - 用户只安装和调用 `fuxi-skyui-prototype`，无需理解内部子模块。
@@ -554,6 +554,19 @@ requires:
 - 把设计规范、SkyUI runtime 和 Fuxi adapter 组织为内部 references/scripts，不要求用户手动组合多个 Skill。
 - 明确 MCP 不可用、目标不唯一、构建失败和上传失败时的停止策略。
 - 定义新建与更新的最小用户话术和结构化执行上下文。
+
+已完成：
+- 使用标准 Skill 脚手架创建 `fuxi-skyui-prototype`，包含 `SKILL.md`、`agents/openai.yaml` 和按需加载的 references。
+- 建立 `create`、`update`、`local-only` 三种显式模式，以及从需求发现到 MCP 回读的完整状态机。
+- 内置工作流、Tiangong 设计基线、SkyUI runtime 和 Fuxi adapter 四类契约；用户不需要手动组合辅助 Skill。
+- 固化目标 ID 唯一性、禁止模糊覆盖、禁止普通流程调用高风险工具、上传后必须回读等安全边界。
+- 缺 SkyUI 查询器、MCP、认证、构建或校验能力时均有明确停止码，不回退旧上传脚本。
+
+验收证据：
+- 官方 `quick_validate.py` 已启动，但当前可用 Python 缺少 `PyYAML`，因此未执行到内容校验；未为通过检查而修改共享 Python 环境。
+- 已执行等价结构校验：frontmatter 仅含 `name/description`、命名合法、描述长度合法、4 个 reference 链接存在、无 TODO、默认提示词包含 `$fuxi-skyui-prototype`，结果通过。
+- `git diff --cached --check`、UTF-8 无 BOM/末尾换行检查和明文凭据扫描通过。
+- 技能 commit：`ab8064e`。
 
 验收标准：
 - 一个全新 AI 会话只读取该 Skill，就能描述完整生成与交付流程。
