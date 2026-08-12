@@ -16,11 +16,11 @@
 
 ```bash
 # 后端（端口3001）
-cd prototype-manager/backend
+cd backend
 node server.js
 
 # 前端（端口3000）
-cd prototype-manager/frontend
+cd frontend
 npm run dev
 ```
 
@@ -107,7 +107,7 @@ npm run dev
 ### 1. 启动后端
 
 ```bash
-cd prototype-manager/backend
+cd backend
 npm install
 npm start
 # 默认端口 3001
@@ -121,7 +121,7 @@ npm start
 ### 2. 启动前端
 
 ```bash
-cd prototype-manager/frontend
+cd frontend
 npm install
 npm run dev
 # 默认端口 3000

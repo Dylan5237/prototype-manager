@@ -22,6 +22,7 @@ dist
 # Documentation
 docs/*
 !docs/MCP_SKILLS_EVOLUTION_JOURNEY.md
+!docs/TECHNICAL_DESIGN.md
 
 # Local env files
 .env

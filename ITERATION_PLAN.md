@@ -310,13 +310,13 @@
 
 ## 十、与主分支的兼容性
 
-本次改造遵循以下原则，确保不影响 `master` 分支现有功能：
+本次改造遵循以下原则：
 
 1. **新增表，不改旧表结构**：`projects`、`project_prototypes`、`project_checkouts`、`project_snapshots` 都是新表，不影响 `prototypes` 等核心表。
 2. **新增路由，不改旧路由**：`/api/projects/*` 是新增路由，现有 `/api/prototypes/*` 逻辑不变。
 3. **新增页面，不改旧页面**：`/projects`、`/project/:id` 是新路由，首页 `/` 和 `/prototype/:id` 保持不变。
 4. **新增导航入口，不替换旧入口**：侧边栏/顶部增加“项目”入口，原有“原型列表”“用户管理”等保留。
-5. **Git 分支隔离**：所有开发在 `feature/project-collaboration` 分支，只有验证通过后才考虑合并到 `master`。
+5. **生产已部署**：`feature/project-collaboration` 分支已通过不可变 release 部署到生产 `192.168.2.145`（release `20260811-210455-24264705`），已有 50 个原型零漂移。
 
 ---
 
@@ -350,12 +350,12 @@
 
 ## 十三、任务清单
 
-- [ ] 编写迭代计划文档
-- [ ] 创建 `feature/project-collaboration` 分支
-- [ ] Phase 1 后端：项目表 + 项目-原型关联表 + API
-- [ ] Phase 1 前端：项目列表 + 项目门户 + 菜单配置 + 原型绑定
-- [ ] Phase 2 后端：签出/签入/超时释放 + 快照 API
-- [ ] Phase 2 前端：签出状态展示 + 快照面板
-- [ ] 构建验证
-- [ ] 与 master 功能对比验证
-- [ ] 推送 feature 分支
+- [x] 编写迭代计划文档
+- [x] 创建 `feature/project-collaboration` 分支
+- [x] Phase 1 后端：项目表 + 项目-原型关联表 + API
+- [x] Phase 1 前端：项目列表 + 项目门户 + 菜单配置 + 原型绑定
+- [x] Phase 2 后端：签出/签入/超时释放 + 快照 API
+- [x] Phase 2 前端：签出状态展示 + 快照面板
+- [x] 构建验证
+- [x] 生产部署与兼容验收
+- [ ] 推送 feature 分支到远端

@@ -83,13 +83,13 @@
 陈产品在本地对实体列表原型进行修改：
 
 1. 打开本地代码或设计文件。
-2. 修改完成后，使用 Kimi Code CLI 的 `fuxi-packager` Skill 打包并上传：
+2. 修改完成后，让 AI 助手使用 `fuxi-skyui-prototype` 技能打包并上传：
 
-```bash
-kimi skill fuxi-packager --project 天宫平台 --module 实体列表
+```text
+使用 fuxi-skyui-prototype，更新原型 <prototypeId> 的最新版本，上传后返回版本号和预览地址。
 ```
 
-> 如果 Skill 暂时不支持按项目/模块上传，也可以直接调用平台已有的原型上传接口，把 ZIP 更新到已签出的原型上。
+> AI 助手通过伏羲 MCP 的 `deliver_project` 工具完成上传，需先签出对应菜单项。
 
 3. 上传成功后，项目门户右侧预览会自动刷新（陈产品可手动刷新页面确认）。
 
