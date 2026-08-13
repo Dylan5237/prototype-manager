@@ -144,7 +144,11 @@ set_env FUXI_SKILL_DIR "$NEW_RELEASE/skills/fuxi-skyui-prototype"
 set_env FUXI_MCP_DIR "$NEW_RELEASE/platform/mcp-server"
 
 STATE=switch
-PREVIOUS_TARGET="$(readlink -f "$PROJECT" 2>/dev/null || true)"
+if [[ -e "$PROJECT" || -L "$PROJECT" ]]; then
+  PREVIOUS_TARGET="$(readlink -f "$PROJECT" 2>/dev/null || true)"
+else
+  PREVIOUS_TARGET=""
+fi
 if [[ -n "$PREVIOUS_TARGET" && -d "$PREVIOUS_TARGET" ]]; then
   ln -s "$NEW_RELEASE/platform" "$ROOT/.fuxi-platform.next"
   mv -Tf "$ROOT/.fuxi-platform.next" "$PROJECT"
@@ -189,8 +193,8 @@ server {
 EOF
   ln -sfn "$NGINX_SITE" /etc/nginx/sites-enabled/fuxi-test
 fi
-nginx -t
-nginx -s reload
+/usr/sbin/nginx -t
+/usr/sbin/nginx -s reload
 
 STATE=start
 set -a
