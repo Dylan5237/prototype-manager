@@ -75,6 +75,7 @@ on_error() { local code=$?; restore_previous; cleanup_lock; exit "$code"; }
 trap on_error ERR INT TERM
 trap cleanup_lock EXIT
 
+mkdir -p "$ROOT"
 mkdir "$LOCK" 2>/dev/null || { echo 'Another test release operation is active.' >&2; exit 3; }
 actual_sha="$(sha256sum "$ARCHIVE" | awk '{print $1}')"
 [[ "$actual_sha" == "$SHA256" ]] || { echo 'Archive checksum mismatch.' >&2; exit 3; }
