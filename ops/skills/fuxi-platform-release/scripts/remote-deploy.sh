@@ -189,7 +189,7 @@ done
 [[ "$health" == 200 ]] || { echo "Backend health failed: $health" >&2; false; }
 bootstrap="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:3001/api/integrations/agent-bootstrap 2>/dev/null || echo 000)"
 [[ "$bootstrap" == 401 ]] || { echo "Bootstrap route gate failed: $bootstrap" >&2; false; }
-nginx_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1/ 2>/dev/null || echo 000)"
+nginx_status="$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:16088/ 2>/dev/null || echo 000)"
 [[ "$nginx_status" == 200 || "$nginx_status" == 304 ]] || { echo "Nginx gate failed: $nginx_status" >&2; false; }
 
 STATE=complete

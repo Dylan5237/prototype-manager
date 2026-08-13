@@ -25,7 +25,7 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 ## 当前状态和下一步
 
 - 当前分支 `feature/project-collaboration`，生产已部署 release `20260811-210455-24264705`。
-- 生产 `192.168.2.145`，52 个原型，已有 50 个零漂移。
+- 生产入口 `http://192.168.2.145:16088`（Nginx），52 个原型，已有 50 个零漂移。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
 - 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
 - 不写凭证、密码或长期 token 进仓库或文档。

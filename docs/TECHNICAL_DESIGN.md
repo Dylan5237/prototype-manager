@@ -165,7 +165,7 @@ AI 助手按提示词执行:
 | `FUXI_TOKEN` | 平台签发的短期 MCP token，优先使用 |
 | `FUXI_USERNAME` / `FUXI_PASSWORD` | 无 token 时的兼容登录方式，不应写入仓库 |
 
-生产平台地址为 `192.168.2.145`。生产环境中的已有原型是兼容基线；允许创建隔离命名的新验收原型，不允许把已有原型当测试目标。
+生产平台入口为 `http://192.168.2.145:16088`（Nginx，2026-08-13 起）。生产环境中的已有原型是兼容基线；允许创建隔离命名的新验收原型，不允许把已有原型当测试目标。
 
 ### 2.3 Skill 与 MCP 分发配置
 
@@ -190,7 +190,7 @@ MCP 是天然内置的（源码在平台仓库 `mcp-server/`）；Skill 通过 `
 | PM2 app | `fuxi-backend` |
 | PM2 可执行 | `/root/.npm-global/bin/pm2`；非登录 SSH 不在 `PATH` 中 |
 | Backend | Node.js `20.20.2`，端口 `3001` |
-| Frontend | Nginx 端口 `80`，root 在 legacy 项目路径下 |
+| Frontend | Nginx 端口 `16088`（原 80 被 k3s Traefik CNI 占用），root 在 legacy 项目路径下 |
 | Nginx config | `/etc/nginx/sites-available/fuxi` |
 | Git 分支 | `feature/project-collaboration` |
 
