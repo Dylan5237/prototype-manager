@@ -873,6 +873,36 @@ requires:
 - 生产部署需走维护者发布技能并先备份；本次为本地实现与隔离回归，尚未发布生产。
 - 平台管理页可后续增加 MCP 会话列表与撤销入口，数据接口已就绪。
 
+### 阶段 16：16077 测试环境与端口修复
+
+状态：`completed`
+
+目标：
+- 建立与生产隔离的 `16077` 测试环境，后续新改动先在测试环境验证再发布 `16088`。
+- 修复接入提示词 API 地址丢失端口的问题，恢复用户 MCP 接入可用性。
+
+已完成：
+- 发布技能新增 `filter-test-data.js`、`remote-deploy-test.sh`、`deploy-test.ps1`。
+- 测试环境部署于 `/zoesoft/fuxi-test`：Nginx `16077`、后端 `3002`、PM2 `fuxi-backend-test`，与生产 `/zoesoft/fuxi` 数据、PM2、Nginx 站点完全隔离。
+- 首次初始化用生产快照过滤：系统数据（用户、用户组、分类、项目、成员、签出、快照）全拷，原型及 8 张关联表只保留 `wushengzhi`，repos 只拷其 20 个原型目录，设备会话与连接码清空。
+- 定位并修复端口丢失：Nginx `proxy_set_header Host $host` 不含端口，导致 bootstrap `apiUrl` 指向 80。生产与测试站点改为 `$http_host`，后端 `publicBaseUrl` 同时支持 `X-Forwarded-Host`/`X-Forwarded-Port` 兜底。
+- 清理阶段 14 遗留的重复 `conf.d/fuxi.conf`（16088 重复 server block），消除 conflicting server name 告警。
+
+验收证据：
+- 测试环境 `16077`：wushengzhi 登录成功；原型 15 个有效 + 5 个回收站，全部归属 wushengzhi；用户 21 个全量保留；`agent-bootstrap` 返回连接码，`apiUrl=http://192.168.2.145:16077`。
+- 测试环境端到端：连接码生成、`connect` 兑换会话、`refresh` 轮换成功、连接情况查询返回 1 条会话。
+- 生产 `16088`：`apiUrl` 恢复为 `http://192.168.2.145:16088`；Nginx `-t` 通过且无 conflicting server name 告警。
+- 数据过滤干跑：`PROTO=20`、`USERS=21`、`OWNERS=[[14,20]]`、`VERSIONS_ORPHAN=0`、`MCP_SESSIONS=0`。
+
+commit：
+- 平台：`22fe100`（测试环境部署脚本）、`e54a54d`（测试根目录）、`eb61647`（nginx 路径与软链回滚）、`f4097f5`（端口恢复兜底）。
+- 技能：`d96c54b`（通用 AGENTS.md）。
+
+遗留与后续：
+- 发布流程已调整为「16077 测试 → 16088 生产」；后续新改动默认先走测试环境。
+- 测试环境软删除的 5 个 wushengzhi 原型一并迁移，回收站状态与生产一致。
+- 后端端口兜底代码 `f4097f5` 尚未随新 release 上线，当前靠 Nginx `$http_host` 生效；下次生产发布会一并带上。
+
 ## 更新规则
 
 每完成一个阶段，必须更新：
