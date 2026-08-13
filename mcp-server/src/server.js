@@ -1,11 +1,18 @@
 #!/usr/bin/env node
 
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
 
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 let cachedToken = process.env.FUXI_TOKEN || '';
+const CREDENTIALS_FILE = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
+const DEVICE_LABEL = `${os.hostname()} (${process.platform})`;
+let refreshToken = '';
+let sessionId = null;
+let sessionExpiresAt = null;
+let accessExpiresAt = 0;
 let nextId = 1;
 const deliveryCache = new Map();
 
@@ -355,7 +362,8 @@ async function request(apiPath, options = {}) {
   if (!response.ok || (body && body.success === false)) {
     const message = body && body.message ? body.message : `${response.status} ${response.statusText}`;
     let code = 'PLATFORM_REQUEST_FAILED';
-    if (response.status === 401) code = 'AUTHENTICATION_FAILED';
+    if (body && typeof body.code === 'string') code = body.code;
+    else if (response.status === 401) code = 'AUTHENTICATION_FAILED';
     else if (response.status === 403) code = 'PERMISSION_DENIED';
     else if (response.status === 404) code = 'RESOURCE_NOT_FOUND';
     else if (response.status === 400) code = 'INVALID_REQUEST';
@@ -365,34 +373,130 @@ async function request(apiPath, options = {}) {
   return body;
 }
 
-async function getToken() {
-  if (cachedToken) return cachedToken;
-  const username = process.env.FUXI_USERNAME;
-  const password = process.env.FUXI_PASSWORD;
-  if (!username || !password) {
-    throw new ToolError(
-      'AUTHENTICATION_REQUIRED',
-      'FUXI_TOKEN or FUXI_USERNAME/FUXI_PASSWORD is required'
-    );
+let credentialsLoaded = false;
+let connectCodeConsumed = false;
+
+function readCredentials() {
+  try {
+    const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
+    const data = JSON.parse(raw);
+    if (data && data.apiUrl === API_URL && typeof data.refreshToken === 'string' && data.refreshToken) {
+      refreshToken = data.refreshToken;
+      sessionId = data.sessionId || null;
+      sessionExpiresAt = data.sessionExpiresAt || null;
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+function writeCredentials() {
+  try {
+    fs.mkdirSync(path.dirname(CREDENTIALS_FILE), { recursive: true });
+    fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({
+      apiUrl: API_URL,
+      refreshToken,
+      sessionId,
+      sessionExpiresAt,
+      deviceLabel: DEVICE_LABEL,
+      updatedAt: new Date().toISOString()
+    }, null, 2), { mode: 0o600 });
+  } catch (e) {
+    // 持久化失败不阻断当前进程：凭据仍留在内存中可用到进程退出。
   }
-  const body = await request('/api/auth/login', {
+}
+
+async function connectWithCode(code) {
+  const body = await request('/api/auth/mcp/connect', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ code, deviceLabel: DEVICE_LABEL })
   });
-  cachedToken = body.data.token;
+  const data = body.data;
+  cachedToken = data.accessToken;
+  accessExpiresAt = Date.now() + data.expiresIn * 1000;
+  refreshToken = data.refreshToken;
+  sessionId = data.sessionId;
+  sessionExpiresAt = data.sessionExpiresAt || null;
+  connectCodeConsumed = true;
+  writeCredentials();
   return cachedToken;
 }
 
+async function refreshAccessToken() {
+  const body = await request('/api/auth/mcp/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
+  });
+  const data = body.data;
+  cachedToken = data.accessToken;
+  accessExpiresAt = Date.now() + data.expiresIn * 1000;
+  refreshToken = data.refreshToken;
+  sessionId = data.sessionId;
+  sessionExpiresAt = data.sessionExpiresAt || null;
+  writeCredentials();
+  return cachedToken;
+}
+
+async function getToken() {
+  if (cachedToken && accessExpiresAt > Date.now() + 5000) return cachedToken;
+
+  if (!credentialsLoaded) {
+    credentialsLoaded = true;
+    readCredentials();
+  }
+
+  if (refreshToken) return refreshAccessToken();
+
+  if (process.env.FUXI_CONNECT_CODE && !connectCodeConsumed) {
+    return connectWithCode(process.env.FUXI_CONNECT_CODE);
+  }
+
+  if (cachedToken) return cachedToken;
+
+  const username = process.env.FUXI_USERNAME;
+  const password = process.env.FUXI_PASSWORD;
+  if (username && password) {
+    const body = await request('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    cachedToken = body.data.token;
+    accessExpiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+    return cachedToken;
+  }
+
+  throw new ToolError(
+    'AUTHENTICATION_REQUIRED',
+    'FUXI_CONNECT_CODE, FUXI_TOKEN, or FUXI_USERNAME/FUXI_PASSWORD is required'
+  );
+}
+
 async function authed(apiPath, options = {}) {
-  const token = await getToken();
-  return request(apiPath, {
+  const call = token => request(apiPath, {
     ...options,
     headers: {
       ...(options.headers || {}),
       Authorization: `Bearer ${token}`
     }
   });
+
+  const token = await getToken();
+  try {
+    return await call(token);
+  } catch (e) {
+    if (e.code !== 'AUTHENTICATION_FAILED') throw e;
+    const canRefresh = !!refreshToken ||
+      (process.env.FUXI_CONNECT_CODE && !connectCodeConsumed) ||
+      !!(process.env.FUXI_USERNAME && process.env.FUXI_PASSWORD);
+    if (!canRefresh) throw e;
+    cachedToken = '';
+    accessExpiresAt = 0;
+    const nextToken = await getToken();
+    return call(nextToken);
+  }
 }
 
 function contentJson(data, isError = false) {
@@ -690,7 +794,16 @@ async function deliverProject(args) {
 async function callTool(name, args) {
   if (name === 'check_connection') {
     const data = await request('/api/health');
-    return contentJson({ apiUrl: API_URL, health: data });
+    let authentication = 'unconfigured';
+    if (process.env.FUXI_CONNECT_CODE || refreshToken || cachedToken || process.env.FUXI_USERNAME) {
+      try {
+        await getToken();
+        authentication = 'verified';
+      } catch (e) {
+        authentication = e.code || 'unverified';
+      }
+    }
+    return contentJson({ apiUrl: API_URL, health: data, authentication });
   }
 
   if (name === 'list_prototypes') {

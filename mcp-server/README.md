@@ -8,13 +8,18 @@ Set these environment variables in the MCP host:
 
 | Variable | Required | Description |
 |---|---|---|
-| `FUXI_API_URL` | No | Fuxi backend URL, defaults to `http://localhost:3001` |
-| `FUXI_TOKEN` | No | Short-lived MCP token from `GET /api/auth/mcp-token`. Takes priority over username/password login. |
-| `FUXI_USERNAME` | No | Login username when `FUXI_TOKEN` is absent. |
-| `FUXI_PASSWORD` | No | Login password when `FUXI_TOKEN` is absent. |
+| `FUXI_API_URL` | Yes | Fuxi backend URL, defaults to `http://localhost:3001` |
+| `FUXI_CONNECT_CODE` | No | One-time code from the platform "接入平台MCP" dialog. Used only on first connect to exchange a device session. |
+| `FUXI_CREDENTIALS_FILE` | No | Path to the local credential file, defaults to `~/.fuxi/mcp-credentials.json`. |
+| `FUXI_TOKEN` | No | Legacy short-lived access token from `GET /api/auth/mcp-token`. Takes priority over username/password login but does not auto-refresh. |
+| `FUXI_USERNAME` | No | Login username when no connect code, refresh token, or `FUXI_TOKEN` is present. |
+| `FUXI_PASSWORD` | No | Login password for the username/password fallback. |
 
-Credentials are never written to disk by this server. Login to the platform, open the MCP dialog, and copy the
-short-lived token into `FUXI_TOKEN`; regenerate it in the platform when it expires.
+On first connect, pass `FUXI_CONNECT_CODE` from the platform MCP dialog. The server exchanges it for an access token
+and a rotating refresh token, then writes the refresh token to `FUXI_CREDENTIALS_FILE`. Later starts restore the
+session from that file and refresh the access token automatically on `401`, so a connected device stays connected
+without re-entering the code. The refresh token rotates on every refresh and the session is revocable from the
+platform's MCP session list.
 
 ## Tools
 
@@ -69,4 +74,9 @@ npm run check
 npm run test:integration
 ```
 
-The integration test runs a copied backend in a temporary isolated directory. It verifies short-lived and expired-token authentication, all 22 MCP tools, local validation and packaging, idempotent create/update/project-bound delivery, optimistic version and checkout protection, partial-failure reporting, README and browser preview behavior, project collaboration, destructive-operation confirmation gates, and structured failures. It removes the temporary workspace afterward and does not modify the platform's current database or prototype repository.
+The integration test runs a copied backend in a temporary isolated directory. It verifies one-time connect-code
+exchange, device-session registration, refresh-token rotation, session revocation, short-lived and expired-token
+authentication, all 22 MCP tools, local validation and packaging, idempotent create/update/project-bound delivery,
+optimistic version and checkout protection, partial-failure reporting, README and browser preview behavior, project
+collaboration, destructive-operation confirmation gates, and structured failures. It removes the temporary workspace
+afterward and does not modify the platform's current database or prototype repository.

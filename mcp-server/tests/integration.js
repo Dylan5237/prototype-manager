@@ -116,6 +116,8 @@ async function main() {
   let expiredMcp;
   let failMcp;
   let secondMcp;
+  let codeMcp;
+  let revokedMcp;
 
   try {
     fs.cpSync(backendRoot, isolatedBackend, {
@@ -320,6 +322,94 @@ async function main() {
     assert(bootstrap.data.prompt.includes('AUTHORIZATION_REQUIRED'));
     assert(bootstrap.data.prompt.includes('AUTHENTICATION_FAILED'));
     assert(!bootstrap.data.prompt.includes('admin123'));
+    assert(bootstrap.data.connectCode);
+    assert(bootstrap.data.connectCodeExpiresAt);
+    assert(bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
+    assert(bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
+
+    // 一次性连接码兑换 access + refresh token，并登记设备会话
+    const connectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: bootstrap.data.connectCode, deviceLabel: 'integration-test-device' })
+    });
+    const connected = await connectResponse.json();
+    assert.equal(connectResponse.status, 200);
+    assert(connected.data.accessToken);
+    assert(connected.data.refreshToken);
+    assert.equal(connected.data.expiresIn, 3600);
+    assert(connected.data.sessionId);
+    assert(connected.data.sessionExpiresAt);
+
+    // 连接码是单次使用
+    const reusedConnectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: bootstrap.data.connectCode })
+    });
+    assert.equal(reusedConnectResponse.status, 409);
+    const reusedConnect = await reusedConnectResponse.json();
+    assert.equal(reusedConnect.code, 'CODE_ALREADY_USED');
+
+    // connect 返回的 access token 可直接用于 MCP 调用
+    const accessMcp = startMcp({ FUXI_API_URL: apiUrl, FUXI_TOKEN: connected.data.accessToken });
+    const accessList = await callTool(accessMcp, 'list_prototypes', { scope: 'my' });
+    assert(Array.isArray(accessList.body.data));
+    await stop(accessMcp.child);
+
+    // 凭据文件持久化 + 重启后 refresh token 自动换新 access token 并轮换
+    const credentialsFile = path.join(tempRoot, 'mcp-credentials.json');
+    fs.writeFileSync(credentialsFile, JSON.stringify({
+      apiUrl,
+      refreshToken: connected.data.refreshToken,
+      sessionId: connected.data.sessionId,
+      sessionExpiresAt: connected.data.sessionExpiresAt
+    }));
+    codeMcp = startMcp({
+      FUXI_API_URL: apiUrl,
+      FUXI_CREDENTIALS_FILE: credentialsFile,
+      FUXI_TOKEN: '',
+      FUXI_USERNAME: '',
+      FUXI_PASSWORD: ''
+    });
+    const restoredList = await callTool(codeMcp, 'list_prototypes', { scope: 'my' });
+    assert(Array.isArray(restoredList.body.data));
+    const persisted = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+    assert(persisted.refreshToken);
+    assert.notEqual(persisted.refreshToken, connected.data.refreshToken);
+
+    // 连接情况查询：admin 能看到新登记的设备会话
+    const sessionsResponse = await fetch(`${apiUrl}/api/auth/mcp/sessions`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const sessions = await sessionsResponse.json();
+    assert.equal(sessionsResponse.status, 200);
+    assert(sessions.data.some(s => s.id === connected.data.sessionId));
+
+    // 撤销会话后，refresh token 立即失效
+    const revokeResponse = await fetch(`${apiUrl}/api/auth/mcp/sessions/${connected.data.sessionId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    assert.equal(revokeResponse.status, 200);
+    const revokedCredFile = path.join(tempRoot, 'revoked-credentials.json');
+    fs.writeFileSync(revokedCredFile, JSON.stringify({
+      apiUrl,
+      refreshToken: persisted.refreshToken,
+      sessionId: connected.data.sessionId,
+      sessionExpiresAt: connected.data.sessionExpiresAt
+    }));
+    revokedMcp = startMcp({
+      FUXI_API_URL: apiUrl,
+      FUXI_CREDENTIALS_FILE: revokedCredFile,
+      FUXI_TOKEN: '',
+      FUXI_USERNAME: '',
+      FUXI_PASSWORD: ''
+    });
+    const revokedResponse = await revokedMcp.send('tools/call', { name: 'list_prototypes', arguments: {} });
+    const revoked = parseTool(revokedResponse);
+    assert.equal(revoked.result.isError, true);
+    assert.equal(revoked.body.error.code, 'SESSION_REVOKED');
 
     const packageHeaders = { Authorization: `Bearer ${bootstrap.data.token}` };
     const skillPackageResponse = await fetch(bootstrap.data.skillUrl, { headers: packageHeaders });
@@ -697,12 +787,18 @@ async function main() {
       optimisticVersion: 'verified',
       checkoutProtection: 'verified',
       partialFailure: 'verified',
+      deviceSession: 'verified',
+      connectCode: 'verified',
+      refreshRotation: 'verified',
+      sessionRevoke: 'verified',
       projectReads: 'verified',
       collaboration: 'verified',
       structuredErrors: ['FILE_NOT_FOUND', 'AUTHENTICATION_FAILED'],
       isolation: tempRoot
     }, null, 2));
   } finally {
+    await stop(revokedMcp && revokedMcp.child);
+    await stop(codeMcp && codeMcp.child);
     await stop(secondMcp && secondMcp.child);
     await stop(failMcp && failMcp.child);
     await stop(expiredMcp && expiredMcp.child);
