@@ -22,6 +22,21 @@ Read this file before probing, deploying, or rolling back production.
 | Git branch before new release | `feature/project-collaboration` |
 | Legacy update script | `/zoesoft/fuxi/update-intranet.sh`; inspect only, do not use for immutable releases |
 
+## Test environment (16077)
+
+| Item | Value |
+|---|---|
+| Test root | `/zoesoft/fuxi-test` |
+| Test URL | `http://192.168.2.145:16077` |
+| Backend port | `3002` |
+| PM2 app | `fuxi-backend-test` |
+| Nginx site | `/etc/nginx/sites-available/fuxi-test` (enabled at `sites-enabled/fuxi-test`) |
+| Data | `/zoesoft/fuxi-test/shared/` — independent from production `shared/` |
+| Seed source | production `shared/data/app.db` + production `shared/repos/` |
+| Filter user | `wushengzhi`; only that user's prototypes and bound rows/repos are copied |
+
+The test root mirrors the production layout (`releases/`, `current`, `fuxi-platform`, `shared/`, `backups/`). It must never link to `/zoesoft/fuxi/shared` or reuse the production PM2 app or Nginx `16088` site.
+
 ## Persistent paths
 
 Production data currently lives below the legacy project tree:
