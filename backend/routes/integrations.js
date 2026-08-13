@@ -16,7 +16,14 @@ const EXCLUDED_NAMES = new Set([
 function publicBaseUrl(req) {
   const forwarded = req.headers['x-forwarded-proto'];
   const protocol = forwarded ? String(forwarded).split(',')[0].trim() : req.protocol;
-  return `${protocol}://${req.get('host')}`;
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const forwardedPort = req.headers['x-forwarded-port'];
+  let host = forwardedHost ? String(forwardedHost).split(',')[0].trim() : req.get('host');
+  const port = forwardedPort ? String(forwardedPort).split(',')[0].trim() : '';
+  if (port && !/:\d+$/.test(host)) {
+    host = `${host}:${port}`;
+  }
+  return `${protocol}://${host}`;
 }
 
 function configuredDirectory(envName, fallback, marker) {
