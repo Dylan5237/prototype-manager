@@ -296,6 +296,35 @@ function createTables() {
   `);
   // 为已存在的旧库补建索引（若表已存在则跳过）
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_share_links_prototype ON share_links(prototype_id)`); } catch (e) {}
+
+  // MCP 设备会话表：记录一次已授权的 MCP 接入，refresh token 只存哈希
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mcp_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      refresh_token_hash TEXT NOT NULL,
+      device_label TEXT,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
+  // MCP 一次性连接码表：用户在平台发起接入时生成，短命且单次使用
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mcp_connect_codes (
+      code_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式

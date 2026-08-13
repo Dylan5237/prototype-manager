@@ -3,9 +3,11 @@ const router = express.Router();
 const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
 const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
 const { setGroupMembers } = require('../services/db-groups');
+const { createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
 
 // uploader 与 editor 等价，数据库统一保存为 uploader，显示层统一展示为「编辑者」
 const VALID_ROLES = ['admin', 'uploader', 'viewer'];
+const MCP_ACCESS_TTL_SECONDS = 60 * 60;
 
 function normalizeRoles(role) {
   const arr = Array.isArray(role) ? role : [role];
@@ -102,6 +104,108 @@ router.get('/mcp-token', requireAuth, (req, res) => {
       expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString()
     }
   });
+});
+
+// 生成一次性 MCP 连接码。用户在平台发起接入时调用，返回短命单次使用的连接码。
+router.post('/mcp/connect-code', requireAuth, (req, res) => {
+  const user = findUserById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, message: '用户不存在' });
+  }
+  const { code, expiresAt } = createConnectCode(user.id);
+  res.json({
+    success: true,
+    data: { code, expiresAt, expiresIn: 10 * 60 }
+  });
+});
+
+// 用一次性连接码兑换 access token + refresh token，并登记设备会话。
+router.post('/mcp/connect', (req, res) => {
+  const { code, deviceLabel } = req.body || {};
+  const consumed = consumeConnectCode(code);
+  if (!consumed.ok) {
+    const statusByReason = {
+      MISSING_CODE: 400,
+      INVALID_CODE: 401,
+      CODE_ALREADY_USED: 409,
+      CODE_EXPIRED: 401
+    };
+    return res.status(statusByReason[consumed.reason] || 401).json({
+      success: false,
+      code: consumed.reason,
+      message: consumed.reason === 'INVALID_CODE' || consumed.reason === 'MISSING_CODE' ? '连接码无效' :
+        consumed.reason === 'CODE_ALREADY_USED' ? '连接码已被使用' : '连接码已过期'
+    });
+  }
+  const user = findUserById(consumed.userId);
+  if (!user) {
+    return res.status(401).json({ success: false, code: 'INVALID_CODE', message: '用户不存在' });
+  }
+  const session = createSession(user.id, deviceLabel);
+  const accessToken = generateToken(user, { expiresIn: `${MCP_ACCESS_TTL_SECONDS}s` });
+  res.json({
+    success: true,
+    data: {
+      accessToken,
+      refreshToken: session.refreshToken,
+      sessionId: session.id,
+      expiresIn: MCP_ACCESS_TTL_SECONDS,
+      expiresAt: new Date(Date.now() + MCP_ACCESS_TTL_SECONDS * 1000).toISOString(),
+      sessionExpiresAt: session.expiresAt
+    }
+  });
+});
+
+// 用 refresh token 换新 access token，refresh token 轮换并滑动延长会话有效期。
+router.post('/mcp/refresh', (req, res) => {
+  const { refreshToken, deviceLabel } = req.body || {};
+  const rotated = rotateSession(refreshToken, deviceLabel);
+  if (!rotated.ok) {
+    return res.status(401).json({
+      success: false,
+      code: rotated.reason,
+      message: rotated.reason === 'SESSION_REVOKED' ? '会话已撤销' :
+        rotated.reason === 'SESSION_EXPIRED' ? '会话已过期，请重新接入' :
+        'refresh token 无效'
+    });
+  }
+  const user = findUserById(rotated.userId);
+  if (!user) {
+    return res.status(401).json({ success: false, code: 'INVALID_REFRESH_TOKEN', message: '用户不存在' });
+  }
+  const accessToken = generateToken(user, { expiresIn: `${MCP_ACCESS_TTL_SECONDS}s` });
+  res.json({
+    success: true,
+    data: {
+      accessToken,
+      refreshToken: rotated.refreshToken,
+      sessionId: rotated.sessionId,
+      expiresIn: MCP_ACCESS_TTL_SECONDS,
+      expiresAt: new Date(Date.now() + MCP_ACCESS_TTL_SECONDS * 1000).toISOString(),
+      sessionExpiresAt: rotated.expiresAt
+    }
+  });
+});
+
+// 查看 MCP 连接情况：admin 看全部，普通用户只看自己的。
+router.get('/mcp/sessions', requireAuth, (req, res) => {
+  const isAdmin = (req.user.roles || []).includes('admin');
+  const sessions = listSessions(isAdmin ? null : req.user.id);
+  res.json({ success: true, data: sessions });
+});
+
+// 撤销一条 MCP 会话：admin 可撤销任意，普通用户只能撤销自己的。
+router.delete('/mcp/sessions/:id', requireAuth, (req, res) => {
+  const isAdmin = (req.user.roles || []).includes('admin');
+  const result = revokeSession(req.params.id, isAdmin ? null : req.user.id);
+  if (!result.ok) {
+    return res.status(result.reason === 'SESSION_NOT_FOUND' ? 404 : 403).json({
+      success: false,
+      code: result.reason,
+      message: result.reason === 'SESSION_NOT_FOUND' ? '会话不存在' : '无权撤销该会话'
+    });
+  }
+  res.json({ success: true, message: '会话已撤销' });
 });
 
 // 用户列表（仅admin）
