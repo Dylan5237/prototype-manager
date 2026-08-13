@@ -840,6 +840,39 @@ requires:
 - 建议后续评估清理重复的 Nginx server block（`conf.d/fuxi.conf` 与 `sites-enabled/fuxi`）。
 - 建议将本次根因写入运维告警/巡检：生产 80 全站 404 时先查 `ss -ltnp` 与 `nft list ruleset` 中的 CNI DNAT。
 
+### 阶段 15：MCP 一次性连接码与可撤销设备会话
+
+状态：`completed`
+
+背景与根因：
+- 旧接入提示词把 1 小时短期 token 直接写进 MCP 的 `FUXI_TOKEN`；MCP 缓存后不检查过期、不自动续期，用户 1 小时后即断开。
+- 用户期望首次接入后长期有效，同时不希望把账号密码或长期 token 暴露给 AI 助手。
+
+方案：
+- 接入提示词只下发一次性连接码（10 分钟、单次使用）和仅用于下载 ZIP 的安装 token；长期 refresh token 不再经过 AI。
+- MCP 首次启动用连接码兑换 access token + refresh token，并把 refresh token 写入本地凭据文件。
+- 后续启动从凭据文件恢复会话；access token 过期收到 401 时自动用 refresh token 刷新并轮换。
+- refresh token 只存服务端哈希，会话可撤销、可按用户查看；有效期 90 天，每次刷新滑动延长。
+
+已完成：
+- 后端新增 `mcp_sessions` 与 `mcp_connect_codes` 两张表，及 `services/db-mcp-sessions.js`。
+- 新增 `POST /api/auth/mcp/connect-code`、`POST /api/auth/mcp/connect`、`POST /api/auth/mcp/refresh`、`GET /api/auth/mcp/sessions`、`DELETE /api/auth/mcp/sessions/:id`。
+- `agent-bootstrap` 提示词改为下发 `FUXI_CONNECT_CODE` + `FUXI_CREDENTIALS_FILE`，不再把 token 写进 MCP 的长期环境。
+- MCP server 增加本地凭据持久化、连接码兑换、refresh token 轮换和 401 自动刷新；保留旧 `FUXI_TOKEN` 与账号密码登录路径兼容。
+
+验收证据：
+- `node --check` 覆盖新增服务、路由与 MCP server 全部通过。
+- `npm run test:integration` 通过：`connectCode`、`deviceSession`、`refreshRotation`、`sessionRevoke` 均 verified，其余 22 工具回归全绿。
+- 集成测试确认连接码单次使用返回 `CODE_ALREADY_USED`，撤销会话后旧 refresh token 返回 `SESSION_REVOKED`。
+
+兼容与迁移：
+- 旧 `FUXI_TOKEN` 和 `FUXI_USERNAME`/`FUXI_PASSWORD` 路径保持可用；已接入但已过期的旧 token 无法自动续期，用户重新点一次接入即可切换到新会话。
+- 新会话的 access token 仍为 1 小时，但由 MCP 自动刷新，用户无需人工重接。
+
+遗留与后续：
+- 生产部署需走维护者发布技能并先备份；本次为本地实现与隔离回归，尚未发布生产。
+- 平台管理页可后续增加 MCP 会话列表与撤销入口，数据接口已就绪。
+
 ## 更新规则
 
 每完成一个阶段，必须更新：
