@@ -13,6 +13,7 @@ const projectRoutes = require('./routes/projects');
 const previewRoutes = require('./routes/preview');
 const shareRoutes = require('./routes/share');
 const integrationRoutes = require('./routes/integrations');
+const collaborationWebhookRoutes = require('./routes/collaboration-webhooks');
 const { initProxy } = require('./services/github');
 
 const app = express();
@@ -54,6 +55,12 @@ async function startServer() {
   }
   
   // 中间件
+  // Webhook 签名必须基于原始 JSON bytes 校验，因此在通用 JSON parser 之前挂载。
+  app.use(
+    '/api/collaboration/webhooks/gitlab',
+    express.raw({ type: 'application/json', limit: '2mb' }),
+    collaborationWebhookRoutes
+  );
   app.use(cors());
   app.use(express.json());
   
