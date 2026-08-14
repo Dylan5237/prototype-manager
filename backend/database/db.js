@@ -1,17 +1,28 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
+const { applyCollaborationSchema } = require('./collaboration-schema');
 
-const DB_PATH = path.join(__dirname, '../data/app.db');
+const DEFAULT_DB_PATH = path.join(__dirname, '../data/app.db');
 
 let db = null;
 let SQL = null;
+let activeDbPath = DEFAULT_DB_PATH;
+let persistDatabase = true;
+let transactionDepth = 0;
+let writeQueue = Promise.resolve();
 
-async function initDatabase() {
+async function initDatabase(options = {}) {
   SQL = await initSqlJs();
+  if (db) {
+    db.close();
+    db = null;
+  }
+  activeDbPath = path.resolve(options.path || process.env.FUXI_DB_PATH || DEFAULT_DB_PATH);
+  persistDatabase = options.persist !== false;
   
-  if (fs.existsSync(DB_PATH)) {
-    const filebuffer = fs.readFileSync(DB_PATH);
+  if (fs.existsSync(activeDbPath)) {
+    const filebuffer = fs.readFileSync(activeDbPath);
     db = new SQL.Database(filebuffer);
   } else {
     db = new SQL.Database();
@@ -325,6 +336,9 @@ function createTables() {
   `);
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
+
+  // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
+  applyCollaborationSchema(db);
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式
@@ -360,9 +374,10 @@ function migrateRoleToArray() {
 }
 
 function saveDatabase() {
-  if (!db) return;
+  if (!db || !persistDatabase) return;
+  fs.mkdirSync(path.dirname(activeDbPath), { recursive: true });
   const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+  fs.writeFileSync(activeDbPath, Buffer.from(data));
 }
 
 function getDb() {
@@ -373,8 +388,52 @@ function getDb() {
 // 执行SQL（INSERT/UPDATE/DELETE）
 function run(sql, params = []) {
   const result = db.run(sql, params);
-  saveDatabase();
+  if (transactionDepth === 0) saveDatabase();
   return result;
+}
+
+function runInTransaction(work) {
+  if (typeof work !== 'function') throw new TypeError('work 必须是函数');
+  if (transactionDepth > 0) return work(db);
+
+  db.run('BEGIN IMMEDIATE TRANSACTION');
+  transactionDepth += 1;
+  try {
+    const result = work(db);
+    if (result && typeof result.then === 'function') {
+      throw new TypeError('runInTransaction 只接受同步函数；异步写请使用 enqueueWrite');
+    }
+    db.run('COMMIT');
+    transactionDepth -= 1;
+    saveDatabase();
+    return result;
+  } catch (error) {
+    try { db.run('ROLLBACK'); } catch (rollbackError) { /* 保留原始错误 */ }
+    transactionDepth = Math.max(0, transactionDepth - 1);
+    throw error;
+  }
+}
+
+function enqueueWrite(work) {
+  if (typeof work !== 'function') return Promise.reject(new TypeError('work 必须是函数'));
+  const execute = async () => {
+    db.run('BEGIN IMMEDIATE TRANSACTION');
+    transactionDepth += 1;
+    try {
+      const result = await work(db);
+      db.run('COMMIT');
+      transactionDepth -= 1;
+      saveDatabase();
+      return result;
+    } catch (error) {
+      try { db.run('ROLLBACK'); } catch (rollbackError) { /* 保留原始错误 */ }
+      transactionDepth = Math.max(0, transactionDepth - 1);
+      throw error;
+    }
+  };
+  const queued = writeQueue.then(execute, execute);
+  writeQueue = queued.catch(() => undefined);
+  return queued;
 }
 
 // 查询多条
@@ -426,11 +485,27 @@ function migrateVersionLabels() {
   }
 }
 
+function closeDatabase() {
+  if (db) db.close();
+  db = null;
+  SQL = null;
+  transactionDepth = 0;
+  writeQueue = Promise.resolve();
+}
+
+function getDatabasePath() {
+  return activeDbPath;
+}
+
 module.exports = {
   initDatabase,
   getDb,
   run,
   query,
   queryOne,
-  saveDatabase
+  saveDatabase,
+  runInTransaction,
+  enqueueWrite,
+  closeDatabase,
+  getDatabasePath
 };
