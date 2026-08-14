@@ -132,7 +132,7 @@
           type="success"
           :closable="false"
           show-icon
-          :title="`已生成短期 MCP token（${mcpTokenExpiresAt} 前有效）。复制提示词发给 AI 助手后，它会自动写入配置并验证连通。`"
+          :title="`已生成短期 MCP token（${mcpTokenExpiresLocal} 前有效）。复制提示词发给 AI 助手后，它会自动写入配置并验证连通。`"
         />
         <el-alert
           v-else
@@ -190,6 +190,13 @@ const showMcpDialog = ref(false)
 const mcpTokenExpiresAt = ref('')
 const mcpLoading = ref(false)
 const mcpPrompt = ref('')
+
+const mcpTokenExpiresLocal = computed(() => {
+  if (!mcpTokenExpiresAt.value) return ''
+  const d = new Date(mcpTokenExpiresAt.value)
+  if (Number.isNaN(d.getTime())) return mcpTokenExpiresAt.value
+  return d.toLocaleString('zh-CN', { hour12: false })
+})
 
 const activeTab = computed(() => route.query.tab || 'all')
 

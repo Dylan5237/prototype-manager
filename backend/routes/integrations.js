@@ -26,6 +26,20 @@ function publicBaseUrl(req) {
   return `${protocol}://${host}`;
 }
 
+function formatLocalTime(iso) {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(new Date(iso));
+  const get = type => (parts.find(p => p.type === type) || {}).value || '';
+  return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}`;
+}
+
 function configuredDirectory(envName, fallback, marker) {
   const configured = process.env[envName];
   const resolved = path.resolve(configured || fallback);
@@ -86,6 +100,8 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
   const baseUrl = publicBaseUrl(req);
   const skillUrl = `${baseUrl}/api/integrations/skill-package`;
   const mcpUrl = `${baseUrl}/api/integrations/mcp-package`;
+  const tokenExpiresLocal = formatLocalTime(expiresAt);
+  const codeExpiresLocal = formatLocalTime(connect.expiresAt);
   const prompt = `请自动接入伏羲原型体系，不要让我手工编辑配置文件。
 
 接入参数：
@@ -94,9 +110,9 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 - Skill 安装包: ${skillUrl}
 - MCP 安装包: ${mcpUrl}
 - 安装 token: ${token}
-- 安装 token 过期时间: ${expiresAt}
+- 安装 token 过期时间: ${tokenExpiresLocal}（Asia/Shanghai）
 - 一次性连接码: ${connect.code}
-- 连接码过期时间: ${connect.expiresAt}
+- 连接码过期时间: ${codeExpiresLocal}（Asia/Shanghai）
 
 请执行：
 1. 识别当前 AI 客户端原生的 Skill 安装目录和 MCP 配置机制，不假定固定 JSON 路径。
