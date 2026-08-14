@@ -1,7 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const { ACTIONS } = require('../services/authorization');
+const { AuthorizationService } = require('../services/authorization');
 const { GitProviderError } = require('../services/git-provider');
 const { GitLabProvider } = require('../services/gitlab-provider');
 const {
@@ -243,4 +247,52 @@ test('repository paths are deterministic and bounded', () => {
   const longPath = repositoryPathFor('A'.repeat(200));
   assert.ok(longPath.length <= 83);
   assert.match(longPath, /^prototype-[a-z0-9-]+$/);
+});
+
+test('phase 1 vertical slice provisions a protected repository into the real domain store', async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-phase1-slice-'));
+  const dbPath = path.join(tempRoot, 'phase1.db');
+  const database = require('../database/db');
+  try {
+    await database.initDatabase({ path: dbPath });
+    const timestamp = '2026-08-14T00:00:00.000Z';
+    database.run(`
+      INSERT INTO users (id, username, password_hash, nickname, role, created_at)
+      VALUES (1, 'owner', 'hash', 'Owner', '["editor"]', ?)
+    `, [timestamp]);
+    database.run(`
+      INSERT INTO projects (id, name, description, menu_config, created_by, created_at, updated_at)
+      VALUES ('phase1-project', '阶段一临时项目', '', '{"items":[]}', 1, ?, ?)
+    `, [timestamp, timestamp]);
+    database.run(`
+      INSERT INTO prototypes
+        (id, name, description, entry_file, created_by, created_at, updated_at)
+      VALUES ('phase1-prototype', '阶段一原型', '', 'index.html', 1, ?, ?)
+    `, [timestamp, timestamp]);
+
+    const fake = createGitLabFetch();
+    const provider = createProvider(fake.fetchImpl);
+    const service = new RepositoryProvisioningService({
+      provider,
+      authorization: new AuthorizationService()
+    });
+    const result = await service.provision({
+      actor: { id: 1, roles: ['editor'] },
+      projectId: 'phase1-project',
+      prototypeId: 'phase1-prototype'
+    });
+    const stored = database.queryOne(`SELECT * FROM prototypes WHERE id = 'phase1-prototype'`);
+
+    assert.equal(result.repository.created, true);
+    assert.equal(result.mainProtection.directPushAllowed, false);
+    assert.equal(stored.project_id, 'phase1-project');
+    assert.equal(stored.repo_provider, 'gitlab');
+    assert.equal(stored.repo_external_id, '321');
+    assert.equal(stored.repo_path, 'fuxi/prototypes/prototype-phase1-prototype');
+    assert.equal(stored.default_branch, 'main');
+    assert.equal(stored.collaboration_status, 'ready');
+  } finally {
+    database.closeDatabase();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });

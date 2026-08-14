@@ -3,6 +3,7 @@
 > 基线日期：2026-08-14<br>
 > 设计依据：[FULL_DESIGN.md](./FULL_DESIGN.md)<br>
 > 当前分支：`feature/project-collaboration`<br>
+> 阶段状态：代码完成，本地自动化验收完成，真实 GitLab 环境验收待配置<br>
 > 阶段目标：建立可信的协同领域底座，不提前实现 Agent handoff 和业务界面。
 
 ## 1. 第一性原理优先级
@@ -157,7 +158,7 @@
 | C1 | `feat(协同): 建立领域迁移与固定权限底座` | schema、事务、AuthorizationService、测试 |
 | C2 | `feat(协同): 接入GitLab仓库供应与main保护` | Provider、GitLab 适配、供应服务、测试 |
 | C3 | `feat(协同): 增加Webhook幂等与脱敏审计` | 事件/审计服务、测试脚本、回归门禁 |
-| C4 | `feat(协同): 记录第一阶段验收证据` | 本计划实绩、测试结果、真实环境待验项 |
+| C4 | `feat(协同): 完成第一阶段集成验收` | 真实存取层纵向测试、本计划实绩、测试结果、真实环境待验项 |
 
 所有 commit 使用仓库约定 author 和 `Co-Authored-By: Codex <noreply@openai.com>`；不推送，等待用户确认后才推送 `zoesoftgitlab/develop`。
 
@@ -189,8 +190,43 @@
 
 | 批次 | 状态 | Commit | 证据 |
 |---|---|---|---|
-| I0 | 进行中 | — | 设计与计划待提交 |
-| I1 | 未开始 | — | — |
-| I2 | 未开始 | — | — |
-| I3 | 未开始 | — | — |
-| I4 | 未开始 | — | — |
+| I0 | 完成 | `52fdc2e` | 设计包严格校验 0 error / 0 warning |
+| I1 | 完成 | `925f373` | 6 项迁移、事务、串行写和权限测试通过 |
+| I2 | 本地完成 | `3048ec9` | 模拟官方 GitLab API 请求、仓库供应和 main 保护；累计 14 项测试通过 |
+| I3 | 完成 | `82efc7d` | HMAC/legacy secret、重放幂等、失败重试、脱敏审计和 HTTP raw-body 回归；累计 22 项测试通过 |
+| I4 | 完成 | 本提交 | 真实 sql.js 存取层纵向切片；后端 23/23、MCP check/integration、前端 build、设计包与卫生门禁通过 |
+
+## 8. 第一阶段验收结论
+
+### 已完成
+
+- 旧数据库可增量升级，旧项目、原型和版本数据保留；迁移重复执行幂等。
+- 新协同领域具备事务写和异步串行写入口。
+- 固定权限规则统一进入 `AuthorizationService`；Agent 权限是用户权限与 delegated scope 的交集，且无治理权。
+- GitLab 细节被封装在 `GitProvider` 边界内；业务层不接触 token 和 GitLab 专有认证字段。
+- 仓库供应强制 `private + main`，分支保护强制 `allowed_to_push: No one`、Maintainer 合并和禁止 force push。
+- Provider 健康检查和仓库供应拥有服务端 API，未配置时 fail closed。
+- Webhook 支持 GitLab 19+ HMAC-SHA256 和旧版 secret 两种验证路径，均要求稳定事件 ID 和时间窗口。
+- `provider + event_id` 唯一约束承担重放幂等；失败事件可重试，processed 事件不重复调用处理器。
+- 审计 metadata 递归移除凭据、源码和完整提示词类字段，限制深度、键数量和字符串长度。
+- npm 测试脚本已固化，测试与对应功能同 commit 交付。
+
+### 本地证据
+
+- `backend/npm test`：23 tests，23 pass，0 fail。
+- `frontend/npm run build`：成功，1686 modules transformed；存在既有单 chunk > 500 kB 警告，不阻断本阶段。
+- `mcp-server/npm run check`：通过。
+- `mcp-server/npm run test:integration`：通过，22 个 MCP tools 与既有协作/会话/交付路径均返回 verified。
+- 设计包校验：0 error / 0 warning。
+
+### 真实环境门禁
+
+当前环境没有配置 `GITLAB_BASE_URL`、`GITLAB_TOKEN`、`GITLAB_NAMESPACE_ID` 或 Webhook secret/signing token，因此以下项目不能用本地测试替代：
+
+1. 读取内网 GitLab 实际版本、edition、namespace 和 token scope；
+2. 创建真实临时 private project；
+3. 使用非服务账号执行 `git push origin main` 并确认 GitLab 拒绝；
+4. 触发真实 Push/MR Webhook，确认实例提供的 ID、timestamp 和签名头；
+5. 删除真实临时 project，确认无残留。
+
+结论：**第一阶段代码和本地自动化验收完成；真实 GitLab 接受性验收处于外部配置门禁，不能声明已完成。**
