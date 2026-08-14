@@ -1,6 +1,7 @@
 const ACTIONS = Object.freeze({
   VIEW_PROJECT: 'project.view',
   MANAGE_MEMBERS: 'project.members.manage',
+  MANAGE_REPOSITORIES: 'repository.manage',
   START_CHANGE: 'change.start',
   READ_SOURCE: 'source.read',
   SUBMIT_CHANGE: 'change.submit',

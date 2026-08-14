@@ -2,9 +2,10 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { requireAuth, generateToken } = require('../middleware/auth');
+const { requireAuth, requireRole, generateToken } = require('../middleware/auth');
 const { findUserById } = require('../services/db-users');
 const { createConnectCode } = require('../services/db-mcp-sessions');
+const { GitLabProvider } = require('../services/gitlab-provider');
 
 const router = express.Router();
 const SKILL_NAME = 'fuxi-skyui-prototype';
@@ -146,6 +147,21 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
       apiUrl: baseUrl
     }
   });
+});
+
+router.get('/git-provider/health', requireAuth, requireRole(['admin']), async (req, res) => {
+  try {
+    const provider = GitLabProvider.fromEnvironment();
+    const health = await provider.healthCheck();
+    res.json({ success: true, data: health });
+  } catch (error) {
+    const status = error.code === 'GIT_PROVIDER_NOT_CONFIGURED' ? 503 : 502;
+    res.status(status).json({
+      success: false,
+      code: error.code || 'GIT_PROVIDER_UNAVAILABLE',
+      message: error.message || 'Git Provider 当前不可用'
+    });
+  }
 });
 
 router.get('/skill-package', requireAuth, (req, res) => {

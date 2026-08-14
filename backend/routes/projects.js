@@ -9,6 +9,13 @@ const {
   createSnapshot, getProjectSnapshots, getSnapshotById, restoreSnapshot, deleteSnapshot
 } = require('../services/db-projects');
 const { getPrototypeById } = require('../services/db-prototypes');
+const { AuthorizationError, AuthorizationService } = require('../services/authorization');
+const { GitProviderError } = require('../services/git-provider');
+const { GitLabProvider } = require('../services/gitlab-provider');
+const {
+  RepositoryProvisioningError,
+  RepositoryProvisioningService
+} = require('../services/repository-provisioning');
 
 // 辅助函数
 function isAdmin(req) {
@@ -217,6 +224,35 @@ router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'ad
 router.delete('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   removeProjectPrototype(parseInt(req.params.ppId, 10));
   res.json({ success: true });
+});
+
+// 为原型供应平台托管的私有协作仓库；GitLab 凭据只从服务端环境读取。
+router.post('/:id/prototypes/:prototypeId/repository', requireAuth, async (req, res) => {
+  try {
+    const authorization = new AuthorizationService();
+    const provider = GitLabProvider.fromEnvironment();
+    const service = new RepositoryProvisioningService({ provider, authorization });
+    const result = await service.provision({
+      actor: req.user,
+      projectId: req.params.id,
+      prototypeId: req.params.prototypeId,
+      name: req.body.name,
+      description: req.body.description || ''
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    let status = 500;
+    if (error instanceof AuthorizationError) status = 403;
+    else if (error.code === 'PROTOTYPE_NOT_FOUND') status = 404;
+    else if (error.code === 'PROTOTYPE_PROJECT_CONFLICT') status = 409;
+    else if (error.code === 'GIT_PROVIDER_NOT_CONFIGURED') status = 503;
+    else if (error instanceof GitProviderError || error instanceof RepositoryProvisioningError) status = 502;
+    res.status(status).json({
+      success: false,
+      code: error.code || 'GIT_REPOSITORY_PROVISION_FAILED',
+      message: error.message || '协作仓库供应失败'
+    });
+  }
 });
 
 // =================== 项目成员 API ===================
