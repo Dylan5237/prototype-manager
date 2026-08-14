@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伏羲 · 团队协同 MVP 原型</title>
+  <style>
+    :root {
+      --blue-700: #175cd3;
+      --blue-600: #2970ff;
+      --blue-500: #4f8cff;
+      --blue-100: #eaf2ff;
+      --blue-50: #f4f8ff;
+      --ink-900: #101828;
+      --ink-800: #1d2939;
+      --ink-700: #344054;
+      --ink-600: #475467;
+      --ink-500: #667085;
+      --ink-400: #98a2b3;
+      --line: #e4e7ec;
+      --canvas: #f5f7fb;
+      --card: #ffffff;
+      --green-700: #067647;
+      --green-100: #d1fadf;
+      --green-50: #ecfdf3;
+      --amber-700: #b54708;
+      --amber-100: #fef0c7;
+      --amber-50: #fffaeb;
+      --red-700: #b42318;
+      --red-100: #fee4e2;
+      --red-50: #fef3f2;
+      --purple-700: #6941c6;
+      --purple-50: #f4f3ff;
+      --shadow-sm: 0 1px 2px rgba(16, 24, 40, .05);
+      --shadow-md: 0 12px 32px rgba(16, 24, 40, .12);
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; }
+    html { color-scheme: light; }
+    body {
+      margin: 0;
+      min-width: 1180px;
+      background: var(--canvas);
+      color: var(--ink-900);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input, textarea, select { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+      outline: 3px solid rgba(41,112,255,.22);
+      outline-offset: 2px;
+    }
+
+    .app { min-height: 100vh; }
+    .topbar {
+      height: 64px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 28px;
+      background: rgba(255,255,255,.94);
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      backdrop-filter: blur(14px);
+    }
+    .brand { display: flex; align-items: center; gap: 12px; }
+    .brand-mark {
+      width: 36px; height: 36px; border-radius: 11px;
+      display: grid; place-items: center;
+      color: #fff; font-weight: 800; font-size: 18px;
+      background: linear-gradient(145deg, #5f9cff, #175cd3);
+      box-shadow: 0 7px 18px rgba(41,112,255,.24);
+    }
+    .brand-title { font-size: 16px; font-weight: 750; letter-spacing: .02em; }
+    .brand-sub { color: var(--ink-500); font-size: 11px; margin-top: -2px; }
+    .top-actions { display: flex; align-items: center; gap: 14px; }
+    .role-switch {
+      display: flex; gap: 3px; padding: 3px;
+      background: #f2f4f7; border: 1px solid var(--line); border-radius: 10px;
+    }
+    .role-switch button {
+      border: 0; background: transparent; color: var(--ink-500);
+      padding: 6px 11px; border-radius: 7px; font-size: 12px;
+    }
+    .role-switch button.active { background: #fff; color: var(--ink-900); box-shadow: var(--shadow-sm); font-weight: 650; }
+    .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #e8edff; color: #3843a5; font-weight: 750; }
+    .user-block { display: flex; align-items: center; gap: 9px; }
+    .user-meta strong { display: block; font-size: 13px; }
+    .user-meta span { display: block; color: var(--ink-500); font-size: 11px; }
+
+    .shell { display: grid; grid-template-columns: 248px 1fr; min-height: calc(100vh - 64px); }
+    .sidebar {
+      padding: 22px 16px;
+      background: #fff;
+      border-right: 1px solid var(--line);
+      position: sticky; top: 64px; height: calc(100vh - 64px);
+    }
+    .back { border: 0; background: none; color: var(--ink-500); padding: 5px 8px; font-size: 12px; }
+    .project-identity { margin: 14px 8px 22px; }
+    .project-identity h1 { font-size: 17px; margin: 0 0 4px; }
+    .project-identity p { margin: 0; color: var(--ink-500); font-size: 12px; }
+    .nav-label { margin: 20px 10px 7px; color: var(--ink-400); font-size: 10px; font-weight: 700; letter-spacing: .1em; }
+    .nav { display: grid; gap: 4px; }
+    .nav button {
+      width: 100%; border: 0; background: none; border-radius: 9px;
+      padding: 10px 11px; display: flex; align-items: center; gap: 10px;
+      color: var(--ink-600); text-align: left;
+    }
+    .nav button:hover { background: #f7f9fc; color: var(--ink-900); }
+    .nav button.active { background: var(--blue-100); color: var(--blue-700); font-weight: 700; }
+    .nav-icon { width: 20px; text-align: center; font-size: 15px; }
+    .nav-count { margin-left: auto; min-width: 22px; padding: 1px 6px; border-radius: 99px; background: #f2f4f7; color: var(--ink-600); text-align: center; font-size: 11px; }
+    .nav button.active .nav-count { background: #fff; color: var(--blue-700); }
+    .side-note {
+      position: absolute; left: 16px; right: 16px; bottom: 18px;
+      padding: 13px; border: 1px solid #d9e5ff; border-radius: 11px; background: var(--blue-50);
+      color: var(--ink-600); font-size: 11px;
+    }
+    .side-note strong { display: block; color: var(--blue-700); font-size: 12px; margin-bottom: 3px; }
+
+    main { min-width: 0; }
+    .main-inner { max-width: 1440px; margin: 0 auto; padding: 28px 34px 50px; }
+    .view { display: none; animation: fade .18s ease-out; }
+    .view.active { display: block; }
+    @keyframes fade { from { opacity: .45; transform: translateY(3px); } }
+    .page-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 22px; }
+    .page-title h2 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+    .page-title p { margin: 4px 0 0; color: var(--ink-500); }
+    .actions { display: flex; align-items: center; gap: 10px; }
+    .btn {
+      min-height: 38px; border: 1px solid #d0d5dd; border-radius: 9px; padding: 8px 14px;
+      background: #fff; color: var(--ink-700); font-weight: 650; box-shadow: var(--shadow-sm);
+      display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+    }
+    .btn:hover { background: #f9fafb; }
+    .btn.primary { border-color: var(--blue-600); background: var(--blue-600); color: #fff; box-shadow: 0 4px 12px rgba(41,112,255,.22); }
+    .btn.primary:hover { background: var(--blue-700); }
+    .btn.danger { color: var(--red-700); border-color: #fecdca; }
+    .btn.ghost { border-color: transparent; box-shadow: none; background: transparent; }
+    .btn.small { min-height: 32px; padding: 5px 10px; font-size: 12px; }
+    .btn:disabled { cursor: not-allowed; opacity: .5; }
+
+    .hero {
+      display: block;
+      border-radius: 18px; overflow: hidden; color: #fff;
+      background: linear-gradient(128deg, #183d8f 0%, #2767d4 56%, #5a91f6 100%);
+      box-shadow: 0 18px 38px rgba(23,92,211,.18); margin-bottom: 22px;
+    }
+    .hero-copy { padding: 26px 28px; }
+    .eyebrow { font-size: 11px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; opacity: .75; }
+    .hero h3 { margin: 8px 0 7px; font-size: 25px; line-height: 1.25; }
+    .hero p { max-width: 680px; margin: 0; color: rgba(255,255,255,.78); }
+    .hero .btn { margin-top: 20px; border-color: #fff; color: var(--blue-700); }
+    .hero-state { padding: 24px 26px; background: rgba(5, 28, 77, .22); display: flex; align-items: center; }
+    .hero-state dl { margin: 0; width: 100%; display: grid; gap: 13px; }
+    .hero-state div { display: flex; justify-content: space-between; gap: 15px; }
+    .hero-state dt { color: rgba(255,255,255,.68); }
+    .hero-state dd { margin: 0; font-weight: 720; }
+
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; }
+    .metric, .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow-sm); }
+    .metric { padding: 17px 18px; }
+    .metric-label { color: var(--ink-500); font-size: 12px; }
+    .metric-value { margin-top: 6px; font-size: 22px; font-weight: 760; letter-spacing: -.02em; }
+    .metric-foot { margin-top: 3px; color: var(--ink-500); font-size: 11px; }
+    .section-head { display: flex; align-items: center; justify-content: space-between; margin: 26px 0 12px; }
+    .section-head h3 { margin: 0; font-size: 16px; }
+    .section-head span { color: var(--ink-500); font-size: 12px; }
+
+    .work-grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(320px, .75fr); gap: 18px; }
+    .prototype-list { display: grid; gap: 10px; }
+    .prototype-row {
+      display: grid; grid-template-columns: 42px minmax(180px, 1.1fr) minmax(190px, .9fr) 140px 118px;
+      gap: 12px; align-items: center; padding: 14px 15px;
+      background: #fff; border: 1px solid var(--line); border-radius: 12px;
+    }
+    .prototype-row:hover { border-color: #bfd3ff; box-shadow: 0 6px 16px rgba(16,24,40,.05); }
+    .proto-icon { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: var(--blue-50); color: var(--blue-700); font-weight: 800; }
+    .proto-main strong { display: block; }
+    .proto-main span, .proto-version span { color: var(--ink-500); font-size: 11px; }
+    .proto-version strong { display: block; font-size: 12px; }
+    .status { display: inline-flex; align-items: center; gap: 5px; width: fit-content; padding: 4px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; }
+    .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status.green { color: var(--green-700); background: var(--green-50); }
+    .status.amber { color: var(--amber-700); background: var(--amber-50); }
+    .status.red { color: var(--red-700); background: var(--red-50); }
+    .status.blue { color: var(--blue-700); background: var(--blue-50); }
+    .status.gray { color: var(--ink-600); background: #f2f4f7; }
+    .activity { padding: 6px 18px 16px; }
+    .activity-item { position: relative; padding: 13px 0 13px 25px; border-bottom: 1px solid #f0f2f5; }
+    .activity-item:last-child { border-bottom: 0; }
+    .activity-dot { position: absolute; left: 1px; top: 18px; width: 9px; height: 9px; border-radius: 50%; background: var(--blue-500); box-shadow: 0 0 0 4px var(--blue-100); }
+    .activity-item strong { font-size: 12px; }
+    .activity-item p { margin: 2px 0 0; color: var(--ink-500); font-size: 11px; }
+
+    .filterbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .tabs { display: flex; gap: 5px; padding: 3px; border-radius: 9px; background: #eaecf0; }
+    .tabs button { border: 0; background: transparent; padding: 6px 11px; border-radius: 7px; color: var(--ink-600); font-size: 12px; }
+    .tabs button.active { background: #fff; color: var(--ink-900); box-shadow: var(--shadow-sm); font-weight: 650; }
+    .search { min-width: 260px; border: 1px solid #d0d5dd; border-radius: 9px; padding: 8px 11px; background: #fff; }
+    .review-list { display: grid; gap: 12px; }
+    .review-card { padding: 18px; display: grid; grid-template-columns: minmax(0, 1fr) 200px 150px; align-items: center; gap: 16px; }
+    .review-title { display: flex; align-items: center; gap: 9px; margin-bottom: 5px; }
+    .review-title strong { font-size: 15px; }
+    .review-card p { margin: 0; color: var(--ink-500); font-size: 12px; }
+    .review-meta { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 12px; color: var(--ink-500); font-size: 11px; }
+    .checks-mini { display: grid; gap: 5px; font-size: 11px; }
+    .check-ok { color: var(--green-700); }
+    .check-bad { color: var(--red-700); }
+
+    .publish-layout { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(340px, .65fr); gap: 18px; }
+    .manifest { overflow: hidden; }
+    .manifest-head { padding: 17px 18px; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; align-items: center; }
+    .manifest-head h3 { margin: 0; font-size: 15px; }
+    .manifest-row { display: grid; grid-template-columns: minmax(160px, 1fr) 150px 180px; align-items: center; gap: 16px; padding: 15px 18px; border-bottom: 1px solid #f0f2f5; }
+    .manifest-row:last-child { border-bottom: 0; }
+    .manifest-row strong { display: block; font-size: 13px; }
+    .manifest-row span { color: var(--ink-500); font-size: 11px; }
+    .version-picker { width: 100%; border: 1px solid #d0d5dd; background: #fff; border-radius: 8px; padding: 7px 9px; }
+    .release-panel { padding: 20px; height: fit-content; position: sticky; top: 88px; }
+    .release-panel h3 { margin: 0 0 5px; }
+    .release-panel > p { margin: 0 0 18px; color: var(--ink-500); font-size: 12px; }
+    .release-check { display: flex; gap: 10px; padding: 11px 0; border-bottom: 1px solid #f0f2f5; }
+    .release-check .symbol { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--green-100); color: var(--green-700); font-size: 12px; font-weight: 800; }
+    .release-check strong { display: block; font-size: 12px; }
+    .release-check span { color: var(--ink-500); font-size: 11px; }
+    .release-panel .btn { width: 100%; margin-top: 18px; }
+
+    .members-card { overflow: hidden; }
+    .table-head, .member-row { display: grid; grid-template-columns: minmax(220px, 1.3fr) 180px 180px 110px; align-items: center; gap: 16px; }
+    .table-head { padding: 11px 18px; background: #f9fafb; color: var(--ink-500); font-size: 11px; font-weight: 700; }
+    .member-row { padding: 14px 18px; border-top: 1px solid var(--line); }
+    .member-id { display: flex; align-items: center; gap: 10px; }
+    .member-avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: #eef2ff; color: #3538cd; font-weight: 750; }
+    .member-id strong { display: block; font-size: 13px; }
+    .member-id span { color: var(--ink-500); font-size: 11px; }
+    .auto-access { color: var(--green-700); font-size: 11px; }
+    .explain-card { margin-top: 16px; padding: 17px 19px; display: flex; gap: 13px; align-items: flex-start; background: var(--blue-50); border-color: #d5e3ff; }
+    .explain-icon { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; flex: none; background: #fff; color: var(--blue-700); }
+    .explain-card strong { display: block; color: var(--blue-700); }
+    .explain-card p { margin: 3px 0 0; color: var(--ink-600); font-size: 12px; }
+
+    .modal-backdrop {
+      position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+      padding: 30px; background: rgba(16,24,40,.46); backdrop-filter: blur(3px);
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal { width: min(620px, 92vw); max-height: 88vh; overflow: auto; background: #fff; border-radius: 17px; box-shadow: var(--shadow-md); }
+    .modal.wide { width: min(960px, 92vw); }
+    .modal-head { padding: 19px 22px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; justify-content: space-between; }
+    .modal-head h3 { margin: 0; font-size: 18px; }
+    .modal-head p { margin: 3px 0 0; color: var(--ink-500); font-size: 12px; }
+    .close { border: 0; background: #f2f4f7; width: 30px; height: 30px; border-radius: 8px; color: var(--ink-600); }
+    .modal-body { padding: 21px 22px; }
+    .modal-foot { padding: 15px 22px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 9px; }
+    .field { margin-bottom: 17px; }
+    .field label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 700; color: var(--ink-700); }
+    .field input, .field textarea, .field select { width: 100%; border: 1px solid #d0d5dd; border-radius: 9px; padding: 9px 11px; color: var(--ink-900); background: #fff; }
+    .field textarea { resize: vertical; min-height: 82px; }
+    .field-hint { display: block; margin-top: 5px; color: var(--ink-500); font-size: 11px; }
+    .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .choice { border: 1px solid var(--line); border-radius: 11px; padding: 14px; text-align: left; background: #fff; }
+    .choice.active { border-color: var(--blue-600); box-shadow: 0 0 0 3px var(--blue-100); }
+    .choice strong { display: block; }
+    .choice span { display: block; margin-top: 3px; color: var(--ink-500); font-size: 11px; }
+
+    .review-detail { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: 18px; }
+    .preview-shell { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: #f9fafb; }
+    .preview-bar { height: 38px; padding: 0 11px; display: flex; align-items: center; gap: 6px; background: #fff; border-bottom: 1px solid var(--line); }
+    .browser-dot { width: 8px; height: 8px; border-radius: 50%; background: #d0d5dd; }
+    .preview-address { margin-left: 7px; flex: 1; border-radius: 6px; background: #f2f4f7; color: var(--ink-500); padding: 4px 8px; font-size: 10px; }
+    .preview-content { min-height: 330px; padding: 22px; background: linear-gradient(135deg,#f7faff,#eef4ff); }
+    .mock-app { background: #fff; border: 1px solid #dce4f2; border-radius: 10px; overflow: hidden; box-shadow: 0 8px 20px rgba(16,24,40,.07); }
+    .mock-head { padding: 11px 14px; background: linear-gradient(90deg,#2668cf,#4f8cff); color: #fff; font-weight: 700; }
+    .mock-body { padding: 16px; }
+    .mock-banner { display: flex; justify-content: space-between; padding: 13px; border-radius: 8px; background: #f0f6ff; }
+    .mock-table { margin-top: 13px; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+    .mock-row { display: grid; grid-template-columns: 1fr 1fr 90px; padding: 9px 11px; border-top: 1px solid var(--line); font-size: 10px; }
+    .mock-row:first-child { border-top: 0; background: #f9fafb; color: var(--ink-500); font-weight: 700; }
+    .detail-side h4 { margin: 0 0 10px; }
+    .detail-side ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+    .detail-side li { display: flex; justify-content: space-between; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 11px; }
+    .detail-side .summary { margin-top: 15px; padding: 12px; background: #f9fafb; border-radius: 9px; color: var(--ink-600); font-size: 11px; }
+
+    .route-demo { display: grid; grid-template-columns: 200px 1fr; min-height: 450px; }
+    .route-menu { padding: 14px; background: #172b4d; color: #c8d4e8; }
+    .route-menu strong { color: #fff; display: block; margin-bottom: 15px; }
+    .route-menu button { width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 9px; border-radius: 7px; }
+    .route-menu button.active { background: rgba(255,255,255,.12); color: #fff; }
+    .route-stage { padding: 22px; background: #f5f7fb; }
+    .route-page { display: none; }
+    .route-page.active { display: block; }
+    .route-page h4 { margin: 0 0 4px; font-size: 18px; }
+    .route-page > p { margin: 0 0 18px; color: var(--ink-500); }
+    .demo-card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+    .demo-link { border: 0; background: none; color: var(--blue-700); padding: 0; font-weight: 700; }
+    .route-trace { margin-top: 16px; padding: 10px 12px; border-radius: 8px; background: var(--green-50); color: var(--green-700); font-size: 11px; }
+
+    .toast {
+      position: fixed; right: 26px; bottom: 26px; z-index: 100; min-width: 290px;
+      display: flex; align-items: center; gap: 10px; padding: 13px 15px;
+      border: 1px solid #abefc6; border-radius: 11px; background: #fff; box-shadow: var(--shadow-md);
+      transform: translateY(100px); opacity: 0; pointer-events: none; transition: .24s ease;
+    }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast-icon { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: var(--green-700); background: var(--green-100); font-weight: 800; }
+    .toast strong { display: block; font-size: 12px; }
+    .toast span { display: block; color: var(--ink-500); font-size: 11px; }
+    .member-only { display: none !important; }
+    body.member-mode .admin-only { display: none !important; }
+    body.member-mode .member-only { display: inline-flex !important; }
+    body.member-mode .member-only.block { display: block !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">伏</div>
+        <div><div class="brand-title">伏羲平台</div><div class="brand-sub">AI 原型托管平台</div></div>
+      </div>
+      <div class="top-actions">
+        <div class="role-switch" aria-label="演示视角">
+          <button class="active" data-role="admin">项目管理员视角</button>
+          <button data-role="member">项目成员视角</button>
+        </div>
+        <div class="user-block">
+          <div class="avatar" id="avatar">吴</div>
+          <div class="user-meta"><strong id="user-name">吴省之</strong><span id="user-role">项目管理员</span></div>
+        </div>
+      </div>
+    </header>
+
+    <div class="shell">
+      <aside class="sidebar">
+        <button class="back">← 返回项目列表</button>
+        <div class="project-identity"><h1>天工建模平台</h1><p>协作空间 · 最近更新于 10:42</p></div>
+        <div class="nav-label">工作区</div>
+        <nav class="nav" aria-label="项目导航">
+          <button class="active" data-nav="overview"><span class="nav-icon">⌂</span>项目首页</button>
+          <button data-nav="changes"><span class="nav-icon">⇄</span>待我确认<span class="nav-count">2</span></button>
+          <button data-nav="publish"><span class="nav-icon">◇</span>发布项目<span class="nav-count">1</span></button>
+          <button data-nav="members" class="admin-only"><span class="nav-icon">♙</span>项目成员<span class="nav-count">6</span></button>
+        </nav>
+        <div class="nav-label">查看</div>
+        <nav class="nav">
+          <button data-open="route-demo"><span class="nav-icon">▣</span>整项目预览</button>
+          <button><span class="nav-icon">◷</span>已发布版本</button>
+        </nav>
+      </aside>
+
+      <main>
+        <div class="main-inner">
+          <section class="view active" data-view="overview">
+            <div class="page-title">
+              <div><h2>天工建模平台</h2><p>当前发布版本 v1.4</p></div>
+              <div class="actions">
+                <button class="btn" data-open="route-demo">整项目预览</button>
+                <button class="btn primary" data-open="start-change">＋ 让 AI 修改</button>
+              </div>
+            </div>
+
+            <div class="hero">
+              <div class="hero-copy">
+                <div class="eyebrow">下一步</div>
+                <h3 class="admin-only">确认“客户详情交互优化”的实际效果</h3>
+                <h3 class="member-only block">“客户详情交互优化”已经可以查看</h3>
+                <p class="admin-only">平台检查已完成。效果符合预期即可合并；技术细节无需处理。</p>
+                <p class="member-only block">确认效果后，把这项修改交给项目管理员即可。</p>
+                <button class="btn admin-only" data-open="review-ready">查看效果 →</button>
+                <button class="btn member-only" data-open="review-ready">查看修改 →</button>
+              </div>
+            </div>
+
+            <div class="section-head"><h3>项目原型</h3><span>8 个原型</span></div>
+            <div class="prototype-list">
+                  <div class="prototype-row">
+                    <div class="proto-icon">客</div><div class="proto-main"><strong>客户中心</strong><span>李想 · AI Agent 协助</span></div>
+                    <div class="proto-version"><strong>客户详情交互优化</strong><span>可以查看效果</span></div><span class="status amber">待确认</span>
+                    <button class="btn small admin-only" data-open="review-ready">查看效果</button><button class="btn small member-only" data-open="review-ready">查看我的修改</button>
+                  </div>
+                  <div class="prototype-row">
+                    <div class="proto-icon">单</div><div class="proto-main"><strong>订单管理</strong><span>陈默</span></div>
+                    <div class="proto-version"><strong>筛选区域重构</strong><span>需要陈默处理后继续</span></div><span class="status red">已暂停</span>
+                    <button class="btn small" data-open="review-conflict">查看原因</button>
+                  </div>
+                  <div class="prototype-row">
+                    <div class="proto-icon">商</div><div class="proto-main"><strong>商品中心</strong><span>王敏</span></div>
+                    <div class="proto-version"><strong>批量编辑商品</strong><span>AI Agent 正在修改</span></div><span class="status blue">进行中</span><button class="btn small" disabled>进行中</button>
+                  </div>
+                  <div class="prototype-row">
+                    <div class="proto-icon">权</div><div class="proto-main"><strong>权限中心</strong><span>当前没有修改</span></div>
+                    <div class="proto-version"><strong>v1.6 · 已用于项目</strong><span>发布于 8 月 12 日</span></div><span class="status green">稳定</span><button class="btn small">打开原型</button>
+                  </div>
+            </div>
+          </section>
+
+          <section class="view" data-view="changes">
+            <div class="page-title">
+              <div><h2 class="admin-only">待我确认</h2><h2 class="member-only block">我的修改</h2><p class="admin-only">查看实际效果，决定是否采用。</p><p class="member-only block">查看效果，把修改交给管理员确认。</p></div>
+              <button class="btn primary" data-open="start-change">＋ 让 AI 修改</button>
+            </div>
+            <div class="review-list">
+              <article class="card review-card">
+                <div><div class="review-title"><span class="status green">可以合并</span><strong>客户详情交互优化</strong></div><p>客户中心 · 李想 · 16 分钟前</p></div>
+                <div><span class="status green">平台检查通过</span></div>
+                <button class="btn primary admin-only" data-open="review-ready">查看并合并</button><button class="btn member-only" data-open="review-ready">查看效果</button>
+              </article>
+              <article class="card review-card">
+                <div><div class="review-title"><span class="status red">需要处理</span><strong>订单筛选区域重构</strong></div><p>订单管理 · 陈默 · 38 分钟前</p></div>
+                <div><span class="status red">等待陈默处理</span></div>
+                <button class="btn" data-open="review-conflict">查看怎么处理</button>
+              </article>
+              <article class="card review-card">
+                <div><div class="review-title"><span class="status blue">进行中</span><strong>批量编辑商品</strong></div><p>商品中心 · 王敏 · AI Agent 正在处理</p></div>
+                <div><span class="status blue">AI Agent 工作中</span></div><button class="btn" disabled>进行中</button>
+              </article>
+            </div>
+          </section>
+
+          <section class="view" data-view="publish">
+            <div class="page-title">
+              <div><h2>项目发布</h2><p>选择每个原型要使用的版本，预览整套项目后一次发布。</p></div>
+              <button class="btn" data-open="route-demo">预览当前草稿</button>
+            </div>
+            <div class="publish-layout">
+              <div class="card manifest">
+                <div class="manifest-head"><div><h3>项目草稿</h3><span style="color:var(--ink-500);font-size:11px">基于已发布项目 v1.4</span></div><span class="status amber">有 1 项升级</span></div>
+                <div class="manifest-row"><div><strong>客户中心</strong><span>客户与联系人管理</span></div><div><strong>当前 v2.3</strong><span>项目 v1.4 使用</span></div><select class="version-picker changed"><option>v2.4 · 新版本</option><option>v2.3 · 当前版本</option></select></div>
+                <div class="manifest-row"><div><strong>订单管理</strong><span>订单列表与详情</span></div><div><strong>当前 v1.8</strong><span>没有可用升级</span></div><select class="version-picker"><option>v1.8 · 当前版本</option></select></div>
+                <div class="manifest-row"><div><strong>商品中心</strong><span>商品与类目维护</span></div><div><strong>当前 v3.1</strong><span>没有可用升级</span></div><select class="version-picker"><option>v3.1 · 当前版本</option></select></div>
+                <div class="manifest-row"><div><strong>权限中心</strong><span>角色与菜单授权</span></div><div><strong>当前 v1.6</strong><span>没有可用升级</span></div><select class="version-picker"><option>v1.6 · 当前版本</option></select></div>
+              </div>
+              <aside class="card release-panel">
+                <h3>可以发布</h3><p>平台已经检查这套版本组合，你只需确认整项目效果。</p>
+                <div class="release-check"><span class="symbol">✓</span><div><strong>8 个原型版本可用</strong><span>所有构建制品完整</span></div></div>
+                <div class="release-check"><span class="symbol">✓</span><div><strong>12 个页面跳转有效</strong><span>没有失效的 routeKey</span></div></div>
+                <div class="release-check"><span class="symbol">✓</span><div><strong>已完成整项目预览</strong><span>今天 10:36 · 吴省之</span></div></div>
+                <button class="btn primary admin-only" data-open="publish-confirm">发布为项目 v1.5</button>
+                <div class="member-only block" style="margin-top:16px;padding:12px;background:#f9fafb;border-radius:8px;color:var(--ink-500);font-size:12px">项目管理员确认效果后即可发布。</div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="view" data-view="members">
+            <div class="page-title">
+              <div><h2>项目成员</h2><p>只需把人加入项目，平台会自动开通所需协作能力。</p></div>
+              <button class="btn primary" data-open="add-member">＋ 添加成员</button>
+            </div>
+            <div class="card members-card">
+              <div class="table-head"><span>成员</span><span>项目身份</span><span>协作权限</span><span>操作</span></div>
+              <div class="member-row"><div class="member-id"><div class="member-avatar">吴</div><div><strong>吴省之</strong><span>wushengzhi</span></div></div><span>项目管理员</span><span class="auto-access">✓ 已自动开通</span><button class="btn ghost small">—</button></div>
+              <div class="member-row"><div class="member-id"><div class="member-avatar">李</div><div><strong>李想</strong><span>lixiang</span></div></div><span>项目成员</span><span class="auto-access">✓ 已自动开通</span><button class="btn ghost small danger">移出</button></div>
+              <div class="member-row"><div class="member-id"><div class="member-avatar">陈</div><div><strong>陈默</strong><span>chenmo</span></div></div><span>项目成员</span><span class="auto-access">✓ 已自动开通</span><button class="btn ghost small danger">移出</button></div>
+              <div class="member-row"><div class="member-id"><div class="member-avatar">王</div><div><strong>王敏</strong><span>wangmin</span></div></div><span>项目成员</span><span class="auto-access">✓ 已自动开通</span><button class="btn ghost small danger">移出</button></div>
+            </div>
+            <div class="card explain-card"><div class="explain-icon">i</div><div><strong>无需配置技术权限</strong><p>成员加入项目后，可以把修改需求交给本地 Agent 并发起审核，但不能合并主版本、发布项目或管理其他成员。移出项目后，协作能力会被自动撤销。</p></div></div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="start-change" role="dialog" aria-modal="true" aria-labelledby="start-title">
+    <div class="modal">
+      <div class="modal-head"><div><h3 id="start-title">让 AI 修改原型</h3><p>描述需求，伏羲会生成带最新项目上下文的 Agent 提示词。</p></div><button class="close" data-close>×</button></div>
+      <div class="modal-body">
+        <div class="field"><label for="proto-select">选择原型</label><select id="proto-select"><option>客户中心</option><option>订单管理</option><option>商品中心</option><option>权限中心</option></select></div>
+        <div class="field"><label for="change-goal">你希望修改什么？</label><textarea id="change-goal" placeholder="例如：优化客户详情页，让用户能从订单列表直接跳转查看客户资料">优化客户详情页，让用户能从订单列表直接跳转查看客户资料</textarea><span class="field-hint">只需描述目标，不需要提供代码或 Git 信息。</span></div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close>取消</button><button class="btn primary" id="create-change">生成并复制给 Agent</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="prompt-ready" role="dialog" aria-modal="true" aria-labelledby="prompt-title">
+    <div class="modal">
+      <div class="modal-head"><div><h3 id="prompt-title">提示词已复制</h3><p>现在打开你本地的 AI Agent，直接粘贴并发送。</p></div><button class="close" data-close>×</button></div>
+      <div class="modal-body">
+        <div style="padding:18px;border-radius:12px;background:var(--green-50);border:1px solid #abefc6;text-align:center"><div style="width:38px;height:38px;margin:0 auto 10px;border-radius:50%;display:grid;place-items:center;background:var(--green-100);color:var(--green-700);font-weight:800">✓</div><strong style="color:var(--green-700);font-size:15px">已经准备好，可以交给 Agent</strong><p style="margin:5px 0 0;color:var(--ink-600);font-size:12px">Agent 会连接伏羲读取最新项目上下文，然后独立完成修改并回传进度。</p></div>
+        <details style="margin-top:16px"><summary style="cursor:pointer;color:var(--ink-600);font-size:12px">查看提示词包含什么</summary><div style="margin-top:9px;padding:12px;border-radius:8px;background:#f9fafb;color:var(--ink-500);font-size:11px">项目和原型标识、本次修改目标、一次性任务交接码、最新上下文读取方式、项目规范，以及提交审核要求。长期凭证和完整源码不会写入剪贴板。</div></details>
+      </div>
+      <div class="modal-foot"><button class="btn" id="copy-again">再次复制</button><button class="btn primary" data-close>完成</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="add-member" role="dialog" aria-modal="true" aria-labelledby="member-title">
+    <div class="modal">
+      <div class="modal-head"><div><h3 id="member-title">添加项目成员</h3><p>成员加入后，平台自动开通项目内协作能力。</p></div><button class="close" data-close>×</button></div>
+      <div class="modal-body">
+        <div class="field"><label for="member-search">查找用户</label><input id="member-search" value="赵一" placeholder="输入姓名或账号"><span class="field-hint">将以“项目成员”身份加入，不需要配置其他权限。</span></div>
+        <div class="choice active" style="display:flex;align-items:center;justify-content:space-between"><div><strong>赵一</strong><span>zhaoyi · 产品设计部</span></div><span class="status blue">将加入项目</span></div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close>取消</button><button class="btn primary" id="confirm-member">添加并自动授权</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="review-ready" role="dialog" aria-modal="true" aria-labelledby="review-title">
+    <div class="modal wide">
+      <div class="modal-head"><div><h3 id="review-title">客户详情交互优化</h3><p>客户中心 · 李想提交 · 预览来自本次修改，不影响当前发布版本</p></div><button class="close" data-close>×</button></div>
+      <div class="modal-body review-detail">
+        <div class="preview-shell"><div class="preview-bar"><span class="browser-dot"></span><span class="browser-dot"></span><span class="browser-dot"></span><span class="preview-address">preview.fuxi.local/客户中心/本次修改</span></div><div class="preview-content"><div class="mock-app"><div class="mock-head">客户中心 / 客户详情</div><div class="mock-body"><div class="mock-banner"><div><strong>浙江云舟科技有限公司</strong><div style="font-size:10px;color:var(--ink-500);margin-top:4px">重点客户 · 杭州市</div></div><button class="btn small primary">新建跟进</button></div><div class="mock-table"><div class="mock-row"><span>最近订单</span><span>下单时间</span><span>金额</span></div><div class="mock-row"><span>SO-20260814-023</span><span>今天 09:36</span><span>¥ 36,800</span></div><div class="mock-row"><span>SO-20260810-116</span><span>8 月 10 日</span><span>¥ 18,200</span></div></div></div></div></div></div>
+        <aside class="detail-side"><h4>平台检查</h4><ul><li><span>源码构建</span><b class="check-ok">通过</b></li><li><span>页面预览</span><b class="check-ok">通过</b></li><li><span>页面跳转</span><b class="check-ok">3/3 有效</b></li><li><span>敏感内容</span><b class="check-ok">未发现</b></li></ul><div class="summary"><strong>修改摘要</strong><br>调整客户资料层级，新增最近订单区块，并通过 `customer.detail` 路由接收订单页传入的客户编号。</div></aside>
+      </div>
+      <div class="modal-foot"><button class="btn admin-only">退回修改</button><button class="btn admin-only">查看代码差异</button><button class="btn primary admin-only" id="merge-change">合并修改并生成版本</button><button class="btn primary member-only" id="submit-review">提交管理员审核</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="review-conflict" role="dialog" aria-modal="true" aria-labelledby="conflict-title">
+    <div class="modal">
+      <div class="modal-head"><div><h3 id="conflict-title">订单筛选区域需要处理</h3><p>平台检测到本次修改与主版本改动了相同内容。</p></div><button class="close" data-close>×</button></div>
+      <div class="modal-body">
+        <div style="padding:14px;border-radius:10px;background:var(--red-50);color:var(--red-700);margin-bottom:17px"><strong>主版本没有受到影响</strong><div style="font-size:12px;margin-top:3px">这项修改暂时不能合并。平台不会自动选择保留哪一份内容。</div></div>
+        <div class="field"><label>需要处理的内容</label><div class="card" style="padding:13px"><strong>src/views/OrderList.vue</strong><div style="color:var(--ink-500);font-size:11px;margin-top:4px">筛选栏布局和默认筛选条件存在 2 处重叠修改。</div></div></div>
+        <div class="field"><label>下一步</label><p style="margin:0;color:var(--ink-600);font-size:12px">陈默可以在原工作分支选择最终内容并重新提交。平台随后会自动重新构建和检查。</p></div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close>稍后处理</button><button class="btn primary member-only">打开我的工作区</button><button class="btn primary admin-only" id="notify-owner">提醒陈默处理</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="publish-confirm" role="dialog" aria-modal="true" aria-labelledby="publish-title">
+    <div class="modal">
+      <div class="modal-head"><div><h3 id="publish-title">发布项目 v1.5</h3><p>发布后，这套原型版本将被冻结，不会随之后的修改变化。</p></div><button class="close" data-close>×</button></div>
+      <div class="modal-body"><div class="field"><label for="release-note">发布说明</label><textarea id="release-note">客户中心升级至 v2.4，新增客户详情与订单页面的双向跳转。</textarea></div><div class="card" style="padding:14px;background:var(--green-50);border-color:#abefc6"><strong style="color:var(--green-700)">发布前检查已全部完成</strong><div style="color:var(--ink-600);font-size:11px;margin-top:3px">8 个原型版本、12 个页面跳转和整项目预览均有效。</div></div></div>
+      <div class="modal-foot"><button class="btn" data-close>取消</button><button class="btn primary" id="publish-project">确认发布项目 v1.5</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" data-modal="route-demo" role="dialog" aria-modal="true" aria-labelledby="route-title">
+    <div class="modal wide">
+      <div class="modal-head"><div><h3 id="route-title">整项目预览 · 草稿</h3><p>演示跨原型导航：订单列表通过稳定 routeKey 打开客户中心页面。</p></div><button class="close" data-close>×</button></div>
+      <div class="route-demo">
+        <aside class="route-menu"><strong>天工建模平台</strong><button class="active" data-route-tab="orders">订单管理</button><button data-route-tab="customers">客户中心</button><button>商品中心</button><button>权限中心</button></aside>
+        <div class="route-stage">
+          <section class="route-page active" data-route-page="orders"><h4>订单列表</h4><p>订单管理原型 · v1.8</p><div class="demo-card"><div class="mock-row" style="background:#f9fafb;font-weight:700"><span>订单编号</span><span>客户</span><span>操作</span></div><div class="mock-row"><span>SO-20260814-023</span><span>浙江云舟科技</span><button class="demo-link" id="jump-customer">查看客户</button></div><div class="mock-row"><span>SO-20260814-018</span><span>上海朗星数据</span><button class="demo-link">查看客户</button></div></div><div class="route-trace">当前页面由“订单管理”原型提供。</div></section>
+          <section class="route-page" data-route-page="customers"><h4>客户详情</h4><p>客户中心原型 · v2.4</p><div class="demo-card"><strong>浙江云舟科技有限公司</strong><p style="color:var(--ink-500)">由订单 SO-20260814-023 跳转而来，客户编号 C-10086 已安全传入。</p><button class="btn small" data-route-back>← 返回订单</button></div><div class="route-trace">✓ 平台将 `customer.detail` 解析为“客户中心 / 客户详情”，没有暴露实际构建地址。</div></section>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" role="status" aria-live="polite"><div class="toast-icon">✓</div><div><strong id="toast-title">操作完成</strong><span id="toast-text">平台已完成后续处理。</span></div></div>
+
+  <script>
+    const body = document.body;
+    const views = [...document.querySelectorAll('[data-view]')];
+    const navButtons = [...document.querySelectorAll('[data-nav]')];
+    const modals = [...document.querySelectorAll('[data-modal]')];
+
+    function showView(name) {
+      views.forEach(view => view.classList.toggle('active', view.dataset.view === name));
+      document.querySelectorAll('.nav [data-nav]').forEach(btn => btn.classList.toggle('active', btn.dataset.nav === name));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    navButtons.forEach(btn => btn.addEventListener('click', () => showView(btn.dataset.nav)));
+
+    function openModal(name) {
+      const modal = document.querySelector(`[data-modal="${name}"]`);
+      if (!modal) return;
+      modal.classList.add('open');
+      modal.querySelector('button, input, select, textarea')?.focus();
+    }
+    function closeModal(modal) { modal?.classList.remove('open'); }
+    document.querySelectorAll('[data-open]').forEach(btn => btn.addEventListener('click', () => openModal(btn.dataset.open)));
+    document.querySelectorAll('[data-close]').forEach(btn => btn.addEventListener('click', () => closeModal(btn.closest('.modal-backdrop'))));
+    modals.forEach(modal => modal.addEventListener('mousedown', event => { if (event.target === modal) closeModal(modal); }));
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') modals.forEach(closeModal); });
+
+    document.querySelectorAll('[data-role]').forEach(btn => btn.addEventListener('click', () => {
+      const member = btn.dataset.role === 'member';
+      body.classList.toggle('member-mode', member);
+      document.querySelectorAll('[data-role]').forEach(item => item.classList.toggle('active', item === btn));
+      document.getElementById('user-name').textContent = member ? '李想' : '吴省之';
+      document.getElementById('user-role').textContent = member ? '项目成员' : '项目管理员';
+      document.getElementById('avatar').textContent = member ? '李' : '吴';
+      if (document.querySelector('[data-view="members"]').classList.contains('active') && member) showView('overview');
+      showToast(member ? '已切换为项目成员' : '已切换为项目管理员', member ? '只展示开始修改、预览和提交审核所需操作。' : '展示审核、成员和发布操作。');
+    }));
+
+    function showToast(title, text) {
+      const toast = document.querySelector('.toast');
+      document.getElementById('toast-title').textContent = title;
+      document.getElementById('toast-text').textContent = text;
+      toast.classList.add('show');
+      clearTimeout(window.toastTimer);
+      window.toastTimer = setTimeout(() => toast.classList.remove('show'), 3400);
+    }
+
+    function buildAgentPrompt() {
+      const prototypeName = document.getElementById('proto-select').value;
+      const goal = document.getElementById('change-goal').value.trim();
+      return `请使用伏羲平台继续下面的原型修改任务。\n\n项目：天工建模平台\n项目 ID：project-tiangong\n目标原型：${prototypeName}\n修改需求：${goal}\n任务交接码：FX-DEMO-7M2K9Q\n\n开始前请先通过伏羲 MCP 兑换任务交接码，并读取该项目、原型和主版本的最新上下文，不要把本提示词中的状态当作最新事实。按照项目规范在独立工作分支完成修改，执行构建、预览、页面跳转和敏感内容检查；成功后提交修改并发起审核。不要直接写入 main，不要自动解决内容冲突，不要发布项目。完成后把进度和预览结果回传到伏羲。`;
+    }
+
+    async function copyAgentPrompt() {
+      const text = buildAgentPrompt();
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        textarea.remove();
+      }
+    }
+
+    document.getElementById('create-change').addEventListener('click', async event => {
+      await copyAgentPrompt();
+      closeModal(event.target.closest('.modal-backdrop'));
+      openModal('prompt-ready');
+    });
+    document.getElementById('copy-again').addEventListener('click', async () => {
+      await copyAgentPrompt();
+      showToast('已再次复制', '把提示词粘贴到本地 AI Agent 即可开始。');
+    });
+    document.getElementById('confirm-member').addEventListener('click', event => {
+      closeModal(event.target.closest('.modal-backdrop'));
+      showToast('赵一已加入项目', '8 个原型仓库的工作分支权限正在自动同步。');
+    });
+    document.getElementById('merge-change').addEventListener('click', event => {
+      closeModal(event.target.closest('.modal-backdrop'));
+      showView('publish');
+      showToast('修改已合并，客户中心 v2.4 已生成', '项目没有自动升级；新版本已出现在项目草稿中。');
+    });
+    document.getElementById('submit-review').addEventListener('click', event => {
+      closeModal(event.target.closest('.modal-backdrop'));
+      showToast('已提交管理员审核', '管理员将直接查看预览效果和平台检查结果。');
+    });
+    document.getElementById('notify-owner').addEventListener('click', event => {
+      closeModal(event.target.closest('.modal-backdrop'));
+      showToast('已提醒陈默', '主版本未受影响，修改会在冲突解决后自动重新检查。');
+    });
+    document.getElementById('publish-project').addEventListener('click', event => {
+      closeModal(event.target.closest('.modal-backdrop'));
+      showView('overview');
+      showToast('项目 v1.5 发布成功', '8 个原型版本已冻结为不可变项目版本。');
+    });
+
+    function showRoute(name) {
+      document.querySelectorAll('[data-route-page]').forEach(page => page.classList.toggle('active', page.dataset.routePage === name));
+      document.querySelectorAll('[data-route-tab]').forEach(tab => tab.classList.toggle('active', tab.dataset.routeTab === name));
+    }
+    document.querySelectorAll('[data-route-tab]').forEach(tab => tab.addEventListener('click', () => showRoute(tab.dataset.routeTab)));
+    document.getElementById('jump-customer').addEventListener('click', () => showRoute('customers'));
+    document.querySelector('[data-route-back]').addEventListener('click', () => showRoute('orders'));
+  </script>
+</body>
+</html>

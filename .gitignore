@@ -23,6 +23,10 @@ dist
 docs/*
 !docs/MCP_SKILLS_EVOLUTION_JOURNEY.md
 !docs/TECHNICAL_DESIGN.md
+!docs/prototypes/
+docs/prototypes/*
+!docs/prototypes/team-collaboration-mvp/
+!docs/prototypes/team-collaboration-mvp/**
 
 # Local env files
 .env
