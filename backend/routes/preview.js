@@ -4,6 +4,11 @@ const fs = require('fs');
 const { getPrototypeById, getSharedUserIds } = require('../services/db-prototypes');
 const { recordVisit } = require('../services/db-stats');
 const { requireAuth } = require('../middleware/auth');
+const { ACTIONS, AuthorizationService } = require('../services/authorization');
+const {
+  DEFAULT_CANDIDATES_ROOT,
+  getChangeById
+} = require('../services/lightweight-collaboration');
 const router = express.Router();
 
 // 检查当前登录用户是否有权访问原型
@@ -29,6 +34,52 @@ function processHtml(content, basePath) {
 
   return content;
 }
+
+function candidateDirectory(change) {
+  if (!change || !change.candidate_path) return null;
+  const candidateRoot = path.resolve(DEFAULT_CANDIDATES_ROOT);
+  const candidateDir = path.isAbsolute(change.candidate_path)
+    ? path.resolve(change.candidate_path)
+    : path.resolve(candidateRoot, change.candidate_path);
+  if (!candidateDir.startsWith(`${candidateRoot}${path.sep}`)) return null;
+  return candidateDir;
+}
+
+function canViewChange(change, user) {
+  if (!change || !user) return false;
+  return new AuthorizationService().can(user, ACTIONS.VIEW_CHANGE, {
+    type: 'change',
+    projectId: change.project_id,
+    prototypeId: change.prototype_id
+  });
+}
+
+// 轻协作候选 HTML：入口鉴权，资源沿用高熵 change ID 静态路径。
+router.get('/changes/:changeId/*.html', requireAuth, (req, res) => {
+  const change = getChangeById(req.params.changeId);
+  const candidateDir = candidateDirectory(change);
+  if (!change || change.status === 'editing' || !candidateDir) return res.status(404).send('候选不存在');
+  if (!canViewChange(change, req.user)) return res.status(403).send('无权查看该候选');
+
+  const filePath = `${req.params[0]}.html`;
+  const fullPath = path.resolve(candidateDir, filePath);
+  if (!fullPath.startsWith(`${candidateDir}${path.sep}`) || !fs.existsSync(fullPath)) {
+    return res.status(404).send('文件不存在');
+  }
+  let content = fs.readFileSync(fullPath, 'utf-8');
+  const fileDir = path.dirname(filePath).replace(/\\/g, '/');
+  const dirPart = fileDir && fileDir !== '.' ? `${fileDir}/` : '';
+  content = processHtml(content, `/preview/changes/${encodeURIComponent(change.id)}/${dirPart}`);
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(content);
+});
+
+router.use('/changes/:changeId', (req, res, next) => {
+  const change = getChangeById(req.params.changeId);
+  const candidateDir = candidateDirectory(change);
+  if (!candidateDir || !fs.existsSync(candidateDir)) return res.status(404).send('候选不存在');
+  express.static(candidateDir)(req, res, next);
+});
 
 // 历史版本预览HTML（需要认证）
 router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {

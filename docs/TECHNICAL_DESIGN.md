@@ -253,10 +253,11 @@ SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，
 
 ### 3.4 MCP 工具分组
 
-当前 MCP 共 22 个工具：
+当前 MCP 共 26 个工具：
 
 - 原型核心：`check_connection`、`list_prototypes`、`create_prototype`、`get_prototype`、`get_readme`、`get_preview_url`、`upload_zip`
 - 项目协作：`list_projects`、`get_project`、`bind_prototype_to_project`、`checkout_prototype`、`checkin_prototype`、`create_snapshot`
+- 轻协作候选：`create_change_handoff`、`redeem_change_handoff`、`get_change_status`、`submit_change_candidate`
 - 高风险操作：`restore_snapshot`、`delete_prototype`、`rollback_version`、`force_release_checkout`，均要求 `confirm: true`
 - 本地交付：`validate_project`、`validate_zip`、`pack_project`、`upload_project`、`deliver_project`
 

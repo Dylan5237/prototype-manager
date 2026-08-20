@@ -127,6 +127,9 @@ test('collaboration migration preserves legacy data and adds safe defaults', () 
   assert.equal(prototype.default_branch, 'main');
   assert.equal(version.source_kind, 'legacy_upload');
   assert.equal(version.version_label, '1.0.0');
+  const changeColumns = new Set(database.query(`PRAGMA table_info(prototype_changes)`).map(row => row.name));
+  ['base_version_number', 'candidate_path', 'candidate_entry_file', 'candidate_digest', 'adopted_version_id']
+    .forEach(column => assert.ok(changeColumns.has(column), `missing prototype_changes.${column}`));
 
   const expectedTables = [
     'agent_handoffs', 'delegated_sessions', 'prototype_changes', 'prototype_builds',
@@ -144,6 +147,10 @@ test('collaboration migration is idempotent', async () => {
     WHERE version = '20260814_collaboration_phase1'
   `);
   assert.equal(rows.length, 1);
+  assert.equal(database.queryOne(`
+    SELECT COUNT(*) AS count FROM schema_migrations
+    WHERE version = '20260820_lightweight_collaboration_mvp'
+  `).count, 1);
   assert.equal(database.queryOne(`SELECT name FROM projects WHERE id = 'project-legacy'`).name, '旧项目');
 });
 

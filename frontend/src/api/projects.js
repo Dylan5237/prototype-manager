@@ -36,6 +36,26 @@ export function removeProjectPrototype(id, ppId) {
   return api.delete(`/projects/${id}/prototypes/${ppId}`)
 }
 
+export function createPrototypeChange(id, prototypeId, data) {
+  return api.post(`/projects/${id}/prototypes/${prototypeId}/changes`, data)
+}
+
+export function getProjectChanges(id, params) {
+  return api.get(`/projects/${id}/changes`, { params })
+}
+
+export function getProjectChange(id, changeId) {
+  return api.get(`/projects/${id}/changes/${changeId}`)
+}
+
+export function adoptProjectChange(id, changeId) {
+  return api.post(`/projects/${id}/changes/${changeId}/adopt`)
+}
+
+export function rejectProjectChange(id, changeId, data) {
+  return api.post(`/projects/${id}/changes/${changeId}/reject`, data)
+}
+
 export function getProjectMembers(id) {
   return api.get(`/projects/${id}/members`)
 }

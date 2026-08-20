@@ -202,7 +202,10 @@ async function main() {
     const initialized = await mcp.send('initialize', { protocolVersion: '2024-11-05' });
     assert.equal(initialized.result.serverInfo.name, 'fuxi-platform-mcp-server');
     const listedTools = await mcp.send('tools/list');
-    assert.equal(listedTools.result.tools.length, 22);
+    assert.equal(listedTools.result.tools.length, 26);
+    for (const toolName of ['create_change_handoff', 'redeem_change_handoff', 'get_change_status', 'submit_change_candidate']) {
+      assert(listedTools.result.tools.some(tool => tool.name === toolName), `missing ${toolName}`);
+    }
 
     const health = await callTool(mcp, 'check_connection');
     assert.equal(health.body.health.status, 'ok');
@@ -502,6 +505,79 @@ async function main() {
     assert.equal(projectWithBinding.body.data.prototypes.length, 1);
     const projectPrototypeId = projectWithBinding.body.data.prototypes[0].id;
 
+    // 无 Git 轻协作闭环：一次性任务 -> 候选上传 -> 独立预览 -> 人工采用。
+    const lightweightPrototype = await callTool(mcp, 'create_prototype', {
+      name: 'MCP lightweight collaboration fixture',
+      description: 'Candidate adoption must be explicit'
+    });
+    const lightweightPrototypeId = lightweightPrototype.body.data.id;
+    await callTool(mcp, 'upload_zip', {
+      prototypeId: lightweightPrototypeId,
+      zipPath,
+      versionNote: 'Lightweight base upload'
+    });
+    await callTool(mcp, 'bind_prototype_to_project', {
+      projectId: project.data.id,
+      prototypeId: lightweightPrototypeId,
+      menuPath: '/mcp/lightweight'
+    });
+    const handoff = await callTool(mcp, 'create_change_handoff', {
+      projectId: project.data.id,
+      prototypeId: lightweightPrototypeId,
+      title: '候选版本修改',
+      requirement: '将页面标题和正文更新为候选版本，但不要直接采用'
+    });
+    assert(handoff.body.handoffCode.startsWith('FX-'));
+    assert.equal(handoff.body.baseVersion, 0);
+    const redeemedHandoff = await callTool(mcp, 'redeem_change_handoff', {
+      handoffCode: handoff.body.handoffCode
+    });
+    assert.equal(redeemedHandoff.body.changeId, handoff.body.changeId);
+    assert.equal(redeemedHandoff.body.prototypeId, lightweightPrototypeId);
+    assert.equal(redeemedHandoff.body.baseVersion, 0);
+    assert(redeemedHandoff.body.sourceDownloadUrl.includes(`/api/prototypes/${lightweightPrototypeId}/download`));
+    const reusedHandoffResponse = await mcp.send('tools/call', {
+      name: 'redeem_change_handoff',
+      arguments: { handoffCode: handoff.body.handoffCode }
+    });
+    const reusedHandoff = parseTool(reusedHandoffResponse);
+    assert.equal(reusedHandoff.result.isError, true);
+    assert.equal(reusedHandoff.body.error.code, 'HANDOFF_ALREADY_REDEEMED');
+
+    const submittedCandidate = await callTool(mcp, 'submit_change_candidate', {
+      projectId: project.data.id,
+      changeId: handoff.body.changeId,
+      zipPath: secondZipPath
+    });
+    assert.equal(submittedCandidate.body.status, 'ready');
+    assert.equal(submittedCandidate.body.candidateEntryFile, 'index.html');
+    const readyStatus = await callTool(mcp, 'get_change_status', {
+      projectId: project.data.id,
+      changeId: handoff.body.changeId
+    });
+    assert.equal(readyStatus.body.status, 'ready');
+    assert.equal(readyStatus.body.currentVersion, 0);
+    const candidatePreviewResponse = await fetch(
+      `${apiUrl}${readyStatus.body.candidatePreviewPath}?token=${encodeURIComponent(login.data.token)}`
+    );
+    assert.equal(candidatePreviewResponse.status, 200);
+    assert.match(await candidatePreviewResponse.text(), /MCP integration v2/);
+
+    const adoptResponse = await fetch(`${apiUrl}/api/projects/${project.data.id}/changes/${handoff.body.changeId}/adopt`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const adoptedCandidate = await adoptResponse.json();
+    assert.equal(adoptResponse.status, 200);
+    assert.equal(adoptedCandidate.data.change.status, 'adopted');
+    assert.equal(adoptedCandidate.data.version.version_number, 1);
+    const adoptedStatus = await callTool(mcp, 'get_change_status', {
+      projectId: project.data.id,
+      changeId: handoff.body.changeId
+    });
+    assert.equal(adoptedStatus.body.status, 'adopted');
+    assert.equal(adoptedStatus.body.currentVersion, 1);
+
     const checkedOut = await callTool(mcp, 'checkout_prototype', {
       projectId: project.data.id,
       projectPrototypeId,
@@ -793,6 +869,7 @@ async function main() {
       sessionRevoke: 'verified',
       projectReads: 'verified',
       collaboration: 'verified',
+      lightweightCollaboration: 'verified',
       structuredErrors: ['FILE_NOT_FOUND', 'AUTHENTICATION_FAILED'],
       isolation: tempRoot
     }, null, 2));

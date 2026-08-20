@@ -1,4 +1,5 @@
 const COLLABORATION_SCHEMA_VERSION = '20260814_collaboration_phase1';
+const LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION = '20260820_lightweight_collaboration_mvp';
 
 function now() {
   return new Date().toISOString();
@@ -115,6 +116,17 @@ function applyCollaborationSchema(db) {
     )
   `);
 
+  ensureColumn(db, 'prototype_changes', 'base_version_number', 'INTEGER');
+  ensureColumn(db, 'prototype_changes', 'candidate_path', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'candidate_entry_file', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'candidate_digest', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'candidate_size_kb', 'INTEGER');
+  ensureColumn(db, 'prototype_changes', 'submitted_at', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'reviewed_by', 'INTEGER');
+  ensureColumn(db, 'prototype_changes', 'review_note', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'reviewed_at', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'adopted_version_id', 'INTEGER');
+
   db.run(`
     CREATE TABLE IF NOT EXISTS prototype_builds (
       id TEXT PRIMARY KEY,
@@ -218,6 +230,7 @@ function applyCollaborationSchema(db) {
     WHERE repo_external_id IS NOT NULL
   `);
   db.run(`CREATE INDEX IF NOT EXISTS idx_changes_project_status ON prototype_changes(project_id, status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_changes_prototype_status ON prototype_changes(prototype_id, status, updated_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_builds_change ON prototype_builds(change_id)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_audit_resource ON audit_events(resource_type, resource_id, created_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_webhook_status ON webhook_events(status, received_at)`);
@@ -226,10 +239,15 @@ function applyCollaborationSchema(db) {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
     VALUES (?, ?)
   `, [COLLABORATION_SCHEMA_VERSION, now()]);
+  db.run(`
+    INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+    VALUES (?, ?)
+  `, [LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION, now()]);
 }
 
 module.exports = {
   COLLABORATION_SCHEMA_VERSION,
+  LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION,
   applyCollaborationSchema,
   getColumns
 };

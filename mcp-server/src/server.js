@@ -140,6 +140,58 @@ const tools = [
     }
   },
   {
+    name: 'create_change_handoff',
+    description: 'Create a lightweight Fuxi collaboration task for one project prototype. Returns a one-time handoff prompt; it does not change the current prototype.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'prototypeId', 'requirement'],
+      properties: {
+        projectId: { type: 'string' },
+        prototypeId: { type: 'string' },
+        title: { type: 'string' },
+        requirement: { type: 'string', minLength: 1, maxLength: 4000 }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'redeem_change_handoff',
+    description: 'Redeem a one-time lightweight collaboration task code and read the authoritative base version and source download path.',
+    inputSchema: {
+      type: 'object',
+      required: ['handoffCode'],
+      properties: { handoffCode: { type: 'string' } },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_change_status',
+    description: 'Read one lightweight collaboration change, including its base/current version, candidate status, and preview path.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'changeId'],
+      properties: {
+        projectId: { type: 'string' },
+        changeId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'submit_change_candidate',
+    description: 'Validate and upload a ZIP as a reviewable candidate for a redeemed task. This never changes the current prototype; a project owner/admin must adopt it in Fuxi.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'changeId', 'zipPath'],
+      properties: {
+        projectId: { type: 'string' },
+        changeId: { type: 'string' },
+        zipPath: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
     name: 'bind_prototype_to_project',
     description: 'Bind an existing prototype into a project menu as a new project-prototype entry.',
     inputSchema: {
@@ -901,6 +953,90 @@ async function callTool(name, args) {
   if (name === 'get_project') {
     const project = await authed(`/api/projects/${encodeURIComponent(args.projectId)}`);
     return contentJson(withFields(project, projectFields(project.data)));
+  }
+
+  if (name === 'create_change_handoff') {
+    const created = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes/${encodeURIComponent(args.prototypeId)}/changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: args.title || '',
+        requirement: args.requirement
+      })
+    });
+    return contentJson({
+      ...created,
+      changeId: created.data.change.id,
+      prototypeId: created.data.change.prototype_id,
+      projectId: created.data.change.project_id,
+      baseVersion: created.data.change.base_version_number,
+      handoffCode: created.data.handoffCode,
+      prompt: created.data.prompt,
+      expiresAt: created.data.expiresAt
+    });
+  }
+
+  if (name === 'redeem_change_handoff') {
+    const redeemed = await authed('/api/projects/handoffs/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handoffCode: args.handoffCode })
+    });
+    const change = redeemed.data.change;
+    return contentJson({
+      ...redeemed,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      projectId: change.project_id,
+      requirement: change.requirement,
+      baseVersion: change.base_version_number,
+      sourceDownloadUrl: new URL(redeemed.data.sourceDownloadPath, `${API_URL}/`).toString(),
+      nextAction: 'Download the source, build a Fuxi-compatible ZIP, then call submit_change_candidate.'
+    });
+  }
+
+  if (name === 'get_change_status') {
+    const status = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/changes/${encodeURIComponent(args.changeId)}`);
+    const change = status.data;
+    return contentJson({
+      ...status,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      projectId: change.project_id,
+      status: change.status,
+      baseVersion: change.base_version_number,
+      currentVersion: change.current_version_number,
+      candidateEntryFile: change.candidate_entry_file,
+      candidatePreviewPath: change.preview_path
+    });
+  }
+
+  if (name === 'submit_change_candidate') {
+    const zipPath = path.resolve(args.zipPath);
+    if (!fs.existsSync(zipPath)) {
+      throw new ToolError('FILE_NOT_FOUND', 'ZIP file not found', { fileName: path.basename(zipPath) });
+    }
+    validateZipFile(zipPath);
+    const bytes = fs.readFileSync(zipPath);
+    const form = new FormData();
+    form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    const submitted = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/changes/${encodeURIComponent(args.changeId)}/candidate`, {
+      method: 'POST',
+      body: form
+    });
+    const change = submitted.data;
+    return contentJson({
+      ...submitted,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      projectId: change.project_id,
+      status: change.status,
+      baseVersion: change.base_version_number,
+      currentVersion: change.current_version_number,
+      candidateEntryFile: change.candidate_entry_file,
+      candidatePreviewPath: change.preview_path,
+      nextAction: 'A project owner or admin must review and adopt this candidate in Fuxi.'
+    });
   }
 
   if (name === 'bind_prototype_to_project') {

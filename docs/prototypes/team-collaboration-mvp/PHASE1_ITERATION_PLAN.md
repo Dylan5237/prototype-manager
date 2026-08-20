@@ -1,5 +1,7 @@
 # 团队协同模块第一阶段迭代计划
 
+> **历史计划说明（2026-08-20）**：GitLab 真实验收不再是当前 MVP 门禁。当前实施入口已切换为 [无 Git 轻协作 MVP](../lightweight-collaboration-mvp/DESIGN_SUMMARY.md)；本文保留第一阶段底座的实现与验收记录。
+
 > 基线日期：2026-08-14<br>
 > 设计依据：[FULL_DESIGN.md](./FULL_DESIGN.md)<br>
 > 当前分支：`feature/project-collaboration`<br>

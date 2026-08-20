@@ -27,6 +27,8 @@ docs/*
 docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/
 !docs/prototypes/team-collaboration-mvp/**
+!docs/prototypes/lightweight-collaboration-mvp/
+!docs/prototypes/lightweight-collaboration-mvp/**
 
 # Local env files
 .env

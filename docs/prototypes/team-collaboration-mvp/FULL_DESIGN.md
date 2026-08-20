@@ -1,5 +1,7 @@
 # 伏羲团队协同模块全量设计
 
+> **已被替代（2026-08-20）**：Git/GitLab 不再是当前 MVP 的事实源或验收门禁。当前实施契约为 [无 Git 轻协作 MVP](../lightweight-collaboration-mvp/FULL_DESIGN.md)；本文仅作为历史决策与未来可选增强保留。
+
 > 状态：MVP 详细设计基线<br>
 > 日期：2026-08-14<br>
 > 对应交互原型：[index.html](./index.html)<br>

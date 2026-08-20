@@ -1,6 +1,8 @@
 # 团队协同 MVP 原型
 
 > 全量产品与技术设计见 [FULL_DESIGN.md](./FULL_DESIGN.md)。
+>
+> **历史方案说明（2026-08-20）**：本目录的 Git/GitLab 方案已被“候选版本 + 基础版本 CAS”的无 Git 轻协作 MVP 取代，不再是当前实施入口。当前权威设计见 [../lightweight-collaboration-mvp/DESIGN_SUMMARY.md](../lightweight-collaboration-mvp/DESIGN_SUMMARY.md)。本目录保留用于追溯已实现的第一阶段底座和被替代决策。
 
 ## 定位
 

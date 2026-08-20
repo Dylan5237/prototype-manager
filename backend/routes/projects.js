@@ -1,4 +1,6 @@
 const express = require('express');
+const multer = require('multer');
+const fs = require('fs');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const {
@@ -16,6 +18,35 @@ const {
   RepositoryProvisioningError,
   RepositoryProvisioningService
 } = require('../services/repository-provisioning');
+const { UPLOADS_DIR } = require('../services/storage');
+const {
+  LightweightCollaborationError,
+  LightweightCollaborationService
+} = require('../services/lightweight-collaboration');
+
+const candidateUpload = multer({
+  dest: UPLOADS_DIR,
+  limits: { fileSize: 100 * 1024 * 1024 },
+  fileFilter: (req, file, callback) => {
+    if (file.mimetype === 'application/zip' || file.originalname.toLowerCase().endsWith('.zip')) callback(null, true);
+    else callback(new LightweightCollaborationError('CANDIDATE_INVALID', '候选只支持 ZIP 文件'));
+  }
+});
+
+function sendLightweightError(res, error) {
+  if (error && error.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ success: false, code: 'CANDIDATE_TOO_LARGE', message: '候选 ZIP 不能超过 100 MB' });
+  }
+  if (error instanceof LightweightCollaborationError || error instanceof AuthorizationError) {
+    return res.status(error.status || (error instanceof AuthorizationError ? 403 : 400)).json({
+      success: false,
+      code: error.code,
+      message: error.message,
+      details: error.details || undefined
+    });
+  }
+  return res.status(500).json({ success: false, code: 'LIGHTWEIGHT_COLLABORATION_FAILED', message: '轻协作操作失败' });
+}
 
 // 辅助函数
 function isAdmin(req) {
@@ -74,6 +105,111 @@ function formatMenuConfig(menuConfig) {
   }
   return menuConfig || { items: [] };
 }
+
+// =================== 轻协作 MVP API ===================
+
+router.post('/handoffs/redeem', requireAuth, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const result = service.redeemHandoff({ actor: req.user, handoffCode: req.body.handoffCode });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
+router.get('/:id/changes', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const changes = service.listChanges({
+      actor: req.user,
+      projectId: req.params.id,
+      prototypeId: req.query.prototypeId,
+      status: req.query.status
+    });
+    res.json({ success: true, data: changes });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
+router.post('/:id/prototypes/:prototypeId/changes', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const result = service.createChange({
+      actor: req.user,
+      projectId: req.params.id,
+      prototypeId: req.params.prototypeId,
+      title: req.body.title,
+      requirement: req.body.requirement
+    });
+    res.status(201).json({ success: true, data: result });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
+router.get('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const change = service.getChange({ actor: req.user, projectId: req.params.id, changeId: req.params.changeId });
+    res.json({ success: true, data: change });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
+router.post(
+  '/:id/changes/:changeId/candidate',
+  requireAuth,
+  requireProjectAccess,
+  (req, res, next) => candidateUpload.single('file')(req, res, error => {
+    if (error) sendLightweightError(res, error);
+    else next();
+  }),
+  (req, res) => {
+    try {
+      if (!req.file) throw new LightweightCollaborationError('CANDIDATE_FILE_MISSING', '没有上传候选 ZIP');
+      const service = new LightweightCollaborationService();
+      const change = service.submitCandidate({
+        actor: req.user,
+        projectId: req.params.id,
+        changeId: req.params.changeId,
+        zipPath: req.file.path
+      });
+      res.json({ success: true, data: change });
+    } catch (error) {
+      sendLightweightError(res, error);
+    } finally {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    }
+  }
+);
+
+router.post('/:id/changes/:changeId/adopt', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const result = service.adoptChange({ actor: req.user, projectId: req.params.id, changeId: req.params.changeId });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
+router.post('/:id/changes/:changeId/reject', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const change = service.rejectChange({
+      actor: req.user,
+      projectId: req.params.id,
+      changeId: req.params.changeId,
+      note: req.body.note
+    });
+    res.json({ success: true, data: change });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
 
 // =================== 项目基础 API ===================
 

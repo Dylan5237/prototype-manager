@@ -147,7 +147,7 @@ MCP Host 需要配置环境变量：
 | `FUXI_TOKEN` | 平台生成的短期 MCP token（`/api/auth/mcp-token`），优先使用 | 无 |
 | `FUXI_USERNAME` / `FUXI_PASSWORD` | 无 token 时自动登录 | 无 |
 
-当前 MCP 提供 22 个工具，覆盖连接检查、原型与项目读取、协作锁、快照/回滚、校验/打包，以及带幂等、乐观版本和回读确认的 `deliver_project` 安全交付。
+当前 MCP 提供 26 个工具，覆盖连接检查、原型与项目读取、轻协作任务/候选提交、协作锁、快照/回滚、校验/打包，以及带幂等、乐观版本和回读确认的 `deliver_project` 安全交付。
 
 登录平台后，点击首页“接入平台MCP”按钮即可复制一段短期提示词。AI 助手会按自身客户端的原生机制安装单一 `fuxi-skyui-prototype` Skill、下载并配置伏羲 MCP，再调用 `check_connection` 验证连接；用户无需手工编辑配置或提供长期账号密码。
 
