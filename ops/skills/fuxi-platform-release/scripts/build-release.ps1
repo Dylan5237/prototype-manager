@@ -1,12 +1,17 @@
 <#
 .SYNOPSIS
 Builds an immutable Fuxi release archive from two clean committed repositories.
+
+Use -Lightweight for the isolated 16077 test loop. It still builds the frontend
+and packages a checksumed immutable archive, but leaves full MCP integration
+verification to the user's manual test. Production releases must omit this flag.
 #>
 [CmdletBinding()]
 param(
   [string]$PlatformRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path,
   [Parameter(Mandatory)][string]$SkillsRepositoryRoot,
-  [string]$OutputDirectory = (Join-Path $PlatformRoot '.release')
+  [string]$OutputDirectory = (Join-Path $PlatformRoot '.release'),
+  [switch]$Lightweight
 )
 $ErrorActionPreference = 'Stop'
 function Invoke-Checked([string]$File, [string[]]$Arguments, [string]$WorkingDirectory) {
@@ -30,8 +35,10 @@ if (-not (Test-Path (Join-Path $SkillsRepositoryRoot 'fuxi-skyui-prototype\SKILL
   throw 'Skills repository does not contain fuxi-skyui-prototype/SKILL.md.'
 }
 Invoke-Checked npm @('run','build') (Join-Path $PlatformRoot 'frontend')
-Invoke-Checked npm @('run','check') (Join-Path $PlatformRoot 'mcp-server')
-Invoke-Checked npm @('run','test:integration') (Join-Path $PlatformRoot 'mcp-server')
+if (-not $Lightweight) {
+  Invoke-Checked npm @('run','check') (Join-Path $PlatformRoot 'mcp-server')
+  Invoke-Checked npm @('run','test:integration') (Join-Path $PlatformRoot 'mcp-server')
+}
 Assert-Clean $PlatformRoot 'Platform after verification'
 Assert-Clean $SkillsRepositoryRoot 'Skills after verification'
 
@@ -61,7 +68,8 @@ try {
     skillCommit = $skillCommit
     platformBranch = (& git -c 'core.excludesFile=' -C $PlatformRoot branch --show-current).Trim()
     skillBranch = (& git -c 'core.excludesFile=' -C $SkillsRepositoryRoot branch --show-current).Trim()
-    verification = 'frontend-build+mcp-check+mcp-integration'
+    releaseProfile = if ($Lightweight) { 'test-lightweight' } else { 'full' }
+    verification = if ($Lightweight) { 'frontend-build+package-checksum+manual-test' } else { 'frontend-build+mcp-check+mcp-integration' }
     persistentPaths = @('backend/data','backend/repos','backend/uploads','backend/.env')
   }
   [IO.File]::WriteAllText((Join-Path $stage 'manifest.json'), ($manifest | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))

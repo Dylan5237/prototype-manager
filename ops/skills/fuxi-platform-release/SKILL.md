@@ -24,18 +24,19 @@ Operate the maintainer-only release workflow for Fuxi Platform. Preserve every e
 1. Read [production-topology.md](references/production-topology.md) before any production operation.
 2. For inspection, run `scripts/probe-production.ps1`. It must remain read-only.
 3. For a candidate release, ensure both repositories are clean and all intended changes are committed. Run `scripts/build-release.ps1`.
-4. Deploy the candidate to the isolated `16077` test environment first with `scripts/deploy-test.ps1` (use `-InitData` on first install). Verify the new behavior there before touching production.
-5. After test verification, run `scripts/capture-production-baseline.ps1` with authenticated platform credentials. Baselines older than one hour are rejected.
-6. Review the manifest, checksums, commits, baseline, and verification evidence with the user.
-7. After explicit production approval, run `scripts/deploy-release.ps1`. It uploads the immutable archive and baseline, then invokes the bundled guarded server deploy script.
-8. Run `scripts/verify-production-release.ps1`, then complete the new-only checks from [acceptance-contract.md](references/acceptance-contract.md). Keep the release pending if any evidence is missing.
-9. If a deployment or acceptance step fails, run `scripts/rollback-release.ps1` only after explicit rollback approval. Restore data when the new backend may have written or migrated it.
+4. For the normal 16077 loop, use `scripts/build-release.ps1 -Lightweight`: it still builds the frontend, creates an immutable archive/checksum, and preserves remote backup/health gates, but leaves full MCP integration verification to the user's manual test. Use the full command when preparing a production candidate.
+5. Deploy the candidate to the isolated `16077` test environment with `scripts/deploy-test.ps1` (use `-InitData` on first install). Verify the new behavior there before touching production.
+6. After test verification, run `scripts/capture-production-baseline.ps1` with authenticated platform credentials. Baselines older than one hour are rejected.
+7. Review the manifest, checksums, commits, baseline, and verification evidence with the user.
+8. After explicit production approval, run `scripts/deploy-release.ps1`. It uploads the immutable archive and baseline, then invokes the bundled guarded server deploy script.
+9. Run `scripts/verify-production-release.ps1`, then complete the new-only checks from [acceptance-contract.md](references/acceptance-contract.md). Keep the release pending if any evidence is missing.
+10. If a deployment or acceptance step fails, run `scripts/rollback-release.ps1` only after explicit rollback approval. Restore data when the new backend may have written or migrated it.
 
 ## Script contract
 
 All PowerShell scripts expose help with `Get-Help <script> -Detailed` and fail closed.
 
-- `build-release.ps1`: run local verification, build frontend, archive committed platform and Skill sources, and emit SHA-256 manifest.
+- `build-release.ps1`: by default run full local verification; with `-Lightweight`, build the frontend only, archive committed platform and Skill sources, and emit a manifest that records manual test as the remaining acceptance gate.
 - `probe-production.ps1`: execute bundled read-only Bash probe over pinned PuTTY SSH.
 - `capture-production-baseline.ps1`: save authenticated prototype metadata and project bindings without production writes.
 - `deploy-release.ps1`: require `-ConfirmProductionDeploy DEPLOY_FUXI_PRODUCTION`, upload archive/scripts, and execute backup/install/switch/health checks.
