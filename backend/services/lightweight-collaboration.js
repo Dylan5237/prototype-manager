@@ -3,8 +3,9 @@ const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const { query, queryOne, runInTransaction } = require('../database/db');
-const { ACTIONS, AuthorizationService, normalizeRoles } = require('./authorization');
+const { ACTIONS, AuthorizationError, AuthorizationService, normalizeRoles } = require('./authorization');
 const { getPrototypeById, createVersion, getLatestVersionNumber, updatePrototype } = require('./db-prototypes');
+const { getProjectById } = require('./db-projects');
 const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb } = require('./storage');
 
 const DEFAULT_CANDIDATES_ROOT = path.join(UPLOADS_DIR, 'collaboration-candidates');
@@ -103,14 +104,65 @@ function decorateChange(row) {
   };
 }
 
+function getChangeContext(change) {
+  const project = getProjectById(change.project_id);
+  const prototype = getPrototypeById(change.prototype_id);
+  const binding = queryOne(`
+    SELECT menu_path FROM project_prototypes
+    WHERE project_id = ? AND prototype_id = ?
+    LIMIT 1
+  `, [change.project_id, change.prototype_id]);
+  return { project, prototype, binding };
+}
+
+function buildPrompt({ change, handoffCode, expiresAt }) {
+  const { project, prototype, binding } = getChangeContext(change);
+  const projectName = project && project.name ? project.name : change.project_id;
+  const prototypeName = prototype && prototype.name ? prototype.name : change.prototype_id;
+  const menuPath = binding && binding.menu_path ? binding.menu_path : '未设置';
+  return [
+    '你是伏羲原型修改 Agent。请严格按下面的任务完成一次“候选版本”交付。',
+    '',
+    '【任务上下文】',
+    `- 项目：${projectName}（${change.project_id}）`,
+    `- 原型：${prototypeName}（${change.prototype_id}）`,
+    `- 菜单路径：${menuPath}`,
+    `- 任务 ID：${change.id}`,
+    `- 基础版本：v${change.base_version_number}`,
+    `- 任务码：${handoffCode}`,
+    `- 任务码有效期：${expiresAt}`,
+    '',
+    '【必须执行的步骤】',
+    '1. 调用 redeem_change_handoff，参数 handoffCode 使用上面的任务码。',
+    '2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。',
+    '3. 在源码基础上实现“修改要求”，先本地检查入口、相对路径和主要交互。',
+    '4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。',
+    '5. 上传成功后调用 get_change_status 确认状态为 ready；候选会进入伏羲页面等待负责人预览和采纳。',
+    '',
+    '【交付约束】',
+    '- 这是候选版本，绝对不要直接覆盖正式版本，也不要调用正式版本上传接口。',
+    '- ZIP 必须包含可预览入口 index.html 或系统识别的 HTML 入口，路径使用相对路径。',
+    '- ZIP 不得包含 .git、versions、node_modules 或绝对路径；不要把凭证、密码、长期 token 写入产物。',
+    '- 保持未涉及页面和交互不变；如果需求存在歧义，优先保留现有行为并在完成说明中指出。',
+    '',
+    '【修改要求】',
+    change.requirement,
+    '',
+    '【完成说明】',
+    '上传候选后，请返回：已领取任务、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。'
+  ].join('\n');
+}
+
 function getChangeById(changeId) {
   return decorateChange(queryOne(`
     SELECT c.*, creator.username AS creator_username, creator.nickname AS creator_name,
       reviewer.nickname AS reviewer_name,
+      handoff.status AS handoff_status, handoff.expires_at AS handoff_expires_at,
       (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = c.prototype_id) AS current_version_number
     FROM prototype_changes c
     LEFT JOIN users creator ON creator.id = c.created_by
     LEFT JOIN users reviewer ON reviewer.id = c.reviewed_by
+    LEFT JOIN agent_handoffs handoff ON handoff.id = c.handoff_id
     WHERE c.id = ?
   `, [changeId]));
 }
@@ -123,10 +175,12 @@ function listChanges(projectId, { prototypeId, status } = {}) {
   return query(`
     SELECT c.*, p.name AS prototype_name, creator.username AS creator_username,
       creator.nickname AS creator_name,
+      handoff.status AS handoff_status, handoff.expires_at AS handoff_expires_at,
       (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = c.prototype_id) AS current_version_number
     FROM prototype_changes c
     JOIN prototypes p ON p.id = c.prototype_id
     LEFT JOIN users creator ON creator.id = c.created_by
+    LEFT JOIN agent_handoffs handoff ON handoff.id = c.handoff_id
     WHERE ${clauses.join(' AND ')}
     ORDER BY c.updated_at DESC
   `, params).map(decorateChange);
@@ -143,6 +197,16 @@ class LightweightCollaborationService {
     this.candidatesRoot = path.resolve(candidatesRoot);
     this.reposRoot = path.resolve(reposRoot);
     this.clock = clock;
+  }
+
+  assertCanManageTask(actor, action, change) {
+    this.authorization.assertCan(actor, action, {
+      type: 'change', projectId: change.project_id, prototypeId: change.prototype_id
+    });
+    const project = getProjectById(change.project_id);
+    if (!isPlatformAdmin(actor) && (!project || Number(project.created_by) !== Number(actor.id)) && Number(change.created_by) !== Number(actor.id)) {
+      throw new AuthorizationError(action, { type: 'change' });
+    }
   }
 
   createChange({ actor, projectId, prototypeId, title, requirement }) {
@@ -191,12 +255,88 @@ class LightweightCollaborationService {
       });
     });
 
+    const change = getChangeById(changeId);
     return {
-      change: getChangeById(changeId),
+      change,
       handoffCode,
       expiresAt,
-      prompt: `请在伏羲领取并完成修改任务。任务码：${handoffCode}。完成后上传为候选版本，不要直接采用。`
+      prompt: buildPrompt({ change, handoffCode, expiresAt })
     };
+  }
+
+  updateChange({ actor, projectId, changeId, title, requirement }) {
+    const change = this.getChange({ actor, projectId, changeId });
+    this.assertCanManageTask(actor, ACTIONS.EDIT_CHANGE, change);
+    if (change.status !== 'editing') {
+      throw new LightweightCollaborationError('CHANGE_NOT_EDITABLE', '任务已领取或已结束，不能再修改', 409);
+    }
+    if (change.handoff_status === 'redeemed') {
+      throw new LightweightCollaborationError('CHANGE_ALREADY_REDEEMED', '任务已被 AI 领取，不能再修改', 409);
+    }
+    const cleanRequirement = String(requirement || '').trim();
+    if (!cleanRequirement || cleanRequirement.length > MAX_REQUIREMENT_LENGTH) {
+      throw new LightweightCollaborationError('INVALID_REQUIREMENT', '修改目标不能为空且不能超过 4000 字');
+    }
+    const cleanTitle = String(title || cleanRequirement).trim().slice(0, 120);
+    const updatedAt = this.clock().toISOString();
+    const expiresAt = new Date(this.clock().getTime() + HANDOFF_TTL_MS).toISOString();
+    const handoffCode = `FX-${crypto.randomBytes(18).toString('base64url')}`;
+    runInTransaction(db => {
+      const handoff = queryOne('SELECT status FROM agent_handoffs WHERE id = ?', [change.handoff_id]);
+      if (!handoff || handoff.status === 'redeemed') {
+        throw new LightweightCollaborationError('CHANGE_ALREADY_REDEEMED', '任务已被 AI 领取，不能再修改', 409);
+      }
+      db.run(`
+        UPDATE agent_handoffs
+        SET code_hash = ?, requirement = ?, status = 'created', expires_at = ?,
+            redeemed_at = NULL, created_at = ?
+        WHERE id = ?
+      `, [hashValue(handoffCode), cleanRequirement, expiresAt, updatedAt, change.handoff_id]);
+      db.run(`
+        UPDATE prototype_changes
+        SET title = ?, requirement = ?, updated_at = ?
+        WHERE id = ? AND status = 'editing'
+      `, [cleanTitle, cleanRequirement, updatedAt, changeId]);
+      insertAudit(db, {
+        actorUserId: actor.id,
+        action: 'change.updated',
+        resourceId: changeId,
+        metadata: { projectId, prototypeId: change.prototype_id, baseVersion: change.base_version_number }
+      });
+    });
+    const updated = getChangeById(changeId);
+    return {
+      change: updated,
+      handoffCode,
+      expiresAt,
+      prompt: buildPrompt({ change: updated, handoffCode, expiresAt })
+    };
+  }
+
+  cancelChange({ actor, projectId, changeId }) {
+    const change = this.getChange({ actor, projectId, changeId });
+    this.assertCanManageTask(actor, ACTIONS.DELETE_CHANGE, change);
+    if (change.status !== 'editing') {
+      throw new LightweightCollaborationError('CHANGE_NOT_CANCELLABLE', '只有未完成任务可以删除', 409);
+    }
+    if (change.handoff_status === 'redeemed') {
+      throw new LightweightCollaborationError('CHANGE_ALREADY_REDEEMED', '任务已被 AI 领取，不能删除', 409);
+    }
+    runInTransaction(db => {
+      db.run(`
+        UPDATE prototype_changes
+        SET status = 'cancelled', closed_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'editing'
+      `, [now(), now(), changeId]);
+      db.run("UPDATE agent_handoffs SET status = 'revoked' WHERE id = ? AND status <> 'redeemed'", [change.handoff_id]);
+      insertAudit(db, {
+        actorUserId: actor.id,
+        action: 'change.cancelled',
+        resourceId: changeId,
+        metadata: { projectId, prototypeId: change.prototype_id, baseVersion: change.base_version_number }
+      });
+    });
+    return getChangeById(changeId);
   }
 
   redeemHandoff({ actor, handoffCode }) {

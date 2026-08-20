@@ -159,6 +159,36 @@ router.get('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, re
   }
 });
 
+router.patch('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const result = service.updateChange({
+      actor: req.user,
+      projectId: req.params.id,
+      changeId: req.params.changeId,
+      title: req.body.title,
+      requirement: req.body.requirement
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
+router.delete('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const change = service.cancelChange({
+      actor: req.user,
+      projectId: req.params.id,
+      changeId: req.params.changeId
+    });
+    res.json({ success: true, data: change });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
 router.post(
   '/:id/changes/:changeId/candidate',
   requireAuth,

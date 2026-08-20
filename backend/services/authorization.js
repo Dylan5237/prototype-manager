@@ -6,6 +6,8 @@ const ACTIONS = Object.freeze({
   READ_SOURCE: 'source.read',
   SUBMIT_CHANGE: 'change.submit',
   VIEW_CHANGE: 'change.view',
+  EDIT_CHANGE: 'change.edit',
+  DELETE_CHANGE: 'change.delete',
   REVIEW_CHANGE: 'change.review',
   MERGE_CHANGE: 'change.merge',
   EDIT_DRAFT: 'project.draft.edit',
@@ -20,7 +22,9 @@ const PROJECT_MEMBER_ACTIONS = new Set([
   ACTIONS.START_CHANGE,
   ACTIONS.READ_SOURCE,
   ACTIONS.SUBMIT_CHANGE,
-  ACTIONS.VIEW_CHANGE
+  ACTIONS.VIEW_CHANGE,
+  ACTIONS.EDIT_CHANGE,
+  ACTIONS.DELETE_CHANGE
 ]);
 const LEGACY_VIEWER_ACTIONS = new Set([ACTIONS.VIEW_PROJECT, ACTIONS.VIEW_CHANGE]);
 const AGENT_ALLOWED_ACTIONS = new Set([

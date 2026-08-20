@@ -117,6 +117,60 @@ test('one-time handoff creates a ready candidate without changing the current pr
   );
 });
 
+test('task prompt is complete and editing rotates the handoff before redemption', () => {
+  const created = service.createChange({
+    actor: editor,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    title: '原任务标题',
+    requirement: '原任务要求'
+  });
+  assert.match(created.prompt, /redeem_change_handoff/);
+  assert.match(created.prompt, /submit_change_candidate/);
+  assert.match(created.prompt, /原任务要求/);
+  assert.match(created.prompt, new RegExp(created.handoffCode));
+  const updated = service.updateChange({
+    actor: editor,
+    projectId: 'project-1',
+    changeId: created.change.id,
+    title: '新任务标题',
+    requirement: '新任务要求'
+  });
+  assert.notEqual(updated.handoffCode, created.handoffCode);
+  assert.equal(updated.change.title, '新任务标题');
+  assert.equal(updated.change.requirement, '新任务要求');
+  assert.match(updated.prompt, /新任务要求/);
+  assert.match(updated.prompt, new RegExp(updated.handoffCode));
+  assert.throws(
+    () => service.redeemHandoff({ actor: editor, handoffCode: created.handoffCode }),
+    error => error.code === 'HANDOFF_NOT_ACTIVE' || error.code === 'HANDOFF_NOT_FOUND'
+  );
+  const redeemed = service.redeemHandoff({ actor: editor, handoffCode: updated.handoffCode });
+  assert.equal(redeemed.change.requirement, '新任务要求');
+  assert.throws(
+    () => service.updateChange({ actor: editor, projectId: 'project-1', changeId: created.change.id, requirement: '不应更新' }),
+    error => error.code === 'CHANGE_ALREADY_REDEEMED' || error.code === 'CHANGE_NOT_EDITABLE'
+  );
+});
+
+test('task manager cancellation revokes an unredeemed task without changing the prototype', () => {
+  const created = service.createChange({
+    actor: editor,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    requirement: '准备删除的任务'
+  });
+  const cancelled = service.cancelChange({ actor: editor, projectId: 'project-1', changeId: created.change.id });
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.handoff_status, 'revoked');
+  assert.equal(database.queryOne('SELECT status FROM agent_handoffs WHERE id = ?', [created.change.handoff_id]).status, 'revoked');
+  assert.throws(
+    () => service.redeemHandoff({ actor: editor, handoffCode: created.handoffCode }),
+    error => error.code === 'HANDOFF_NOT_ACTIVE'
+  );
+  assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /base/);
+});
+
 test('expired handoff is persisted as expired and cannot reveal task context', () => {
   let clockMs = Date.parse('2026-08-20T00:00:00.000Z');
   const expiringService = new LightweightCollaborationService({

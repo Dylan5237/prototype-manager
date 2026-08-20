@@ -48,6 +48,14 @@ export function getProjectChange(id, changeId) {
   return api.get(`/projects/${id}/changes/${changeId}`)
 }
 
+export function updateProjectChange(id, changeId, data) {
+  return api.patch(`/projects/${id}/changes/${changeId}`, data)
+}
+
+export function deleteProjectChange(id, changeId) {
+  return api.delete(`/projects/${id}/changes/${changeId}`)
+}
+
 export function adoptProjectChange(id, changeId) {
   return api.post(`/projects/${id}/changes/${changeId}/adopt`)
 }

@@ -89,8 +89,8 @@
               <el-button v-if="canManage && pendingReadyCount" type="warning" size="small" @click="openChangesDialog">
                 待确认 {{ pendingReadyCount }}
               </el-button>
-              <el-button v-if="canEdit && changes.length" text size="small" @click="openChangesDialog">
-                修改记录
+              <el-button v-if="canEdit" text size="small" @click="openChangesDialog">
+                任务管理器
               </el-button>
               <el-button v-if="canEdit" type="primary" size="small" @click="openChangeRequest">
                 让 AI 修改
@@ -101,9 +101,18 @@
               </el-button>
             </div>
           </div>
-          <div class="preview-frame-wrapper">
-            <iframe v-if="previewUrl" :src="previewUrl" class="preview-frame" frameborder="0"></iframe>
+          <div class="preview-boundary">
+            <div class="preview-boundary-bar">
+              <div class="preview-boundary-brand">
+                <span class="fuxi-chip">伏羲平台</span>
+                <span>项目门户</span>
+              </div>
+              <span class="preview-boundary-note">以下区域为原型内容 · 当前正式版本 v{{ currentBinding.version_label || currentBinding.version_number }}</span>
+            </div>
+            <div class="preview-frame-wrapper">
+            <iframe v-if="previewUrl" :key="previewUrl" :src="previewUrl" class="preview-frame" frameborder="0"></iframe>
             <el-empty v-else description="原型没有可预览的入口文件" />
+            </div>
           </div>
         </div>
       </div>
@@ -116,10 +125,17 @@
       @saved="loadProject"
     />
 
-    <el-dialog v-model="changeRequestVisible" title="让 AI 修改" width="620px" destroy-on-close>
+    <el-dialog v-model="changeRequestVisible" :title="editingChangeId ? '修改 AI 任务' : '让 AI 修改'" width="620px" destroy-on-close>
       <template v-if="!changeTaskResult">
-        <p class="dialog-tip">描述想看到的结果。Agent 会基于当前正式版本生成独立候选，不会直接覆盖原型。</p>
+        <p class="dialog-tip">描述想看到的结果。Agent 会基于当前正式版本生成独立候选，不会直接覆盖原型。任务被 AI 领取前可以修改或删除。</p>
         <el-form label-position="top">
+          <el-form-item label="任务标题">
+            <el-input
+              v-model="changeTitle"
+              maxlength="120"
+              placeholder="例如：客户列表增加跟进筛选"
+            />
+          </el-form-item>
           <el-form-item label="修改目标">
             <el-input
               v-model="changeRequirement"
@@ -134,21 +150,26 @@
       </template>
       <template v-else>
         <el-alert title="任务已生成" type="success" :closable="false" show-icon>
-          <p>把下面内容发送给已经接入伏羲的 AI 助手。任务码十分钟内有效且只能使用一次。</p>
+          <p>把下面完整提示词发送给已经接入伏羲的 AI 助手。任务码十分钟内有效且只能使用一次。</p>
         </el-alert>
-        <div class="task-prompt">{{ changeTaskResult.prompt }}</div>
+        <div class="task-code-row">
+          <span>任务码</span>
+          <code>{{ changeTaskResult.handoffCode }}</code>
+        </div>
+        <pre class="task-prompt">{{ changeTaskResult.prompt }}</pre>
         <p class="dialog-tip">候选上传后仍需项目负责人采用，当前正式版本不会自动改变。</p>
       </template>
       <template #footer>
         <el-button @click="changeRequestVisible = false">{{ changeTaskResult ? '关闭' : '取消' }}</el-button>
-        <el-button v-if="changeTaskResult" type="primary" @click="copyChangePrompt">复制任务</el-button>
-        <el-button v-else type="primary" :loading="creatingChange" @click="createChangeTask">生成 AI 任务</el-button>
+        <el-button v-if="changeTaskResult" type="primary" @click="copyChangePrompt">复制完整提示词</el-button>
+        <el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">{{ editingChangeId ? '保存并重新生成提示词' : '生成 AI 任务' }}</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="changesVisible" title="候选修改" width="90%" top="5vh" destroy-on-close>
+    <el-dialog v-model="changesVisible" title="任务管理器" width="90%" top="5vh" destroy-on-close>
       <div class="changes-layout" v-loading="changesLoading">
         <div class="changes-list">
+          <div class="task-manager-hint">这里记录本项目的 AI 修改任务。任务被领取前可编辑或删除，领取后进入候选审核流程。</div>
           <button
             v-for="change in changes"
             :key="change.id"
@@ -170,6 +191,11 @@
             <div>
               <h3>{{ selectedChange.title }}</h3>
               <p>{{ selectedChange.requirement }}</p>
+              <div class="change-meta">
+                <span>状态：{{ changeStatusMeta(selectedChange.status).label }}</span>
+                <span>任务码：{{ handoffStatusMeta(selectedChange).label }}</span>
+                <span>基础版本：v{{ selectedChange.base_version_number }}</span>
+              </div>
             </div>
             <el-alert
               v-if="selectedChange.status === 'stale'"
@@ -182,13 +208,30 @@
               <el-button type="danger" plain @click="rejectSelectedChange">退回</el-button>
               <el-button type="primary" :loading="reviewingChange" @click="adoptSelectedChange">采用候选</el-button>
             </div>
+            <div v-else-if="canEditTask(selectedChange)" class="review-actions">
+              <el-button plain @click="editSelectedTask">编辑任务</el-button>
+              <el-button type="danger" plain @click="deleteSelectedTask">删除任务</el-button>
+            </div>
+            <el-alert
+              v-else-if="selectedChange.status === 'editing' && selectedChange.handoff_status === 'redeemed'"
+              title="AI 已领取任务，任务内容已锁定；请等待候选上传。"
+              type="info"
+              :closable="false"
+              show-icon
+            />
           </div>
-          <iframe
-            v-if="selectedChange.preview_path"
-            :src="candidatePreviewUrl"
-            class="candidate-preview"
-            frameborder="0"
-          />
+          <div v-if="selectedChange.preview_path" class="candidate-boundary">
+            <div class="candidate-boundary-bar">
+              <span class="candidate-chip">候选版本</span>
+              <span>仅供审核预览 · 不会自动改变正式原型</span>
+            </div>
+            <iframe
+              :key="candidatePreviewUrl"
+              :src="candidatePreviewUrl"
+              class="candidate-preview"
+              frameborder="0"
+            />
+          </div>
           <el-empty v-else description="候选尚未准备好预览" />
         </div>
         <el-empty v-else class="change-detail" description="请选择一个候选" />
@@ -274,7 +317,8 @@ import {
   checkoutPrototype, checkinPrototype, releaseCheckout,
   getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
   getProjectMembers, addProjectMember, removeProjectMember,
-  createPrototypeChange, getProjectChanges, adoptProjectChange, rejectProjectChange
+  createPrototypeChange, getProjectChanges, updateProjectChange, deleteProjectChange,
+  adoptProjectChange, rejectProjectChange
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
 
@@ -312,6 +356,8 @@ const memberSearching = ref(false)
 const addingMember = ref(false)
 
 const changeRequestVisible = ref(false)
+const editingChangeId = ref(null)
+const changeTitle = ref('')
 const changeRequirement = ref('')
 const changeTaskResult = ref(null)
 const creatingChange = ref(false)
@@ -320,6 +366,7 @@ const changes = ref([])
 const changesLoading = ref(false)
 const selectedChange = ref(null)
 const reviewingChange = ref(false)
+const previewNonce = ref(0)
 
 onMounted(() => {
   loadProject()
@@ -400,7 +447,7 @@ const previewUrl = computed(() => {
   const pp = currentBinding.value
   if (!pp || !pp.entry_file) return null
   const token = authStore.token || ''
-  return `/preview/${pp.prototype_id}/${pp.entry_file}?token=${token}`
+  return `/preview/${pp.prototype_id}/${pp.entry_file}?token=${token}&refresh=${previewNonce.value}`
 })
 
 const pendingReadyCount = computed(() => changes.value.filter(change => change.status === 'ready').length)
@@ -462,6 +509,17 @@ function changeStatusMeta(status) {
   return map[status] || { label: status, type: 'info' }
 }
 
+function handoffStatusMeta(change) {
+  if (change.handoff_status === 'redeemed') return { label: '已领取' }
+  if (change.handoff_status === 'expired') return { label: '已过期，可重新生成' }
+  if (change.handoff_status === 'revoked') return { label: '已撤销' }
+  return { label: '待领取' }
+}
+
+function canEditTask(change) {
+  return Boolean(change && canEdit.value && change.status === 'editing' && change.handoff_status !== 'redeemed')
+}
+
 async function loadChanges() {
   const prototypeId = currentBinding.value?.prototype_id
   if (!prototypeId) {
@@ -483,22 +541,36 @@ async function loadChanges() {
 }
 
 function openChangeRequest() {
+  editingChangeId.value = null
+  changeTitle.value = ''
   changeRequirement.value = ''
   changeTaskResult.value = null
   changeRequestVisible.value = true
 }
 
-async function createChangeTask() {
+function editSelectedTask() {
+  if (!canEditTask(selectedChange.value)) return
+  editingChangeId.value = selectedChange.value.id
+  changeTitle.value = selectedChange.value.title || ''
+  changeRequirement.value = selectedChange.value.requirement || ''
+  changeTaskResult.value = null
+  changeRequestVisible.value = true
+}
+
+async function submitChangeTask() {
   if (!changeRequirement.value.trim()) {
     ElMessage.warning('请描述修改目标')
     return
   }
   creatingChange.value = true
   try {
-    const res = await createPrototypeChange(route.params.id, currentBinding.value.prototype_id, {
-      title: changeRequirement.value.trim().slice(0, 120),
+    const payload = {
+      title: (changeTitle.value.trim() || changeRequirement.value.trim()).slice(0, 120),
       requirement: changeRequirement.value.trim()
-    })
+    }
+    const res = editingChangeId.value
+      ? await updateProjectChange(route.params.id, editingChangeId.value, payload)
+      : await createPrototypeChange(route.params.id, currentBinding.value.prototype_id, payload)
     changeTaskResult.value = res.data.data
     await loadChanges()
   } catch (err) {
@@ -510,8 +582,10 @@ async function createChangeTask() {
 
 async function copyChangePrompt() {
   try {
-    await navigator.clipboard.writeText(changeTaskResult.value.prompt)
-    ElMessage.success('任务已复制')
+    const prompt = changeTaskResult.value?.prompt || ''
+    if (!prompt.trim()) throw new Error('empty prompt')
+    await navigator.clipboard.writeText(prompt)
+    ElMessage.success('完整提示词已复制')
   } catch (err) {
     ElMessage.warning('复制失败，请手工选择任务文字')
   }
@@ -534,11 +608,29 @@ async function adoptSelectedChange() {
     reviewingChange.value = true
     await adoptProjectChange(route.params.id, selectedChange.value.id)
     ElMessage.success('候选已采用，正式版本已更新')
+    previewNonce.value += 1
     await Promise.all([loadProject(), loadChanges()])
   } catch (err) {
     if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '采用失败')
   } finally {
     reviewingChange.value = false
+  }
+}
+
+async function deleteSelectedTask() {
+  if (!canEditTask(selectedChange.value)) return
+  try {
+    await ElMessageBox.confirm(
+      '删除后任务码立即失效，当前正式版本和其他候选不受影响。',
+      '删除任务',
+      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+    )
+    await deleteProjectChange(route.params.id, selectedChange.value.id)
+    ElMessage.success('任务已删除')
+    selectedChange.value = null
+    await loadChanges()
+  } catch (err) {
+    if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '删除任务失败')
   }
 }
 
@@ -908,10 +1000,61 @@ function formatDate(row, col, val) {
 .preview-frame-wrapper {
   flex: 1;
   position: relative;
+  padding: 10px;
+  background: #edf2f7;
 }
 .preview-frame {
   width: 100%;
   height: 100%;
+  min-height: 0;
+  display: block;
+  background: #fff;
+  border: 1px solid #cbd5e0;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 8%);
+}
+.preview-boundary {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #edf2f7;
+}
+.preview-boundary-bar,
+.candidate-boundary-bar {
+  min-height: 34px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #52606d;
+  font-size: 12px;
+  background: #e2e8f0;
+  border-bottom: 1px solid #cbd5e0;
+}
+.preview-boundary-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #243b53;
+  font-weight: 600;
+}
+.fuxi-chip,
+.candidate-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 7px;
+  color: #fff;
+  background: #2563eb;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.preview-boundary-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .snapshot-form,
 .member-form {
@@ -924,13 +1067,36 @@ function formatDate(row, col, val) {
   line-height: 1.7;
 }
 .task-prompt {
+  box-sizing: border-box;
+  width: 100%;
+  max-height: 360px;
+  overflow: auto;
   margin-top: 16px;
   padding: 14px;
   color: #e2e8f0;
   background: #172033;
   border-radius: 8px;
   line-height: 1.7;
-  word-break: break-all;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: inherit;
+  font-size: 12px;
+}
+.task-code-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  color: #606266;
+  font-size: 13px;
+}
+.task-code-row code {
+  padding: 4px 8px;
+  color: #1f2937;
+  background: #f2f6fc;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 .changes-layout {
   display: grid;
@@ -945,6 +1111,16 @@ function formatDate(row, col, val) {
   overflow-y: auto;
   background: #f7f9fc;
   border-right: 1px solid #e4e7ed;
+}
+.task-manager-hint {
+  margin-bottom: 12px;
+  padding: 10px;
+  color: #52606d;
+  background: #eef5ff;
+  border: 1px solid #c6e2ff;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.6;
 }
 .change-card {
   width: 100%;
@@ -993,13 +1169,38 @@ function formatDate(row, col, val) {
   margin-top: 6px;
   color: #606266;
 }
+.change-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin-top: 10px;
+  color: #909399;
+  font-size: 12px;
+}
 .review-actions {
   display: flex;
   gap: 8px;
 }
+.candidate-boundary {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff7ed;
+}
+.candidate-boundary-bar {
+  color: #7c4a03;
+  background: #fff1d6;
+  border-bottom-color: #f6d58c;
+}
+.candidate-chip {
+  color: #7c4a03;
+  background: #f6ad55;
+}
 .candidate-preview {
   width: 100%;
-  height: 100%;
+  flex: 1;
+  height: 0;
   min-height: 58vh;
   background: #fff;
 }
