@@ -159,6 +159,24 @@ router.get('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, re
   }
 });
 
+router.post('/:id/changes/:changeId/preview-validation', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const service = new LightweightCollaborationService();
+    const change = service.recordPreviewValidation({
+      actor: req.user,
+      projectId: req.params.id,
+      changeId: req.params.changeId,
+      status: req.body.status,
+      errors: req.body.errors,
+      warnings: req.body.warnings,
+      durationMs: req.body.durationMs
+    });
+    res.json({ success: true, data: change });
+  } catch (error) {
+    sendLightweightError(res, error);
+  }
+});
+
 router.patch('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, res) => {
   try {
     const service = new LightweightCollaborationService();

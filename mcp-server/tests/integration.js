@@ -549,19 +549,37 @@ async function main() {
       changeId: handoff.body.changeId,
       zipPath: secondZipPath
     });
-    assert.equal(submittedCandidate.body.status, 'ready');
+    assert.equal(submittedCandidate.body.status, 'preview_pending');
     assert.equal(submittedCandidate.body.candidateEntryFile, 'index.html');
+    const pendingStatus = await callTool(mcp, 'get_change_status', {
+      projectId: project.data.id,
+      changeId: handoff.body.changeId
+    });
+    assert.equal(pendingStatus.body.status, 'preview_pending');
+    assert.equal(pendingStatus.body.currentVersion, 0);
+    const candidatePreviewResponse = await fetch(
+      `${apiUrl}${pendingStatus.body.candidatePreviewPath}?token=${encodeURIComponent(login.data.token)}`
+    );
+    assert.equal(candidatePreviewResponse.status, 200);
+    assert.match(await candidatePreviewResponse.text(), /MCP integration v2/);
+
+    const previewValidationResponse = await fetch(`${apiUrl}/api/projects/${project.data.id}/changes/${handoff.body.changeId}/preview-validation`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${login.data.token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status: 'passed', durationMs: 1200 })
+    });
+    const previewValidation = await previewValidationResponse.json();
+    assert.equal(previewValidationResponse.status, 200);
+    assert.equal(previewValidation.data.status, 'ready');
     const readyStatus = await callTool(mcp, 'get_change_status', {
       projectId: project.data.id,
       changeId: handoff.body.changeId
     });
     assert.equal(readyStatus.body.status, 'ready');
     assert.equal(readyStatus.body.currentVersion, 0);
-    const candidatePreviewResponse = await fetch(
-      `${apiUrl}${readyStatus.body.candidatePreviewPath}?token=${encodeURIComponent(login.data.token)}`
-    );
-    assert.equal(candidatePreviewResponse.status, 200);
-    assert.match(await candidatePreviewResponse.text(), /MCP integration v2/);
 
     const adoptResponse = await fetch(`${apiUrl}/api/projects/${project.data.id}/changes/${handoff.body.changeId}/adopt`, {
       method: 'POST',

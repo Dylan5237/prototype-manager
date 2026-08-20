@@ -64,6 +64,10 @@ export function rejectProjectChange(id, changeId, data) {
   return api.post(`/projects/${id}/changes/${changeId}/reject`, data)
 }
 
+export function recordProjectChangePreviewValidation(id, changeId, data) {
+  return api.post(`/projects/${id}/changes/${changeId}/preview-validation`, data)
+}
+
 export function getProjectMembers(id) {
   return api.get(`/projects/${id}/members`)
 }

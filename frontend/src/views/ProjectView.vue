@@ -174,7 +174,7 @@
             v-for="change in changes"
             :key="change.id"
             :class="['change-card', { active: selectedChange?.id === change.id }]"
-            @click="selectedChange = change"
+            @click="selectChange(change)"
           >
             <div class="change-card-head">
               <strong>{{ change.title }}</strong>
@@ -204,6 +204,24 @@
               :closable="false"
               show-icon
             />
+            <el-alert
+              v-else-if="selectedChange.status === 'preview_pending'"
+              :title="candidateSmokePending ? '正在自动检查候选预览' : '预览校验尚未完成，请刷新后重试'"
+              type="info"
+              :closable="false"
+              show-icon
+            />
+            <el-alert
+              v-else-if="selectedChange.status === 'invalid' && selectedChange.validation_errors?.length"
+              title="候选预览校验失败，不能采纳"
+              type="error"
+              :closable="false"
+              show-icon
+            >
+              <ul class="validation-errors">
+                <li v-for="error in selectedChange.validation_errors" :key="error">{{ error }}</li>
+              </ul>
+            </el-alert>
             <div v-if="selectedChange.status === 'ready' && canManage" class="review-actions">
               <el-button type="danger" plain @click="rejectSelectedChange">退回</el-button>
               <el-button type="primary" :loading="reviewingChange" @click="adoptSelectedChange">采用候选</el-button>
@@ -230,6 +248,7 @@
               :src="candidatePreviewUrl"
               class="candidate-preview"
               frameborder="0"
+              @load="handleCandidateFrameLoad"
             />
           </div>
           <el-empty v-else description="候选尚未准备好预览" />
@@ -303,7 +322,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -319,7 +338,7 @@ import {
   getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
   getProjectMembers, addProjectMember, removeProjectMember,
   createPrototypeChange, getProjectChanges, updateProjectChange, deleteProjectChange,
-  adoptProjectChange, rejectProjectChange
+  adoptProjectChange, rejectProjectChange, recordProjectChangePreviewValidation
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
 
@@ -368,10 +387,17 @@ const changesLoading = ref(false)
 const selectedChange = ref(null)
 const reviewingChange = ref(false)
 const previewNonce = ref(0)
+const candidateSmokePending = ref(false)
+let candidateFrameElement = null
 
 onMounted(() => {
   loadProject()
   loadPrototypes()
+  window.addEventListener('message', handlePreviewSmokeMessage)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('message', handlePreviewSmokeMessage)
 })
 
 async function loadProject() {
@@ -480,7 +506,15 @@ function selectMenu(group, item) {
   activeItem.value = item
   selectedPrototypeId.value = ''
   selectedChange.value = null
+  candidateFrameElement = null
+  candidateSmokePending.value = false
   loadChanges()
+}
+
+function selectChange(change) {
+  selectedChange.value = change
+  candidateFrameElement = null
+  candidateSmokePending.value = change?.status === 'preview_pending'
 }
 
 function isActive(group, item) {
@@ -501,7 +535,9 @@ function getCheckoutStatus(group, item) {
 function changeStatusMeta(status) {
   const map = {
     editing: { label: '进行中', type: 'info' },
+    preview_pending: { label: '预览校验中', type: 'info' },
     ready: { label: '待确认', type: 'warning' },
+    invalid: { label: '预览失败', type: 'danger' },
     adopted: { label: '已采用', type: 'success' },
     rejected: { label: '已退回', type: 'danger' },
     stale: { label: '已过期', type: 'warning' },
@@ -595,7 +631,41 @@ async function copyChangePrompt() {
 async function openChangesDialog() {
   changesVisible.value = true
   await loadChanges()
-  selectedChange.value = changes.value.find(change => change.status === 'ready') || changes.value[0] || null
+  selectChange(changes.value.find(change => change.status === 'ready') || changes.value[0] || null)
+}
+
+function handleCandidateFrameLoad(event) {
+  candidateFrameElement = event.currentTarget
+  if (selectedChange.value?.status === 'preview_pending') {
+    candidateSmokePending.value = true
+  }
+}
+
+async function handlePreviewSmokeMessage(event) {
+  const data = event.data
+  if (!data || data.source !== 'fuxi-preview-smoke' || !candidateFrameElement) return
+  if (event.source !== candidateFrameElement.contentWindow) return
+  const change = selectedChange.value
+  if (!change || change.status !== 'preview_pending') return
+  if (!['passed', 'failed'].includes(data.status)) return
+
+  candidateSmokePending.value = false
+  try {
+    await recordProjectChangePreviewValidation(route.params.id, change.id, {
+      status: data.status,
+      errors: Array.isArray(data.errors) ? data.errors : [],
+      warnings: Array.isArray(data.warnings) ? data.warnings : [],
+      durationMs: data.durationMs
+    })
+    await loadChanges()
+    if (selectedChange.value?.id === change.id) {
+      selectedChange.value = changes.value.find(item => item.id === change.id) || selectedChange.value
+    }
+    if (data.status === 'passed') ElMessage.success('候选预览校验通过，可提交负责人审核')
+    else ElMessage.error('候选预览校验失败，不能采纳')
+  } catch (err) {
+    ElMessage.warning(err.response?.data?.message || '预览校验结果回写失败，请刷新重试')
+  }
 }
 
 async function adoptSelectedChange() {
@@ -1181,6 +1251,11 @@ function formatDate(row, col, val) {
 .review-actions {
   display: flex;
   gap: 8px;
+}
+.validation-errors {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  line-height: 1.6;
 }
 .candidate-boundary {
   min-width: 0;

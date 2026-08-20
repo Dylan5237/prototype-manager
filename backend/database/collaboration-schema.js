@@ -126,6 +126,12 @@ function applyCollaborationSchema(db) {
   ensureColumn(db, 'prototype_changes', 'review_note', 'TEXT');
   ensureColumn(db, 'prototype_changes', 'reviewed_at', 'TEXT');
   ensureColumn(db, 'prototype_changes', 'adopted_version_id', 'INTEGER');
+  ensureColumn(db, 'prototype_changes', 'validation_status', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'validation_mode', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'validation_errors_json', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'validation_warnings_json', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'validated_at', 'TEXT');
+  ensureColumn(db, 'prototype_changes', 'preview_validated_at', 'TEXT');
 
   db.run(`
     CREATE TABLE IF NOT EXISTS prototype_builds (

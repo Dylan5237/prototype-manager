@@ -19,8 +19,66 @@ function canAccessPrototype(prototype, user) {
   return getSharedUserIds(prototype.id).includes(user.id);
 }
 
+function previewSmokeScript() {
+  return `<script data-fuxi-preview-smoke>
+(function () {
+  if (window.parent === window) return;
+  var startedAt = Date.now();
+  var finalStatus = null;
+  function clean(value) {
+    return String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 500);
+  }
+  function report(status, errors, warnings) {
+    if (finalStatus) return;
+    finalStatus = status;
+    window.parent.postMessage({
+      source: 'fuxi-preview-smoke',
+      status: status,
+      errors: (errors || []).map(clean).filter(Boolean).slice(0, 20),
+      warnings: (warnings || []).map(clean).filter(Boolean).slice(0, 20),
+      durationMs: Date.now() - startedAt
+    }, window.location.origin);
+  }
+  window.addEventListener('error', function (event) {
+    var target = event && event.target;
+    if (target && target !== window) {
+      var resource = target.src || target.href || target.tagName || '资源';
+      report('failed', ['资源加载失败：' + resource], []);
+      return;
+    }
+    var message = event && event.error && event.error.message
+      ? event.error.message
+      : (event && event.message) || '页面运行时错误';
+    report('failed', ['页面运行时错误：' + message], []);
+  }, true);
+  window.addEventListener('unhandledrejection', function (event) {
+    var reason = event && event.reason;
+    var message = reason && reason.message ? reason.message : reason;
+    report('failed', ['未处理的异步错误：' + (message || '未知错误')], []);
+  });
+  window.addEventListener('load', function () {
+    window.setTimeout(function () {
+      var app = document.querySelector('#app');
+      var root = app || document.body;
+      var hasContent = app
+        ? Boolean(app.children.length || (app.textContent || '').trim() || (app.innerHTML || '').trim().length > 20)
+        : Array.prototype.some.call(document.body.children, function (element) {
+          return !/^(SCRIPT|STYLE|LINK|META|NOSCRIPT)$/i.test(element.tagName)
+            && Boolean(element.offsetWidth || element.offsetHeight || (element.textContent || '').trim());
+        });
+      if (!hasContent) {
+        report('failed', ['预览加载后页面为空'], []);
+      } else {
+        report('passed', [], []);
+      }
+    }, 1200);
+  }, { once: true });
+}());
+</script>`;
+}
+
 // 通用的HTML处理函数：注入<base>标签并将绝对路径转为相对路径
-function processHtml(content, basePath) {
+function processHtml(content, basePath, { smoke = false } = {}) {
   // 将本地绝对路径转为相对路径，使<base>标签生效
   // 不碰 // 或 http:// https://
   content = content.replace(/(src|href|content)=(["'])\/([^\/][^"']*)\2/g, '$1=$2$3$2');
@@ -30,6 +88,17 @@ function processHtml(content, basePath) {
     content = content.replace('<head>', `<head>\n  <base href="${basePath}">`);
   } else if (content.includes('<HEAD>')) {
     content = content.replace('<HEAD>', `<HEAD>\n  <base href="${basePath}">`);
+  }
+
+  if (smoke) {
+    const smokeScript = previewSmokeScript();
+    if (content.includes('</head>')) {
+      content = content.replace('</head>', `${smokeScript}\n</head>`);
+    } else if (content.includes('</HEAD>')) {
+      content = content.replace('</HEAD>', `${smokeScript}\n</HEAD>`);
+    } else {
+      content = `${smokeScript}\n${content}`;
+    }
   }
 
   return content;
@@ -69,7 +138,7 @@ router.get('/changes/:changeId/*.html', requireAuth, (req, res) => {
   let content = fs.readFileSync(fullPath, 'utf-8');
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? `${fileDir}/` : '';
-  content = processHtml(content, `/preview/changes/${encodeURIComponent(change.id)}/${dirPart}`);
+  content = processHtml(content, `/preview/changes/${encodeURIComponent(change.id)}/${dirPart}`, { smoke: true });
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);
 });

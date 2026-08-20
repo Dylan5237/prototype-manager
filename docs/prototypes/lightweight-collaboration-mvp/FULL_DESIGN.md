@@ -92,8 +92,11 @@ sequenceDiagram
     M->>S: 回读任务与基础版本
     S-->>A: 源码下载入口和 change ID
     A->>M: 上传候选 ZIP
-    M->>S: 校验并保存候选
-    S-->>A: ready 与候选预览入口
+    M->>S: 轻量静态校验并保存候选
+    S-->>A: preview_pending 与候选预览入口
+    O->>W: 打开候选预览
+    W->>S: 回写浏览器 Smoke 结果
+    S-->>W: ready 或 invalid
     O->>W: 查看并采用
     W->>S: 采用 change
     alt 当前版本等于基础版本
@@ -130,13 +133,13 @@ flowchart LR
 
 ## 9. 核心对象生命周期
 
-`change` 在发起时绑定 `project_id`、`prototype_id`、`created_by` 与 `base_version_number`。任务码只返回一次，服务端仅保存 hash。兑换后 change 仍处于 `editing`，直到候选 ZIP 校验成功进入 `ready`。负责人采用后进入 `adopted`；退回进入 `rejected`；版本变化导致采用失败时进入 `stale`。
+`change` 在发起时绑定 `project_id`、`prototype_id`、`created_by` 与 `base_version_number`。任务码只返回一次，服务端仅保存 hash。兑换后 change 仍处于 `editing`；候选 ZIP 通过轻量静态校验后进入 `preview_pending`，负责人打开预览并通过浏览器 Smoke 后才进入 `ready`。Smoke 失败进入 `invalid`，可由 Agent 重新上传；负责人采用后进入 `adopted`；退回进入 `rejected`；版本变化导致采用失败时进入 `stale`。
 
 候选文件目录以不可猜测 change ID 命名。候选生成后禁止原地覆盖；同一 change 的重复提交返回状态冲突。需要再次修改时创建新 change，保留前一条审计链。
 
 ## 10. 构建、检查与制品
 
-MVP 接受已构建的 Fuxi ZIP，复用现有 ZIP 大小、禁止文件、入口文件和路径校验。候选门禁至少包括：ZIP 可解析；不存在路径穿越；入口文件可找到；文件总量和大小受限；候选摘要与上传 bytes 绑定；候选预览只从独立目录读取。
+MVP 接受已构建的 Fuxi ZIP，复用现有 ZIP 大小、禁止文件、入口文件和路径校验。候选上传只执行快速静态门禁，不运行 npm 安装、完整构建或服务端浏览器自动化。候选门禁至少包括：ZIP 可解析；不存在路径穿越；入口文件可找到；文件总量和大小受限；入口引用的本地脚本/样式/静态资源存在；候选摘要与上传 bytes 绑定；候选预览只从独立目录读取。
 
 | 制品 | 产生者 | 必须字段 | 可信条件 |
 |---|---|---|---|
@@ -147,7 +150,7 @@ MVP 接受已构建的 Fuxi ZIP，复用现有 ZIP 大小、禁止文件、入�
 
 候选校验不能只检查 ZIP 能否解压。服务端必须逐条检查规范化后的条目路径，拒绝绝对路径、盘符、`..` 跳转、符号链接和超出根目录的目标；限制解压后的文件数、单文件大小和总大小，避免压缩炸弹。入口识别沿用 `dist/index.html`、`build/index.html`、`index.html`、`public/index.html` 的确定性顺序，记录最终入口而不是相信客户端声明。上传临时文件无论成功或失败都必须删除，只有完整校验后的目录才能原子重命名到候选根目录。
 
-候选预览的可信结论仅限“这个包在静态预览环境可打开”，不代表业务逻辑正确。平台不在 MVP 内运行任意 npm 安装或构建命令，避免把服务器变成不可信代码执行器；Agent 必须在本地完成构建并上传静态产物。审核人以预览和修改目标判断是否采用，技术校验结果作为辅助说明。未来引入隔离 Build Worker 时也必须保持同一候选/采用状态机，不能让构建成功自动采用。
+候选预览先由浏览器 Smoke 检查资源加载、运行时错误和空白页面，再进入 `ready`；这只说明包能在伏羲预览环境打开，不代表业务逻辑正确。平台不在 MVP 内运行任意 npm 安装或构建命令，也不在服务端维护浏览器运行时，避免把服务器变成不可信代码执行器；Agent 必须在本地完成构建并上传静态产物。审核人以预览和修改目标判断是否采用，技术校验结果作为辅助说明。未来引入隔离 Build Worker 时也必须保持同一候选/采用状态机，不能让构建成功自动采用。
 
 ## 11. 版本、发布与回滚
 
@@ -191,7 +194,8 @@ erDiagram
 | POST | `/api/projects/handoffs/redeem` | 发起用户 | change context |
 | GET | `/api/projects/:id/changes` | 项目成员 | 候选列表 |
 | GET | `/api/projects/:id/changes/:changeId` | 项目成员 | 候选详情 |
-| POST | `/api/projects/:id/changes/:changeId/candidate` | 发起用户 | ready 候选 |
+| POST | `/api/projects/:id/changes/:changeId/candidate` | 发起用户 | preview_pending 候选 |
+| POST | `/api/projects/:id/changes/:changeId/preview-validation` | editor+ | ready 或 invalid |
 | POST | `/api/projects/:id/changes/:changeId/adopt` | owner/admin | 新正式版本 |
 | POST | `/api/projects/:id/changes/:changeId/reject` | owner/admin | rejected |
 
@@ -204,7 +208,10 @@ change 只能沿受保护的有限状态转换，任何终态都不能再次采�
 ```mermaid
 stateDiagram-v2
     [*] --> editing: 发起修改
-    editing --> ready: 候选校验通过
+    editing --> preview_pending: 静态门禁通过
+    preview_pending --> ready: 浏览器 Smoke 通过
+    preview_pending --> invalid: 浏览器 Smoke 失败
+    invalid --> preview_pending: 重新上传并通过静态门禁
     editing --> cancelled: 发起人取消
     ready --> adopted: CAS成功并采用
     ready --> rejected: 负责人退回
@@ -215,8 +222,8 @@ stateDiagram-v2
     cancelled --> [*]
 ```
 
-- `editing` 之外禁止上传候选。
-- `ready` 之外禁止采用或退回。
+- `editing` 或 `invalid` 才允许重新上传候选。
+- `ready` 之外禁止采用或退回；`preview_pending` 和 `invalid` 都不能进入采纳。
 - CAS 失败必须同时保持当前文件不变并写入 `stale`。
 - 重试采用已 adopted 的 change 返回原结果或明确终态，不再生成版本。
 
@@ -235,7 +242,7 @@ stateDiagram-v2
 
 浏览器和 MCP 均使用现有短期 access token/可轮换设备会话。任务码至少 128 bit 随机值、十分钟有效、服务端保存 SHA-256 hash。上传 ZIP 是不可信输入，解压前检查条目路径，解压后以解析出的真实目录为边界。候选静态资源可由随机 change ID 定位，但 HTML 入口必须鉴权并检查项目访问权。
 
-任务码的使用者还必须是任务发起用户本人，管理员不能仅凭任务码冒领普通成员的上下文。兑换成功只返回项目、原型、修改目标、基础版本、下载入口和允许的后续动作，不返回成员列表、平台 token、服务器目录或其他候选。候选提交接口同时校验 change 所属用户、项目成员资格和 `editing` 状态，任一条件变化都拒绝写入。成员被移除后，尚未提交的任务立即失去提交权；已经 ready 的候选仍可由项目负责人审核，以避免孤儿记录。
+任务码的使用者还必须是任务发起用户本人，管理员不能仅凭任务码冒领普通成员的上下文。兑换成功只返回项目、原型、修改目标、基础版本、下载入口和允许的后续动作，不返回成员列表、平台 token、服务器目录或其他候选。候选提交接口同时校验 change 所属用户、项目成员资格和 `editing`/`invalid` 状态，任一条件变化都拒绝写入。浏览器 Smoke 回写沿用项目成员的提交权限，且只改变 `preview_pending` 状态；成员被移除后，尚未提交的任务立即失去提交权；已经 `ready` 的候选仍可由项目负责人审核，以避免孤儿记录。
 
 HTML 候选入口通过现有预览 token/cookie 机制鉴权，静态资源路径位于高熵 change ID 下。即使资源 URL 被转发，敏感业务数据也不应写入静态包；平台继续把原型内容视为项目成员可见制品。所有服务端错误对外只返回稳定错误码和恢复建议，文件路径、堆栈、ZIP 条目原文和摘要计算细节只进入受控日志。
 
@@ -260,7 +267,7 @@ sql.js 写入继续走单一串行入口。创建任务、兑换和状态迁移�
 
 ## 20. 可观测性与运维
 
-记录 `change.created`、`handoff.redeemed`、`candidate.ready`、`change.adopted`、`change.rejected`、`change.stale`。指标至少包含各状态数量、候选校验失败率、从 ready 到审核耗时、CAS 过期率和文件补偿失败数。过期未提交任务和长期终态候选可由后续清理任务回收；MVP 先保留以便测试审计。
+记录 `change.created`、`handoff.redeemed`、`candidate.preview_pending`、`candidate.validation_failed`、`candidate.preview_passed`、`candidate.preview_failed`、`change.adopted`、`change.rejected`、`change.stale`。指标至少包含各状态数量、静态门禁失败率、浏览器 Smoke 失败率、从 ready 到审核耗时、CAS 过期率和文件补偿失败数。过期未提交任务和长期终态候选可由后续清理任务回收；MVP 先保留以便测试审计。
 
 ## 21. 性能与体验目标
 
@@ -268,8 +275,8 @@ sql.js 写入继续走单一串行入口。创建任务、兑换和状态迁移�
 |---|---:|
 | 发起任务响应 | P95 < 1 s |
 | 任务兑换响应 | P95 < 1 s |
-| 100 MB 内候选校验 | P95 < 10 s |
-| 候选 ready 后预览可打开 | < 3 s，不含 ZIP 上传 |
+| 100 MB 内候选静态门禁 | P95 < 10 s |
+| 候选打开后浏览器 Smoke | < 3 s，不含 ZIP 上传 |
 | 采用元数据与目录切换 | P95 < 3 s |
 | 状态回读一致 | 写成功后立即可见 |
 
@@ -293,9 +300,13 @@ Given 任务码已经兑换，When 再次兑换，Then 返回 `HANDOFF_ALREADY_R
 
 ### 场景 E：候选无效
 
-Given ZIP 无入口或包含越界路径，When 上传，Then 返回 `CANDIDATE_INVALID`，当前版本和 change 状态不变。
+Given ZIP 无入口或包含越界路径，When 上传，Then 返回 `CANDIDATE_INVALID`，当前版本不变且 change 保持 `editing`；Given 入口引用缺失资源或预览运行时报错，When 上传后打开候选，Then change 进入 `invalid`，不能采纳且允许重新上传。
 
-### 场景 F：真实环境
+### 场景 F：浏览器 Smoke
+
+Given 候选通过静态门禁，When 项目成员打开候选预览，Then 页面回写 Smoke 结果；通过进入 `ready`，失败进入 `invalid`，负责人不能采用失败候选。
+
+### 场景 G：真实环境
 
 在 `16077` 使用两个真实伏羲用户和独立 MCP 会话，完成发起、兑换、下载、上传、候选预览、采用、退回与双候选过期；验证旧原型元数据零漂移。该证据不得由 mock 替代。
 
@@ -311,7 +322,7 @@ Given ZIP 无入口或包含越界路径，When 上传，Then 返回 `CANDIDATE_
 
 ### 阶段 2：MCP 纵向切片
 
-增加四个 Agent 工具并复用 ZIP 校验。退出条件：独立 MCP 测试能领取、上传并回读 ready。
+增加四个 Agent 工具并复用 ZIP 校验。退出条件：独立 MCP 测试能领取、上传并回读 `preview_pending`；浏览器 Smoke 通过后回读 `ready`。
 
 ### 阶段 3：Web 审核体验
 

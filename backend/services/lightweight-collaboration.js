@@ -7,6 +7,7 @@ const { ACTIONS, AuthorizationError, AuthorizationService, normalizeRoles } = re
 const { getPrototypeById, createVersion, getLatestVersionNumber, updatePrototype } = require('./db-prototypes');
 const { getProjectById } = require('./db-projects');
 const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb } = require('./storage');
+const { validateCandidateDirectory } = require('./candidate-validation');
 
 const DEFAULT_CANDIDATES_ROOT = path.join(UPLOADS_DIR, 'collaboration-candidates');
 const HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -94,10 +95,16 @@ function resolveContentRoot(extractedRoot) {
 
 function decorateChange(row) {
   if (!row) return null;
+  const parseJson = value => {
+    if (!value) return [];
+    try { return JSON.parse(value); } catch (error) { return []; }
+  };
   return {
     ...row,
     base_version_number: Number(row.base_version_number || 0),
     candidate_size_kb: row.candidate_size_kb == null ? null : Number(row.candidate_size_kb),
+    validation_errors: parseJson(row.validation_errors_json),
+    validation_warnings: parseJson(row.validation_warnings_json),
     preview_path: row.candidate_entry_file
       ? `/preview/changes/${encodeURIComponent(row.id)}/${row.candidate_entry_file}`
       : null
@@ -137,7 +144,7 @@ function buildPrompt({ change, handoffCode, expiresAt }) {
     '2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。',
     '3. 在源码基础上实现“修改要求”，先本地检查入口、相对路径和主要交互。',
     '4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。',
-    '5. 上传成功后调用 get_change_status 确认状态为 ready；候选会进入伏羲页面等待负责人预览和采纳。',
+    '5. 上传成功后调用 get_change_status 确认状态为 preview_pending；负责人打开伏羲候选页面后会自动完成轻量预览校验，校验通过才会变为 ready 并进入采纳流程。',
     '',
     '【交付约束】',
     '- 这是候选版本，绝对不要直接覆盖正式版本，也不要调用正式版本上传接口。',
@@ -409,7 +416,7 @@ class LightweightCollaborationService {
     if (Number(change.created_by) !== Number(actor.id) && !isPlatformAdmin(actor)) {
       throw new LightweightCollaborationError('CHANGE_USER_MISMATCH', '只能提交自己发起的修改', 403);
     }
-    if (change.status !== 'editing') {
+    if (!['editing', 'invalid'].includes(change.status)) {
       throw new LightweightCollaborationError('CHANGE_NOT_EDITABLE', '当前修改不能再上传候选', 409);
     }
     const handoff = queryOne('SELECT status FROM agent_handoffs WHERE id = ?', [change.handoff_id]);
@@ -435,12 +442,40 @@ class LightweightCollaborationService {
       if (!entryFile) throw new LightweightCollaborationError('CANDIDATE_INVALID', '候选中未找到可预览入口');
       const digest = hashValue(fs.readFileSync(zipPath));
       const sizeKb = getDirSizeKb(contentRoot);
+      const validation = validateCandidateDirectory(contentRoot, entryFile);
+      const validationErrorsJson = JSON.stringify(validation.errors || []);
+      const validationWarningsJson = JSON.stringify(validation.warnings || []);
+      if (!validation.ok) {
+        runInTransaction(db => {
+          db.run(`
+            UPDATE prototype_changes
+            SET status = 'invalid', validation_status = 'failed', validation_mode = 'static',
+                validation_errors_json = ?, validation_warnings_json = ?, validated_at = ?, updated_at = ?
+            WHERE id = ? AND status IN ('editing', 'invalid')
+          `, [validationErrorsJson, validationWarningsJson, now(), now(), changeId]);
+          insertAudit(db, {
+            actorUserId: actor.id,
+            action: 'candidate.validation_failed',
+            result: 'failure',
+            resourceId: changeId,
+            metadata: { projectId, prototypeId: change.prototype_id, mode: 'static', errorCount: validation.errors.length }
+          });
+        });
+        throw new LightweightCollaborationError('CANDIDATE_INVALID', '候选静态预检失败', 400, {
+          validationMode: validation.mode,
+          errors: validation.errors,
+          warnings: validation.warnings,
+          filesChecked: validation.filesChecked,
+          referencesChecked: validation.referencesChecked
+        });
+      }
       if (fs.existsSync(finalDir)) {
-        throw new LightweightCollaborationError('CANDIDATE_ALREADY_EXISTS', '候选目录已存在', 409);
+        if (change.status === 'invalid') fs.rmSync(finalDir, { recursive: true, force: true });
+        else throw new LightweightCollaborationError('CANDIDATE_ALREADY_EXISTS', '候选目录已存在', 409);
       }
       runInTransaction(db => {
         const current = queryOne('SELECT status FROM prototype_changes WHERE id = ?', [changeId]);
-        if (!current || current.status !== 'editing') {
+        if (!current || !['editing', 'invalid'].includes(current.status)) {
           throw new LightweightCollaborationError('CHANGE_NOT_EDITABLE', '当前修改不能再上传候选', 409);
         }
         if (contentRoot !== staging) fs.renameSync(contentRoot, finalDir);
@@ -448,15 +483,25 @@ class LightweightCollaborationService {
         movedToFinal = true;
         db.run(`
           UPDATE prototype_changes
-          SET status = 'ready', candidate_path = ?, candidate_entry_file = ?, candidate_digest = ?,
-              candidate_size_kb = ?, submitted_at = ?, updated_at = ?
+          SET status = 'preview_pending', candidate_path = ?, candidate_entry_file = ?, candidate_digest = ?,
+              candidate_size_kb = ?, submitted_at = ?, validation_status = 'pending',
+              validation_mode = 'static+browser', validation_errors_json = ?, validation_warnings_json = ?,
+              validated_at = ?, preview_validated_at = NULL, updated_at = ?
           WHERE id = ?
-        `, [changeId, entryFile, digest, sizeKb, now(), now(), changeId]);
+        `, [changeId, entryFile, digest, sizeKb, now(), validationErrorsJson, validationWarningsJson, now(), now(), changeId]);
         insertAudit(db, {
           actorUserId: actor.id,
-          action: 'candidate.ready',
+          action: 'candidate.preview_pending',
           resourceId: changeId,
-          metadata: { projectId, prototypeId: change.prototype_id, baseVersion: change.base_version_number, entryFile, digest }
+          metadata: {
+            projectId,
+            prototypeId: change.prototype_id,
+            baseVersion: change.base_version_number,
+            entryFile,
+            digest,
+            filesChecked: validation.filesChecked,
+            referencesChecked: validation.referencesChecked
+          }
         });
       });
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
@@ -469,6 +514,40 @@ class LightweightCollaborationService {
       }
       throw error;
     }
+  }
+
+  recordPreviewValidation({ actor, projectId, changeId, status, errors = [], warnings = [], durationMs = null }) {
+    const change = this.getChange({ actor, projectId, changeId });
+    this.authorization.assertCan(actor, ACTIONS.SUBMIT_CHANGE, {
+      type: 'change', projectId, prototypeId: change.prototype_id
+    });
+    if (!['passed', 'failed'].includes(status)) {
+      throw new LightweightCollaborationError('INVALID_PREVIEW_VALIDATION', '预览校验状态无效');
+    }
+    if (change.status === 'ready' && status === 'passed') return change;
+    if (change.status !== 'preview_pending') {
+      throw new LightweightCollaborationError('CHANGE_NOT_PREVIEW_PENDING', '当前候选不在等待预览校验状态', 409);
+    }
+    const cleanErrors = Array.isArray(errors) ? errors.slice(0, 20).map(item => String(item).slice(0, 500)) : [];
+    const cleanWarnings = Array.isArray(warnings) ? warnings.slice(0, 20).map(item => String(item).slice(0, 500)) : [];
+    const passed = status === 'passed' && cleanErrors.length === 0;
+    runInTransaction(db => {
+      db.run(`
+        UPDATE prototype_changes
+        SET status = ?, validation_status = ?, validation_mode = 'browser',
+            validation_errors_json = ?, validation_warnings_json = ?, preview_validated_at = ?,
+            validated_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'preview_pending'
+      `, [passed ? 'ready' : 'invalid', passed ? 'passed' : 'failed', JSON.stringify(cleanErrors), JSON.stringify(cleanWarnings), now(), now(), now(), changeId]);
+      insertAudit(db, {
+        actorUserId: actor.id,
+        action: passed ? 'candidate.preview_passed' : 'candidate.preview_failed',
+        result: passed ? 'success' : 'failure',
+        resourceId: changeId,
+        metadata: { projectId, prototypeId: change.prototype_id, durationMs: Number.isFinite(Number(durationMs)) ? Number(durationMs) : null, errorCount: cleanErrors.length }
+      });
+    });
+    return getChangeById(changeId);
   }
 
   rejectChange({ actor, projectId, changeId, note }) {

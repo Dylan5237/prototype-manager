@@ -60,13 +60,20 @@ function createReadyChange(actor = editor, title = '增加筛选') {
     requirement: `${title}并保持现有数据`
   });
   const redeemed = service.redeemHandoff({ actor, handoffCode: created.handoffCode });
-  const ready = service.submitCandidate({
+  const pending = service.submitCandidate({
     actor,
     projectId: 'project-1',
     changeId: redeemed.change.id,
     zipPath: candidateZip(`${redeemed.change.id}.zip`, `<!doctype html><title>${title}</title><p>${title}</p>`)
   });
-  return { created, redeemed, ready };
+  const ready = service.recordPreviewValidation({
+    actor,
+    projectId: 'project-1',
+    changeId: redeemed.change.id,
+    status: 'passed',
+    durationMs: 1200
+  });
+  return { created, redeemed, pending, ready };
 }
 
 test.beforeEach(async () => {
@@ -83,7 +90,7 @@ test.afterEach(() => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('one-time handoff creates a ready candidate without changing the current prototype', () => {
+test('one-time handoff creates a preview-pending candidate until browser smoke passes', () => {
   const created = service.createChange({
     actor: editor,
     projectId: 'project-1',
@@ -100,11 +107,20 @@ test('one-time handoff creates a ready candidate without changing the current pr
     error => error.code === 'HANDOFF_ALREADY_REDEEMED'
   );
 
-  const ready = service.submitCandidate({
+  const pending = service.submitCandidate({
     actor: editor,
     projectId: 'project-1',
     changeId: created.change.id,
     zipPath: candidateZip('candidate.zip')
+  });
+  assert.equal(pending.status, 'preview_pending');
+  assert.equal(pending.validation_status, 'pending');
+  const ready = service.recordPreviewValidation({
+    actor: editor,
+    projectId: 'project-1',
+    changeId: created.change.id,
+    status: 'passed',
+    durationMs: 1200
   });
   assert.equal(ready.status, 'ready');
   assert.equal(ready.candidate_entry_file, 'index.html');
@@ -113,7 +129,7 @@ test('one-time handoff creates a ready candidate without changing the current pr
   assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /base/);
   assert.deepEqual(
     database.query(`SELECT action FROM audit_events ORDER BY created_at, rowid`).map(row => row.action),
-    ['change.created', 'handoff.redeemed', 'candidate.ready']
+    ['change.created', 'handoff.redeemed', 'candidate.preview_pending', 'candidate.preview_passed']
   );
 });
 
@@ -234,7 +250,7 @@ test('only project administrators can review and rejecting does not change the p
   assert.equal(database.queryOne(`SELECT COUNT(*) AS count FROM audit_events WHERE action = 'change.rejected'`).count, 1);
 });
 
-test('invalid candidate leaves the change editable and removes staging residue', () => {
+test('candidate without an entry remains editable and removes staging residue', () => {
   const created = service.createChange({
     actor: editor,
     projectId: 'project-1',
@@ -252,4 +268,26 @@ test('invalid candidate leaves the change editable and removes staging residue',
   );
   assert.equal(service.getChange({ actor: editor, projectId: 'project-1', changeId: created.change.id }).status, 'editing');
   assert.deepEqual(fs.existsSync(candidatesRoot) ? fs.readdirSync(candidatesRoot) : [], []);
+});
+
+test('static preview validation marks missing resources invalid before browser smoke', () => {
+  const created = service.createChange({
+    actor: editor,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    requirement: '上传引用完整的候选'
+  });
+  service.redeemHandoff({ actor: editor, handoffCode: created.handoffCode });
+  const invalidPath = path.join(tempRoot, 'missing-resource.zip');
+  const zip = new AdmZip();
+  zip.addFile('index.html', Buffer.from('<!doctype html><script type="module" src="./assets/app.js"></script>'));
+  zip.writeZip(invalidPath);
+  assert.throws(
+    () => service.submitCandidate({ actor: editor, projectId: 'project-1', changeId: created.change.id, zipPath: invalidPath }),
+    error => error.code === 'CANDIDATE_INVALID' && error.details.errors.some(item => item.code === 'MISSING_REFERENCE')
+  );
+  const invalid = service.getChange({ actor: editor, projectId: 'project-1', changeId: created.change.id });
+  assert.equal(invalid.status, 'invalid');
+  assert.equal(invalid.validation_status, 'failed');
+  assert.equal(invalid.validation_mode, 'static');
 });
