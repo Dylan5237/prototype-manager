@@ -168,6 +168,7 @@ import { getUsers, getAgentBootstrap } from '../api/auth'
 import { getCategories } from '../api/prototypes'
 import { Search, Plus, User, Loading, Delete, Connection, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { copyText as copyClipboardText } from '../utils/clipboard'
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -327,7 +328,9 @@ async function openMcpDialog() {
 }
 
 function copyMcpPrompt() {
-  copyText(mcpPrompt.value, 'MCP 接入提示词已复制')
+  copyClipboardText(mcpPrompt.value)
+    .then(() => ElMessage.success('MCP 接入提示词已复制'))
+    .catch(() => ElMessage.warning('复制失败，请手工选择提示词'))
 }
 
 async function handleCardCommand(command, p) {
@@ -363,30 +366,6 @@ async function handleCreate() {
   } finally {
     creating.value = false
   }
-}
-
-function copyText(text, successMsg) {
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(() => {
-      ElMessage.success(successMsg)
-    }).catch(() => {
-      fallbackCopy(text, successMsg)
-    })
-  } else {
-    fallbackCopy(text, successMsg)
-  }
-}
-
-function fallbackCopy(text, successMsg) {
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
-  ElMessage.success(successMsg)
 }
 
 watch(() => route.query.tab, () => {

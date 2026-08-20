@@ -312,6 +312,7 @@ import {
 import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
+import { copyText as copyClipboardText } from '../utils/clipboard'
 import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
@@ -584,7 +585,7 @@ async function copyChangePrompt() {
   try {
     const prompt = changeTaskResult.value?.prompt || ''
     if (!prompt.trim()) throw new Error('empty prompt')
-    await navigator.clipboard.writeText(prompt)
+    await copyClipboardText(prompt)
     ElMessage.success('完整提示词已复制')
   } catch (err) {
     ElMessage.warning('复制失败，请手工选择任务文字')
