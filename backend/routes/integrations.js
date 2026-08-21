@@ -115,22 +115,23 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 - 一次性连接码: ${connect.code}
 - 连接码过期时间: ${codeExpiresLocal}（Asia/Shanghai）
 
-请执行：
-1. 识别当前 AI 客户端原生的 Skill 安装目录和 MCP 配置机制，不假定固定 JSON 路径。
-2. 使用 Authorization: Bearer <安装 token> 下载两个 ZIP；安装 token 只用于下载，禁止写入业务仓库。
-3. 将 Skill ZIP 中的 ${SKILL_NAME}/ 安装到原生 Skill 目录，验证 SKILL.md 可发现；已安装时原位安全更新。
-4. 将 MCP ZIP 解压到客户端本地工具目录，确认 Node.js >=18，并用 stdio 接入：
-   command: node
-   args: [<MCP解压目录>/fuxi-platform-mcp/src/server.js]
-   env: {
+请严格按以下顺序执行；任何一步失败立即停止，不要声称接入成功：
+1. 先识别当前 AI 客户端原生的 MCP 配置机制和本地工具目录，不假定固定 JSON 路径；创建临时安装目录，禁止把安装 token、连接码或 refresh token 写入业务仓库、Skill 文件或日志。
+2. 使用 Authorization: Bearer <安装 token> 只下载 MCP ZIP 到临时目录并解压；确认 Node.js >=18。先不要安装 Skill，也不要调用任何业务工具。
+3. 立即用下面的 stdio 配置启动 MCP，并优先调用 check_connection；这一步会兑换一次性连接码、建立设备会话、把 refresh token 写入 FUXI_CREDENTIALS_FILE。只有 check_connection 成功后才能继续：
+     command: node
+     args: [<MCP解压目录>/fuxi-platform-mcp/src/server.js]
+     env: {
      FUXI_API_URL: "${baseUrl}",
      FUXI_CONNECT_CODE: "${connect.code}",
      FUXI_CREDENTIALS_FILE: "<用户主目录>/.fuxi/mcp-credentials.json"
-   }
-5. 调用 fuxi-platform 的 check_connection，确认 tools/list 包含 deliver_project。MCP 首次启动会用连接码兑换 access token + refresh token，并把 refresh token 写入 FUXI_CREDENTIALS_FILE；之后每次启动从该文件恢复会话，access token 过期时自动刷新，无需再次人工配置，再确认 ${SKILL_NAME} 可被调用。
-6. 成功后只报告安装位置、连接结果、Skill 状态和会话有效期，不回显完整 token 或 refresh token。
+     }
+4. 连接成功后，使用安装 token 下载 Skill ZIP；将其中的 ${SKILL_NAME}/ 安装到原生 Skill 目录，先备份已有版本，再以临时目录完成替换，验证 SKILL.md 可发现。
+5. 将 MCP ZIP 的正式目录接入 AI 客户端的 stdio 配置，保留 FUXI_API_URL 和 FUXI_CREDENTIALS_FILE，连接码只用于本次首次兑换；兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
+6. 重启或刷新 AI 客户端，调用 check_connection，确认 tools/list 包含 deliver_project，再确认 ${SKILL_NAME} 可被发现和调用；不要用业务写入动作代替连接验证。
+7. 成功后只报告安装位置、连接结果、Skill 状态和会话有效期，不回显完整安装 token、access token 或 refresh token。
 
-恢复规则：需要客户端授权时只请求最小原生授权；权限拒绝报告 AUTHORIZATION_REQUIRED；连接码或 refresh token 过期报告 AUTHENTICATION_FAILED 并让我回平台重新生成连接码；任一步失败都不得声称接入成功。`;
+恢复规则：需要客户端授权时只请求最小原生授权；权限拒绝报告 AUTHORIZATION_REQUIRED；连接码过期报告 AUTHENTICATION_FAILED 并让我回平台重新生成连接码；refresh token 失效时先保留旧安装并报告 AUTHENTICATION_FAILED；Skill 或 MCP 替换失败时恢复备份；任一步失败都不得声称接入成功。`;
 
   res.json({
     success: true,

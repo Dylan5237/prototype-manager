@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伏羲组件更新 · 交互原型</title>
+  <style>
+    :root { --ink:#172033; --muted:#667085; --line:#d8deea; --canvas:#f4f6fa; --surface:#fff; --brand:#3157d5; --brand-soft:#edf1ff; --green:#137a47; --green-soft:#e9f7ef; --amber:#8a5607; --amber-soft:#fff7e5; --red:#a62218; --red-soft:#fff0ee; --radius:12px; }
+    * { box-sizing:border-box; }
+    body { margin:0; color:var(--ink); background:var(--canvas); font-family:Inter,"Microsoft YaHei",system-ui,sans-serif; line-height:1.5; }
+    button,select { font:inherit; }
+    button { cursor:pointer; }
+    button:focus-visible { outline:3px solid #b7c5ff; outline-offset:2px; }
+    .topbar { height:64px; display:flex; align-items:center; justify-content:space-between; padding:0 26px; color:#fff; background:#1d3275; }
+    .brand { display:flex; align-items:center; gap:12px; }
+    .mark { width:34px; height:34px; display:grid; place-items:center; border:1px solid #7184d5; border-radius:9px; background:#304992; font-weight:800; }
+    .brand strong,.brand small { display:block; }
+    .brand small { margin-top:2px; color:#cbd5ff; font-size:12px; }
+    .user-pill { padding:7px 12px; border:1px solid #7184d5; border-radius:999px; color:#e4e9ff; font-size:13px; }
+    .shell { min-height:calc(100vh - 64px); display:grid; grid-template-columns:222px 1fr; }
+    aside { padding:22px 14px; border-right:1px solid var(--line); background:#fff; }
+    .device { margin:0 5px 22px; padding:13px; border:1px solid var(--line); border-radius:10px; background:#f9faff; }
+    .device strong,.device small { display:block; }
+    .device small { margin-top:4px; color:var(--muted); font-size:12px; }
+    nav { display:grid; gap:6px; }
+    nav button { padding:10px 11px; border:0; border-radius:8px; color:#475467; background:transparent; text-align:left; }
+    nav button.active,nav button:hover { color:var(--brand); background:var(--brand-soft); font-weight:700; }
+    main { min-width:0; padding:30px clamp(20px,4vw,54px) 58px; }
+    .view { display:none; max-width:1080px; margin:0 auto; }
+    .view.active { display:block; }
+    .eyebrow { color:var(--brand); font-size:12px; font-weight:800; letter-spacing:.08em; }
+    h1 { margin:4px 0 6px; font-size:28px; line-height:1.25; }
+    h2 { margin:0; font-size:18px; }
+    p { margin:0; }
+    .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; margin-bottom:20px; }
+    .muted { color:var(--muted); }
+    .btn { min-height:39px; padding:8px 15px; border:1px solid var(--line); border-radius:8px; color:#344054; background:#fff; font-weight:700; }
+    .btn:hover { background:#fafbfc; border-color:#aab5c8; }
+    .btn.primary { border-color:var(--brand); color:#fff; background:var(--brand); }
+    .btn.primary:hover { background:#2545ad; }
+    .btn.danger { border-color:#efb6b0; color:var(--red); background:#fff; }
+    .btn.link { border:0; color:var(--brand); background:transparent; padding-inline:4px; }
+    .hero { display:grid; grid-template-columns:1.5fr 1fr; gap:24px; padding:25px; border:1px solid #cdd7f6; border-radius:var(--radius); background:linear-gradient(135deg,#fff,#f3f6ff); }
+    .hero h2 { margin:8px 0 8px; font-size:23px; }
+    .hero p { max-width:650px; color:var(--muted); }
+    .hero-action { display:flex; align-items:center; justify-content:flex-end; }
+    .status { display:inline-flex; align-items:center; gap:6px; padding:4px 9px; border-radius:999px; font-size:12px; font-weight:800; }
+    .status.success { color:var(--green); background:var(--green-soft); }
+    .status.warning { color:var(--amber); background:var(--amber-soft); }
+    .status.danger { color:var(--red); background:var(--red-soft); }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:15px; margin-top:17px; }
+    .card,.section { border:1px solid var(--line); border-radius:var(--radius); background:var(--surface); }
+    .card { padding:17px; }
+    .stat { font-size:26px; font-weight:800; }
+    .stat-label { color:var(--muted); font-size:13px; }
+    .section { margin-top:18px; overflow:hidden; }
+    .section-head { display:flex; align-items:center; justify-content:space-between; gap:15px; padding:16px 18px; border-bottom:1px solid var(--line); }
+    .section-head p { margin-top:3px; color:var(--muted); font-size:13px; }
+    .row { display:grid; grid-template-columns:minmax(240px,1.2fr) 1fr auto; align-items:center; gap:18px; padding:16px 18px; border-bottom:1px solid #edf0f5; }
+    .row:last-child { border-bottom:0; }
+    .row small { display:block; margin-top:3px; color:var(--muted); }
+    .row-actions { display:flex; align-items:center; gap:10px; }
+    .notice { display:flex; gap:11px; padding:13px 15px; border:1px solid #efd59a; border-radius:10px; color:#724b0d; background:var(--amber-soft); }
+    .notice.success { border-color:#bfe4cd; color:#286241; background:var(--green-soft); }
+    .notice.danger { border-color:#f2c2bc; color:#8a2118; background:var(--red-soft); }
+    .notice strong { display:block; }
+    .notice p { margin-top:2px; font-size:13px; }
+    .steps { display:grid; gap:0; }
+    .step { display:grid; grid-template-columns:30px 1fr auto; align-items:center; gap:12px; padding:15px 0; border-bottom:1px solid #edf0f5; }
+    .step:last-child { border-bottom:0; }
+    .step-index { width:27px; height:27px; display:grid; place-items:center; border-radius:50%; color:var(--brand); background:var(--brand-soft); font-weight:800; }
+    .step p { margin-top:3px; color:var(--muted); font-size:13px; }
+    .rules { display:grid; gap:13px; padding:18px; }
+    .rule { display:flex; justify-content:space-between; gap:15px; padding:13px 0; border-bottom:1px solid #edf0f5; }
+    .rule:last-child { border-bottom:0; }
+    .rule span { color:var(--muted); text-align:right; }
+    .modal-backdrop { position:fixed; inset:0; z-index:10; display:none; align-items:center; justify-content:center; padding:20px; background:rgba(10,18,36,.56); }
+    .modal-backdrop.open { display:flex; }
+    .modal { width:min(600px,100%); max-height:88vh; overflow:auto; border-radius:15px; background:#fff; box-shadow:0 18px 44px rgba(23,32,51,.18); }
+    .modal-head,.modal-body,.modal-actions { padding:19px 22px; }
+    .modal-head { display:flex; justify-content:space-between; gap:15px; border-bottom:1px solid var(--line); }
+    .modal-head p { margin-top:4px; color:var(--muted); font-size:13px; }
+    .modal-body { display:grid; gap:14px; }
+    .modal-actions { display:flex; justify-content:flex-end; gap:9px; border-top:1px solid var(--line); background:#fafbfc; }
+    .icon-btn { width:32px; height:32px; border:0; border-radius:7px; color:var(--muted); background:#f3f5f8; font-size:18px; }
+    .release-list { display:grid; gap:8px; }
+    .release { display:flex; justify-content:space-between; gap:12px; padding:11px 12px; border:1px solid var(--line); border-radius:8px; }
+    .release small { display:block; color:var(--muted); }
+    .toast { position:fixed; right:22px; bottom:22px; z-index:20; display:none; width:min(380px,calc(100vw - 44px)); padding:14px 16px; border:1px solid #bfe4cd; border-radius:10px; background:#f0fbf5; box-shadow:0 15px 32px rgba(23,32,51,.15); }
+    .toast.show { display:block; }
+    .toast strong { color:var(--green); }
+    .toast p { margin-top:3px; color:#426454; font-size:13px; }
+    @media (max-width:820px) { .shell{grid-template-columns:1fr}.sidebar{border-right:0;border-bottom:1px solid var(--line);padding:9px 13px}.device{display:none}nav{grid-template-columns:repeat(3,1fr)}nav button{text-align:center}.hero,.grid{grid-template-columns:1fr}.hero-action{justify-content:flex-start}.row{grid-template-columns:1fr}.page-head{flex-direction:column}.rule{display:block}.rule span{display:block;margin-top:3px;text-align:left} }
+  </style>
+</head>
+<body>
+  <header class="topbar"><div class="brand"><div class="mark">伏</div><div><strong>伏羲 MCP 与 Skill 主动更新</strong><small>MCP stdio 与 Skill 主动更新 · 设计原型</small></div></div><div class="user-pill">wushengzhi · 我的设备</div></header>
+  <div class="shell">
+    <aside class="sidebar"><div class="device"><strong>Windows 工作站</strong><small>MCP 1.4.1 · Skill 1.4.1</small></div><nav aria-label="主导航"><button class="active" data-nav="overview">工作首页</button><button data-nav="progress">处理进度</button><button data-nav="rules">固定规则</button></nav></aside>
+    <main>
+      <section class="view active" data-view="overview">
+        <div class="page-head"><div><span class="eyebrow">已接入设备</span><h1>组件状态</h1><p class="muted">只展示与你的设备有关的更新和下一步。</p></div></div>
+        <div class="hero"><div><span class="status warning">发现更新</span><h2>MCP 与 Skill 有新版本</h2><p>稳定版本 1.5.0 修复了候选预览校验和 Skill 能力缓存问题。更新会保留现有会话，不改变原型数据。</p></div><div class="hero-action"><button class="btn primary" data-open="release-detail">查看更新</button></div></div>
+        <div class="grid"><article class="card"><div class="stat">1</div><div class="stat-label">可更新设备</div></article><article class="card"><div class="stat">2</div><div class="stat-label">将更新的组件</div></article><article class="card"><div class="stat">0</div><div class="stat-label">无法继续的异常</div></article></div>
+        <section class="section"><div class="section-head"><div><h2>与我有关</h2><p>更新前可以查看影响，更新后以本地回读为准。</p></div></div><div class="row"><div><strong>Windows 工作站</strong><small>MCP 1.4.1 · Skill 1.4.1 · 上次连接刚刚</small></div><span class="status warning">等待确认</span><div class="row-actions"><button class="btn" data-open="release-detail">查看详情</button></div></div><div class="row"><div><strong>上一轮更新</strong><small>1.4.1 · MCP check_connection 与 Skill 发现均通过</small></div><span class="status success">已完成</span><div class="row-actions"><button class="btn link" data-open="history-detail">查看记录</button></div></div></section>
+      </section>
+
+      <section class="view" data-view="progress">
+        <div class="page-head"><div><span class="eyebrow">只展示业务状态</span><h1>处理进度</h1><p class="muted">更新器正在执行本地替换，平台不会提前宣布完成。</p></div></div>
+        <div class="notice"><span>i</span><div><strong>更新正在等待本地结果</strong><p>你可以离开此页面；只有 MCP 和 Skill 都通过检查，状态才会变为完成。</p></div></div>
+        <section class="section"><div class="section-head"><div><h2>Windows 工作站</h2><p>目标版本：MCP 1.5.0 · Skill 1.5.0</p></div><span class="status warning">校验中</span></div><div style="padding:0 18px"><div class="steps"><div class="step"><span class="step-index">✓</span><div><strong>更新请求已确认</strong><p>本次更新只作用于你的设备。</p></div><span class="status success">完成</span></div><div class="step"><span class="step-index">2</span><div><strong>下载并校验组件</strong><p>正在检查版本摘要和运行环境。</p></div><span class="status warning">进行中</span></div><div class="step"><span class="step-index">3</span><div><strong>启动检查</strong><p>等待 check_connection 和 Skill 发现结果。</p></div><span class="status">未开始</span></div></div><div style="display:flex;justify-content:flex-end;gap:8px;padding:16px 0"><button class="btn danger" id="simulate-failure">模拟校验失败</button><button class="btn primary" id="finish-update">确认检查结果</button></div></div></section>
+      </section>
+
+      <section class="view" data-view="rules">
+        <div class="page-head"><div><span class="eyebrow">仅展示固定边界</span><h1>更新规则</h1><p class="muted">用户只决定是否更新，平台自动执行安全检查和回滚。</p></div></div>
+        <section class="section"><div class="section-head"><div><h2>当前规则</h2><p>这些规则保护会话和本地文件，不提供自由编排。</p></div></div><div class="rules"><div class="rule"><strong>更新触发</strong><span>必须由用户点击确认</span></div><div class="rule"><strong>更新凭据</strong><span>一次性短期票据，不使用 refresh token</span></div><div class="rule"><strong>文件策略</strong><span>临时目录校验，current 原子切换</span></div><div class="rule"><strong>失败策略</strong><span>保留上一版本并自动回滚</span></div><div class="rule"><strong>兼容范围</strong><span>稳定渠道、Windows 先行</span></div></div></section>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" data-modal="release-detail" role="dialog" aria-modal="true" aria-labelledby="release-title"><div class="modal"><div class="modal-head"><div><h2 id="release-title">更新 MCP 与 Skill</h2><p>更新前先查看影响，确认后才会唤起本地更新器。</p></div><button class="icon-btn" data-close aria-label="关闭">×</button></div><div class="modal-body"><div class="notice"><span>!</span><div><strong>会发生什么</strong><p>下载约 18 MB，保留现有会话和配置；过程中 MCP 可能短暂重启。</p></div></div><div class="release-list"><div class="release"><div><strong>MCP stdio</strong><small>1.4.1 → 1.5.0 · Node.js >=18</small></div><span class="status success">兼容</span></div><div class="release"><div><strong>fuxi-skyui-prototype Skill</strong><small>1.4.1 → 1.5.0 · 能力缓存同步</small></div><span class="status success">兼容</span></div></div></div><div class="modal-actions"><button class="btn" data-close>稍后更新</button><button class="btn primary" id="confirm-update">确认更新</button></div></div></div>
+  <div class="modal-backdrop" data-modal="history-detail" role="dialog" aria-modal="true" aria-labelledby="history-title"><div class="modal"><div class="modal-head"><div><h2 id="history-title">更新记录</h2><p>只保留版本、结果和稳定错误信息。</p></div><button class="icon-btn" data-close aria-label="关闭">×</button></div><div class="modal-body"><div class="notice success"><span>✓</span><div><strong>1.4.1 更新完成</strong><p>MCP 连接和 Skill 发现通过，会话未重新接入。</p></div></div></div><div class="modal-actions"><button class="btn" data-close>关闭</button></div></div></div>
+  <div class="modal-backdrop" data-modal="failure-detail" role="dialog" aria-modal="true" aria-labelledby="failure-title"><div class="modal"><div class="modal-head"><div><h2 id="failure-title">更新未完成</h2><p>旧版本已恢复，当前设备仍可继续使用。</p></div><button class="icon-btn" data-close aria-label="关闭">×</button></div><div class="modal-body"><div class="notice danger"><span>!</span><div><strong>新版本启动检查失败</strong><p>更新器已恢复上一版本。可以稍后重试，或把错误码交给维护者。</p></div></div></div><div class="modal-actions"><button class="btn" data-close>继续使用旧版</button><button class="btn danger" id="retry-update">重新查看更新</button></div></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"><strong id="toast-title">已完成</strong><p id="toast-text">权威状态已确认。</p></div>
+  <script>
+    const views = [...document.querySelectorAll('[data-view]')];
+    const nav = [...document.querySelectorAll('[data-nav]')];
+    const modals = [...document.querySelectorAll('[data-modal]')];
+    const toastNode = document.getElementById('toast');
+    function showView(name) { views.forEach(v => v.classList.toggle('active', v.dataset.view === name)); nav.forEach(b => b.classList.toggle('active', b.dataset.nav === name)); }
+    function openModal(name) { const modal = document.querySelector(`[data-modal="${name}"]`); if (!modal) return; modal.classList.add('open'); modal.querySelector('button')?.focus(); }
+    function closeModal(modal) { modal?.classList.remove('open'); }
+    function toast(title, text) { document.getElementById('toast-title').textContent = title; document.getElementById('toast-text').textContent = text; toastNode.classList.add('show'); clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => toastNode.classList.remove('show'), 3200); }
+    nav.forEach(button => button.addEventListener('click', () => showView(button.dataset.nav)));
+    document.querySelectorAll('[data-open]').forEach(button => button.addEventListener('click', () => openModal(button.dataset.open)));
+    document.querySelectorAll('[data-close]').forEach(button => button.addEventListener('click', () => closeModal(button.closest('.modal-backdrop'))));
+    modals.forEach(modal => modal.addEventListener('mousedown', event => { if (event.target === modal) closeModal(modal); }));
+    document.addEventListener('keydown', event => { if (event.key === 'Escape') modals.forEach(closeModal); });
+    document.getElementById('confirm-update').addEventListener('click', () => { closeModal(document.querySelector('[data-modal="release-detail"]')); showView('progress'); toast('更新已开始', '本地更新器正在执行，完成后会回读结果。'); });
+    document.getElementById('finish-update').addEventListener('click', () => { showView('overview'); toast('更新完成', 'MCP 连接和 Skill 发现均已通过。'); });
+    document.getElementById('simulate-failure').addEventListener('click', () => openModal('failure-detail'));
+    document.getElementById('retry-update').addEventListener('click', () => { closeModal(document.querySelector('[data-modal="failure-detail"]')); openModal('release-detail'); });
+  </script>
+</body>
+</html>

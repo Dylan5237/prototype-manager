@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const { query, queryOne, run } = require('../database/db');
 
-const CONNECT_CODE_TTL_MS = 10 * 60 * 1000;
+const CONNECT_CODE_TTL_MS = 20 * 60 * 1000;
 const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 function sha256(value) {
@@ -90,6 +90,7 @@ function listSessions(userId = null) {
 }
 
 module.exports = {
+  CONNECT_CODE_TTL_MS,
   createConnectCode,
   consumeConnectCode,
   createSession,

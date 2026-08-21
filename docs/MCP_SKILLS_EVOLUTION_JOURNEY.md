@@ -940,6 +940,30 @@ commit：
 - 主流程已从 Git 分支/MR 切换为任务码、候选 ZIP、预览、显式采纳；本轮体验修正已部署 16077，剩余是用户视觉复测而非代码阻断。
 - 生产发布仍是独立操作，必须在用户明确确认后按“16077 验证 → 16088 发布”流程执行；当前不自动发布。
 
+### 阶段 18：MCP stdio 与 Skill 主动更新设计
+
+状态：`in-progress`
+
+背景与目标：
+- 首次接入已经建立设备会话，后续 MCP/Skill 版本更新不应再让 AI 重跑完整接入流程。
+- 用户仍需明确确认本地文件更新，平台不能通过浏览器静默执行任意脚本。
+
+当前调整：
+- 首次连接码有效期由 10 分钟放宽为 20 分钟，仍保持单次消费；兑换后 Access Token 1 小时，Refresh Session 90 天滑动续期不变。
+- 接入提示词明确先准备 MCP 临时目录并优先调用 `check_connection` 兑换连接码，成功后再安装 Skill、固定 stdio 配置和验证 Skill 发现。
+- 新增设计包：[agent-runtime-update-mvp](prototypes/agent-runtime-update-mvp/)，冻结“发布 manifest → 伏羲通知 → 用户确认 → 一次性 update ticket → 本地更新器原子切换 → Smoke/回滚”的纵向切片。
+
+设计冻结边界：
+- 服务端拥有 release/artifact/job/ticket 权威状态；MCP 心跳上报本地 MCP/Skill/Node 版本。
+- 浏览器只负责通知、确认、进度和结果，不直接执行 PowerShell/Node；首次接入时安装的本地更新器通过 `fuxi-agent://` 深链接承接更新，缺失时提供命令行回退。
+- MCP 与 Skill 按兼容 release 一起更新，更新器保留 `previous`、独立保护凭据文件，Smoke 失败自动回滚。
+- MVP 只做 stable 单渠道、Windows 先行、手动确认和真实 16077 验收；静默更新、多渠道灰度、多平台守护进程延后。
+
+尚未完成：
+- release/job/ticket 数据模型和 API 尚未实现。
+- Windows 本地更新器、深链接注册、原子目录切换和真实回滚尚未实现。
+- 真实设备通知、凭据保留、Skill 发现和 16077 端到端证据尚未形成。
+
 ## 更新规则
 
 每完成一个阶段，必须更新：

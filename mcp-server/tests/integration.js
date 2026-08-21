@@ -327,8 +327,11 @@ async function main() {
     assert(!bootstrap.data.prompt.includes('admin123'));
     assert(bootstrap.data.connectCode);
     assert(bootstrap.data.connectCodeExpiresAt);
+    const connectCodeRemainingMs = Date.parse(bootstrap.data.connectCodeExpiresAt) - Date.now();
+    assert(connectCodeRemainingMs > 18 * 60 * 1000 && connectCodeRemainingMs <= 20 * 60 * 1000 + 5000);
     assert(bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
     assert(bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
+    assert(bootstrap.data.prompt.indexOf('优先调用 check_connection') < bootstrap.data.prompt.indexOf('使用安装 token 下载 Skill ZIP'));
 
     // 一次性连接码兑换 access + refresh token，并登记设备会话
     const connectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {

@@ -132,7 +132,7 @@
           type="success"
           :closable="false"
           show-icon
-          :title="`已生成短期 MCP token（${mcpTokenExpiresLocal} 前有效）。复制提示词发给 AI 助手后，它会自动写入配置并验证连通。`"
+          :title="`安装 token 至 ${mcpTokenExpiresLocal} 有效；连接码至 ${mcpConnectCodeExpiresLocal} 有效。请尽快复制提示词给 AI 助手完成首次兑换。`"
         />
         <el-alert
           v-else
@@ -189,6 +189,7 @@ const newPrototype = ref({ name: '', description: '', category_ids: [] })
 const creating = ref(false)
 const showMcpDialog = ref(false)
 const mcpTokenExpiresAt = ref('')
+const mcpConnectCodeExpiresAt = ref('')
 const mcpLoading = ref(false)
 const mcpPrompt = ref('')
 
@@ -196,6 +197,13 @@ const mcpTokenExpiresLocal = computed(() => {
   if (!mcpTokenExpiresAt.value) return ''
   const d = new Date(mcpTokenExpiresAt.value)
   if (Number.isNaN(d.getTime())) return mcpTokenExpiresAt.value
+  return d.toLocaleString('zh-CN', { hour12: false })
+})
+
+const mcpConnectCodeExpiresLocal = computed(() => {
+  if (!mcpConnectCodeExpiresAt.value) return ''
+  const d = new Date(mcpConnectCodeExpiresAt.value)
+  if (Number.isNaN(d.getTime())) return mcpConnectCodeExpiresAt.value
   return d.toLocaleString('zh-CN', { hour12: false })
 })
 
@@ -313,9 +321,11 @@ async function loadAgentBootstrap() {
     const res = await getAgentBootstrap()
     mcpPrompt.value = res.data.data.prompt
     mcpTokenExpiresAt.value = res.data.data.expiresAt
+    mcpConnectCodeExpiresAt.value = res.data.data.connectCodeExpiresAt
   } catch (err) {
     mcpPrompt.value = ''
     mcpTokenExpiresAt.value = ''
+    mcpConnectCodeExpiresAt.value = ''
     ElMessage.error(err.response?.data?.message || '生成 Skill + MCP 接入提示词失败')
   } finally {
     mcpLoading.value = false

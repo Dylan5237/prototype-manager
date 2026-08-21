@@ -3,7 +3,7 @@ const router = express.Router();
 const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
 const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
 const { setGroupMembers } = require('../services/db-groups');
-const { createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
+const { CONNECT_CODE_TTL_MS, createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
 
 // uploader 与 editor 等价，数据库统一保存为 uploader，显示层统一展示为「编辑者」
 const VALID_ROLES = ['admin', 'uploader', 'viewer'];
@@ -115,7 +115,7 @@ router.post('/mcp/connect-code', requireAuth, (req, res) => {
   const { code, expiresAt } = createConnectCode(user.id);
   res.json({
     success: true,
-    data: { code, expiresAt, expiresIn: 10 * 60 }
+    data: { code, expiresAt, expiresIn: CONNECT_CODE_TTL_MS / 1000 }
   });
 });
 
