@@ -420,11 +420,14 @@ function resolveCurrentTarget(p) {
   if (current && current.mcpPath && fs.existsSync(path.join(current.mcpPath, 'src', 'server.js'))) return current;
   const fallback = process.env.FUXI_MCP_TARGET;
   if (fallback && fs.existsSync(path.resolve(fallback))) {
+    const mcpPath = path.dirname(path.dirname(path.resolve(fallback)));
+    let mcpVersion = 'unknown';
+    try { mcpVersion = readJson(path.join(mcpPath, 'package.json')).version || 'unknown'; } catch (error) {}
     return {
       releaseId: 'legacy',
-      mcpVersion: 'unknown',
-      skillVersion: 'unknown',
-      mcpPath: path.dirname(path.dirname(path.resolve(fallback))),
+      mcpVersion,
+      skillVersion: process.env.FUXI_SKILL_VERSION || 'unknown',
+      mcpPath,
       skillPath: skillTarget(),
       skillTarget: skillTarget()
     };
