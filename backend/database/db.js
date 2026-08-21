@@ -319,9 +319,25 @@ function createTables() {
       last_used_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       revoked_at TEXT,
+      mcp_version TEXT,
+      skill_version TEXT,
+      runtime_version TEXT,
+      platform TEXT,
+      last_reported_at TEXT,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+
+  // 迁移：为旧 MCP 会话补上本地组件版本回报字段。
+  for (const [column, type] of [
+    ['mcp_version', 'TEXT'],
+    ['skill_version', 'TEXT'],
+    ['runtime_version', 'TEXT'],
+    ['platform', 'TEXT'],
+    ['last_reported_at', 'TEXT']
+  ]) {
+    try { db.run(`ALTER TABLE mcp_sessions ADD COLUMN ${column} ${type}`); } catch (e) { /* 字段已存在 */ }
+  }
 
   // MCP 一次性连接码表：用户在平台发起接入时生成，短命且单次使用
   db.run(`
@@ -334,8 +350,52 @@ function createTables() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+
+  // MCP/Skill 发布清单：release_id 不复用，制品摘要和兼容条件随 manifest 固定。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS agent_releases (
+      release_id TEXT PRIMARY KEY,
+      channel TEXT NOT NULL DEFAULT 'stable',
+      mcp_version TEXT NOT NULL,
+      skill_version TEXT NOT NULL,
+      api_schema_version TEXT,
+      min_node_version TEXT,
+      manifest_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      published_at TEXT NOT NULL,
+      withdrawn_at TEXT,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
+  // 用户确认的延后更新意图：浏览器只写 scheduled，launcher 启动时 claim。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS agent_update_intents (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      session_id TEXT NOT NULL,
+      release_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      requested_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      local_mcp_version TEXT,
+      local_skill_version TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (session_id) REFERENCES mcp_sessions(id),
+      FOREIGN KEY (release_id) REFERENCES agent_releases(release_id)
+    )
+  `);
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_session ON agent_update_intents(session_id, status, requested_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_user ON agent_update_intents(user_id, updated_at)`); } catch (e) {}
 
   // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
   applyCollaborationSchema(db);

@@ -6,6 +6,10 @@ const path = require('path');
 const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
 
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
+const MCP_VERSION = (() => {
+  try { return require('../package.json').version || 'unknown'; } catch (e) { return 'unknown'; }
+})();
+const SKILL_VERSION = process.env.FUXI_SKILL_VERSION || 'unknown';
 let cachedToken = process.env.FUXI_TOKEN || '';
 const CREDENTIALS_FILE = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
 const DEVICE_LABEL = `${os.hostname()} (${process.platform})`;
@@ -551,6 +555,21 @@ async function authed(apiPath, options = {}) {
   }
 }
 
+async function reportRuntime() {
+  if (!sessionId) return null;
+  return authed('/api/auth/mcp/heartbeat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      sessionId,
+      mcpVersion: MCP_VERSION,
+      skillVersion: SKILL_VERSION,
+      runtimeVersion: process.version,
+      platform: process.platform
+    })
+  });
+}
+
 function contentJson(data, isError = false) {
   const value = {
     content: [
@@ -847,15 +866,28 @@ async function callTool(name, args) {
   if (name === 'check_connection') {
     const data = await request('/api/health');
     let authentication = 'unconfigured';
+    let runtime = { mcpVersion: MCP_VERSION, skillVersion: SKILL_VERSION };
+    let update = null;
     if (process.env.FUXI_CONNECT_CODE || refreshToken || cachedToken || process.env.FUXI_USERNAME) {
       try {
         await getToken();
         authentication = 'verified';
+        try {
+          const heartbeat = await reportRuntime();
+          runtime = heartbeat && heartbeat.data && heartbeat.data.session
+            ? { ...runtime, ...heartbeat.data.session }
+            : runtime;
+          update = heartbeat && heartbeat.data && heartbeat.data.updates
+            ? heartbeat.data.updates[0] || null
+            : null;
+        } catch (e) {
+          // 旧服务端尚未提供 heartbeat 时，不阻断现有 MCP 连接。
+        }
       } catch (e) {
         authentication = e.code || 'unverified';
       }
     }
-    return contentJson({ apiUrl: API_URL, health: data, authentication });
+    return contentJson({ apiUrl: API_URL, health: data, authentication, runtime, update });
   }
 
   if (name === 'list_prototypes') {

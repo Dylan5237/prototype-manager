@@ -75,8 +75,12 @@ function revokeSession(sessionId, userId = null) {
 
 function listSessions(userId = null) {
   const sql = userId === null
-    ? `SELECT id, user_id, device_label, created_at, last_used_at, expires_at, revoked_at FROM mcp_sessions ORDER BY last_used_at DESC`
-    : `SELECT id, user_id, device_label, created_at, last_used_at, expires_at, revoked_at FROM mcp_sessions WHERE user_id = ? ORDER BY last_used_at DESC`;
+    ? `SELECT id, user_id, device_label, created_at, last_used_at, expires_at, revoked_at,
+         mcp_version, skill_version, runtime_version, platform, last_reported_at
+       FROM mcp_sessions ORDER BY last_used_at DESC`
+    : `SELECT id, user_id, device_label, created_at, last_used_at, expires_at, revoked_at,
+         mcp_version, skill_version, runtime_version, platform, last_reported_at
+       FROM mcp_sessions WHERE user_id = ? ORDER BY last_used_at DESC`;
   const rows = userId === null ? query(sql) : query(sql, [userId]);
   return rows.map(r => ({
     id: r.id,
@@ -85,7 +89,12 @@ function listSessions(userId = null) {
     createdAt: r.created_at,
     lastUsedAt: r.last_used_at,
     expiresAt: r.expires_at,
-    revokedAt: r.revoked_at
+    revokedAt: r.revoked_at,
+    mcpVersion: r.mcp_version || null,
+    skillVersion: r.skill_version || null,
+    runtimeVersion: r.runtime_version || null,
+    platform: r.platform || null,
+    lastReportedAt: r.last_reported_at || null
   }));
 }
 

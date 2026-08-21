@@ -541,6 +541,13 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 首次连接码有效期为 20 分钟、仍只消费一次；任务码继续 10 分钟，二者都不作为长期会话凭据。
 - MVP 先做 stable 单渠道、Windows 设备、手动确认、下次启动和失败回滚；深链接、静默更新、多平台守护进程延后。
 
+当前实现进度:
+
+- 已落地服务端数据底座：`agent_releases`、`agent_update_intents`，以及 `mcp_sessions` 的 MCP/Skill/运行时版本回报字段。
+- 已落地最小 API：管理员发布 stable manifest、用户查询设备更新、创建幂等更新意图、launcher claim、结果回报、MCP heartbeat。
+- MCP `check_connection` 会上报运行时版本并返回第一条可用更新；旧服务端没有 heartbeat 时保持兼容，不阻断现有连接。
+- 已通过后端 35 项测试、MCP 语法检查和真实集成测试；尚未把制品下载、稳定 launcher 远程 claim、页面通知接入 16077。
+
 ---
 
 ## 7. 当前工作区事实

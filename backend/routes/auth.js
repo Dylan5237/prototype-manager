@@ -4,6 +4,7 @@ const { generateToken, requireAuth, requireRole } = require('../middleware/auth'
 const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
 const { setGroupMembers } = require('../services/db-groups');
 const { CONNECT_CODE_TTL_MS, createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
+const { AgentUpdateError, reportSessionRuntime } = require('../services/db-agent-updates');
 
 // uploader 与 editor 等价，数据库统一保存为 uploader，显示层统一展示为「编辑者」
 const VALID_ROLES = ['admin', 'uploader', 'viewer'];
@@ -185,6 +186,29 @@ router.post('/mcp/refresh', (req, res) => {
       sessionExpiresAt: rotated.expiresAt
     }
   });
+});
+
+// MCP 启动/刷新后回报本地组件版本；服务端只返回可用更新摘要，不返回任何凭据。
+router.post('/mcp/heartbeat', requireAuth, (req, res) => {
+  try {
+    const { sessionId, mcpVersion, skillVersion, runtimeVersion, platform } = req.body || {};
+    const data = reportSessionRuntime({
+      userId: req.user.id,
+      sessionId,
+      mcpVersion,
+      skillVersion,
+      runtimeVersion,
+      platform
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    const status = error instanceof AgentUpdateError ? error.status : 500;
+    res.status(status).json({
+      success: false,
+      code: error.code || 'MCP_HEARTBEAT_FAILED',
+      message: error.message || 'MCP 版本回报失败'
+    });
+  }
 });
 
 // 查看 MCP 连接情况：admin 看全部，普通用户只看自己的。

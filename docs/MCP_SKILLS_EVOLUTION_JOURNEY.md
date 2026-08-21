@@ -959,9 +959,14 @@ commit：
 - MCP 与 Skill 按兼容 release 一起更新，更新器保留 `previous`、独立保护凭据文件，Smoke 失败自动回滚。
 - MVP 只做 stable 单渠道、Windows 先行、手动确认、下次启动和真实 16077 验收；深链接、静默更新、多渠道灰度、多平台守护进程延后。
 
+已完成（服务端第一切片）：
+- 已实现 `agent_releases`、`agent_update_intents` 数据模型，以及 release 发布、设备更新查询、更新意图幂等创建、launcher claim、结果回报和 MCP heartbeat API。
+- MCP `check_connection` 已回报 MCP/Skill/Node/平台版本并读取服务端可用更新；对未升级的旧服务端保持兼容。
+- 后端 35 项测试、MCP 语法检查和集成测试通过；这只证明服务端状态机与版本回报，不等于 16077 真实用户验收。
+
 尚未完成：
-- release/intent 数据模型和 API 尚未实现。
-- 稳定 launcher 尚未接入真实 MCP 启动配置；真实制品下载、原子目录切换和回滚尚未接入产品代码。
+- 稳定 launcher 尚未接入服务端 claim 和真实制品下载；真实制品目录、原子目录切换和回滚仍停留在隔离试验代码。
+- 前端尚未显示更新通知、确认按钮和结果状态，16077 尚未部署本切片。
 - 已完成隔离 Windows 本地技术试验：成功切换、摘要/Smoke 回滚、凭据不变、客户端运行中等待、并发锁均有脚本证据；真实设备通知、Skill 发现和 16077 端到端证据尚未形成。
 - 已用 Cursor 测试环境完成真实 MCP launcher 协议试验：临时副本 v1→v2、`initialize`、`tools/list`（26 个工具，含 `deliver_project`）和 `check_connection`（16077、verified）通过；Cursor 已打开工作区会缓存 `user-fuxi-platform`，仅改全局 `mcp.json` 不会热切换现有实例。
 - 当前 Cursor Skill 的 `SKILL.md` 与能力 cache 摘要不一致，检查返回 `CACHE_STALE_FILE SKILL.md`；本轮不自动重建或覆盖，避免把用户现有 Skill 改动误认为更新结果。

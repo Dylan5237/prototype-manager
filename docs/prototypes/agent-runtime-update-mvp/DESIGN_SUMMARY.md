@@ -1,7 +1,7 @@
 # 伏羲 MCP 与 Skill 延后更新设计摘要
 
 > 设计基线：2026-08-21
-> 状态：延后更新边界已确认；Windows 本地技术试验已完成；产品代码尚未接入真实更新接口
+> 状态：延后更新边界已确认；Windows 本地技术试验已完成；服务端状态与版本回报第一切片已实现
 
 ## 1. 结论
 
@@ -87,4 +87,5 @@
 - 严格校验：`python C:\Users\howyo\.codex\skills\first-principles-product-design\scripts\validate_design_package.py docs/prototypes/agent-runtime-update-mvp --strict`
 - 运行 Windows 本地试验：`cd mcp-server; npm run test:update-spike`
 - 已验证：本地成功切换、摘要失败回滚、Smoke 失败回滚、凭据保留、客户端运行中等待、并发锁；真实测试安装的 16077 health、26 个工具、`deliver_project`、`check_connection=verified`；真实 MCP 副本经 Cursor launcher 协议探针完成 v1→v2。
-- 尚未验证：真实服务端发布/通知、Cursor 已打开工作区切换到新 launcher、Skill 缓存刷新、16077 真实用户更新闭环。
+- 服务端第一切片已实现：release manifest、设备版本 heartbeat、更新查询、幂等 intent、claim 和结果回报；后端 35 项测试、MCP 语法检查和集成测试通过。
+- 尚未验证：真实制品发布/下载、Cursor 已打开工作区切换到新 launcher、Skill 缓存刷新、前端通知和 16077 真实用户更新闭环。

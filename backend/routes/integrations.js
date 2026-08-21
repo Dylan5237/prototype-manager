@@ -6,6 +6,16 @@ const { requireAuth, requireRole, generateToken } = require('../middleware/auth'
 const { findUserById } = require('../services/db-users');
 const { createConnectCode } = require('../services/db-mcp-sessions');
 const { GitLabProvider } = require('../services/gitlab-provider');
+const {
+  AgentUpdateError,
+  createRelease,
+  listPublishedReleases,
+  getAvailableUpdates,
+  createUpdateIntent,
+  getUpdateIntent,
+  claimUpdateIntent,
+  recordUpdateResult
+} = require('../services/db-agent-updates');
 
 const router = express.Router();
 const SKILL_NAME = 'fuxi-skyui-prototype';
@@ -148,6 +158,86 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
       apiUrl: baseUrl
     }
   });
+});
+
+function sendAgentUpdateError(res, error) {
+  const status = error instanceof AgentUpdateError ? error.status : 500;
+  res.status(status).json({
+    success: false,
+    code: error.code || 'AGENT_UPDATE_FAILED',
+    message: error.message || '组件更新操作失败',
+    ...(error.details && Object.keys(error.details).length ? { details: error.details } : {})
+  });
+}
+
+// 发布不可变 stable release。当前只提供维护者 API，下载制品的真实发布接线后续补上。
+router.post('/agent-releases', requireAuth, requireRole(['admin']), (req, res) => {
+  try {
+    const release = createRelease({ actorUserId: req.user.id, manifest: req.body && (req.body.manifest || req.body) });
+    res.status(201).json({ success: true, data: release });
+  } catch (error) {
+    sendAgentUpdateError(res, error);
+  }
+});
+
+// 读取当前设备可用更新；sessionId 必须属于当前用户。
+router.get('/updates', requireAuth, (req, res) => {
+  try {
+    const sessionId = String(req.query.sessionId || '');
+    if (!sessionId) {
+      return res.json({ success: true, data: { session: null, current: null, updates: listPublishedReleases() } });
+    }
+    res.json({ success: true, data: getAvailableUpdates({ userId: req.user.id, sessionId }) });
+  } catch (error) {
+    sendAgentUpdateError(res, error);
+  }
+});
+
+// 用户确认“下次启动更新”；重复点击返回同一个活动意图。
+router.post('/update-intents', requireAuth, (req, res) => {
+  try {
+    const { sessionId, releaseId } = req.body || {};
+    const result = createUpdateIntent({ userId: req.user.id, sessionId, releaseId });
+    res.status(result.created ? 201 : 200).json({ success: true, data: result });
+  } catch (error) {
+    sendAgentUpdateError(res, error);
+  }
+});
+
+// launcher 启动时领取待更新意图；不返回 refresh token，只返回已发布 manifest。
+router.post('/update-intents/claim', requireAuth, (req, res) => {
+  try {
+    const { sessionId } = req.body || {};
+    res.json({ success: true, data: claimUpdateIntent({ userId: req.user.id, sessionId }) });
+  } catch (error) {
+    sendAgentUpdateError(res, error);
+  }
+});
+
+router.get('/update-intents/:id', requireAuth, (req, res) => {
+  try {
+    res.json({ success: true, data: getUpdateIntent({ userId: req.user.id, intentId: req.params.id }) });
+  } catch (error) {
+    sendAgentUpdateError(res, error);
+  }
+});
+
+router.post('/update-intents/:id/result', requireAuth, (req, res) => {
+  try {
+    const { status, localMcpVersion, localSkillVersion, errorCode, errorMessage } = req.body || {};
+    const data = recordUpdateResult({
+      userId: req.user.id,
+      intentId: req.params.id,
+      status,
+      localMcpVersion,
+      localSkillVersion,
+      errorCode,
+      errorMessage
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendAgentUpdateError(res, error);
+  }
 });
 
 router.get('/git-provider/health', requireAuth, requireRole(['admin']), async (req, res) => {
