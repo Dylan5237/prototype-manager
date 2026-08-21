@@ -525,21 +525,21 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 权威设计：[lightweight-collaboration-mvp](prototypes/lightweight-collaboration-mvp/FULL_DESIGN.md)。
 
-### 阶段 18: MCP stdio 与 Skill 主动更新
+### 阶段 18: MCP stdio 与 Skill 延后更新
 
 状态: `in-progress`
 
-目标: 已完成首次接入的用户在伏羲平台看到更新通知，确认后由本地更新器原子更新 MCP stdio 与 Skill，不重复完整接入。
+目标: 已完成首次接入的用户在伏羲平台确认更新意图，AI 客户端下一次启动前由稳定 launcher 原子更新 MCP stdio 与 Skill，不重复完整接入。
 
 权威设计：[agent-runtime-update-mvp](prototypes/agent-runtime-update-mvp/FULL_DESIGN.md)。
 
 当前冻结边界:
 
-- 服务端发布不可变 release manifest，MCP 会话上报本地 MCP/Skill 版本。
-- 用户点击更新后创建短期一次性 update ticket，由首次接入时安装的本地更新器执行。
-- 浏览器不直接执行脚本；更新器负责下载、摘要校验、staging、原子切换、Smoke、回滚和结果回报。
+- 服务端发布不可变 release manifest，MCP 会话上报本地 MCP/Skill 版本；用户点击只记录 update intent。
+- AI 客户端下次启动时由版本无关的稳定 launcher 消费 intent，再执行下载、摘要校验、staging、原子切换、Smoke、回滚和结果回报。
+- 浏览器不直接执行脚本，不注册 Windows 深链接，不运行常驻更新服务；当前客户端继续可用。
 - 首次连接码有效期为 20 分钟、仍只消费一次；任务码继续 10 分钟，二者都不作为长期会话凭据。
-- MVP 先做 stable 单渠道、Windows 设备、手动确认和失败回滚；灰度、静默更新、多平台守护进程延后。
+- MVP 先做 stable 单渠道、Windows 设备、手动确认、下次启动和失败回滚；深链接、静默更新、多平台守护进程延后。
 
 ---
 

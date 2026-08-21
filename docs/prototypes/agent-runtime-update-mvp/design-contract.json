@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "project_name": "伏羲 MCP 与 Skill 主动更新",
+  "project_name": "伏羲 MCP 与 Skill 延后更新",
   "artifact_files": {
     "summary": "DESIGN_SUMMARY.md",
     "detail": "FULL_DESIGN.md",
     "prototype": "index.html"
   },
   "required_terms": [
-    "伏羲 MCP 与 Skill 主动更新"
+    "伏羲 MCP 与 Skill 延后更新"
   ],
   "prohibited_visible_terms": [],
   "not_applicable_diagrams": {},

@@ -1,537 +1,513 @@
-# 伏羲 MCP 与 Skill 主动更新全量详细设计
+# 伏羲 MCP 与 Skill 延后更新全量详细设计
 
 > 设计基线：2026-08-21
 > 关联原型：[index.html](./index.html)
 > 设计摘要：[DESIGN_SUMMARY.md](./DESIGN_SUMMARY.md)
-> 状态：MVP 设计完成，代码实现未开始
+> 状态：延后更新决策已确认；本地 Windows 技术试验完成；真实产品接入尚未开始
 
 ## 1. 文档地位
 
-本文是“首次接入后如何更新本地 MCP stdio 与 Skill”的权威设计，不改变首次接入、任务码和原型候选采纳的既有边界。受众是产品负责人、平台后端、MCP/Skill 维护者和实现该功能的 Agent。本文区分已验证事实、已确认决策、设计目标与尚未完成的真实环境证据；本地原型和静态校验不能代替 Windows 深链接、真实设备更新和生产验收。
+本文是“已接入用户如何在不重跑首次接入的前提下更新本地 MCP stdio 与 Skill”的当前权威设计。受众是产品负责人、平台后端、MCP/Skill 维护者和实现 Agent。
 
-当前事实包括：伏羲已有 `/api/integrations/agent-bootstrap`、Skill/MCP ZIP 分发、MCP stdio 本地凭据文件、可撤销设备会话和动态 Skill 能力缓存；连接码只负责首次兑换。新机制只在这些边界上增加版本清单、更新票据、更新作业和本地原子替换。
+证据边界分为三层：当前仓库和运行约定是已验证事实；本文的延后更新规则是用户确认的产品决定；`mcp-server/tests/update-spike` 是隔离的本地技术证据，不能替代真实服务端、AI 客户端或 16077 验收。
+
+原先的“立即更新、update ticket、`fuxi-agent://` 深链接、常驻更新服务”方案已 superseded。它们可以在未来重新评估，但不属于本设计的 MVP。
 
 ## 2. 第一性原理
 
-### 2.1 不可约的用户结果
+### 2.1 不可约结果
 
-已完成首次接入的用户看到伏羲发布了新版本后，点击一次“更新组件”，本地 MCP 与 Skill 完成安全更新且原有会话和工作目录继续可用，不再让 AI 重复执行完整接入。
+已完成首次接入的用户看到伏羲有新版本后，只需确认一次；AI 客户端下一次启动时，MCP 与 Skill 自动完成安全更新，原有会话、凭据和业务项目不受影响。
 
-### 2.2 产品定位
+### 2.2 无法绕开的事实
 
-这是“版本通知与本地更新编排”，不是远程控制用户电脑、不是新的登录体系，也不是后台自动执行任意脚本。伏羲拥有发布事实和更新作业状态；本地更新器只执行经过校验的固定更新流程。
+1. MCP stdio 和 Skill 文件位于用户本机；浏览器不能直接修改本地文件。
+2. 当前 MCP 由 AI 客户端启动，客户端关闭时没有可执行的 MCP 进程。
+3. Windows 正在运行的 Node 文件不能被当作可安全覆盖的普通文本；必须先 staging，再切换，再 Smoke。
+4. refresh token 是既有设备会话的凭据，不能进入页面、下载 URL、日志或制品。
+5. Skill 可能被 AI 客户端缓存；文件更新成功不等于当前会话已经加载新能力。
 
-### 2.3 设计原则
+### 2.3 尚未验证的旧假设
 
-- 首次连接与日常更新分离：连接码只做一次设备建立，更新不再要求 AI 重新接入。
-- 用户确认才发生本地写入：通知可以主动出现，安装不能静默发生。
-- 版本制品不可变：服务端发布清单、摘要和兼容条件一经发布不原地修改。
-- 更新失败必须可恢复：任何切换失败都回到上一版本，不能留下半套 MCP/Skill。
-- 凭据与版本目录分离：更新器绝不覆盖 `FUXI_CREDENTIALS_FILE`、用户配置或业务项目。
-- 先证明 MVP 闭环：稳定渠道、单设备、单击确认、原子替换和回滚先于多渠道灰度与无人值守。
+- 浏览器点击后用户一定需要“立即看到本地文件变化”。当前目标只要求下次使用时可用。
+- 需要自定义协议或常驻服务才能完成更新。若启动器能在 MCP 前执行，二者都不是 MVP 必需。
+- 每次更新都需要新的短期票据。已有设备会话可在启动器内完成鉴权，是否需要更窄的下载授权属于后续安全评估。
+- MCP 和 Skill 必须在用户关闭客户端的同一瞬间完成。实际可接受的结果是下次启动前完成。
 
 ## 3. 已确认决策
 
-| ID | 决策 | 确认答案 | 理由 | 影响 |
-|---|---|---|---|---|
-| D-01 | 不可约结果 | 已接入用户可在伏羲内完成 MCP/Skill 更新 | 重复接入是当前体验成本，不是用户价值 | 新入口围绕更新，不复用完整接入提示词 |
-| D-02 | 事实源 | 服务端发布清单权威，本地安装清单记录设备事实 | UI 不能仅凭缓存声称已更新 | 需要版本回报和权威回读 |
-| D-03 | 触达方式 | 服务器发布版本，伏羲平台检测并通知 | 浏览器不能安全直接执行本地脚本 | MVP 先采用短轮询，预留 SSE，不把实时推送当闭环前置条件 |
-| D-04 | 人工决定点 | 用户点击确认后才生成 update ticket 并启动本地更新器 | 防止用户正在用 MCP 时被强制重启 | 更新通知和更新执行分离 |
-| D-05 | 本地执行边界 | 首次接入安装并注册本地更新器，浏览器通过 `fuxi-agent://` 唤起 | 浏览器安全模型不允许任意脚本执行 | 缺少更新器时必须有可理解的回退 |
-| D-06 | 版本绑定 | MCP stdio 与 Skill 按兼容发布单元更新 | 只更新一半会造成工具/知识不匹配 | manifest 要有两者版本和兼容矩阵 |
-| D-07 | 凭据策略 | update ticket 短期、单次、绑定用户/设备/发布版本 | refresh token 不能进入 URL 或浏览器脚本 | 更新器通过票据换取短时下载授权 |
-| D-08 | 回滚策略 | 保留上一套版本，切换后做 Smoke，失败自动恢复 | MCP 无法启动是最高成本失败 | 版本目录不可变，`current` 只做原子指针 |
-| D-09 | MVP 截断 | 稳定渠道、单设备、手动确认、Windows 先行 | 先验证“无需重新接入”是否成立 | 灰度、静默、macOS/Linux 守护进程后置 |
+| ID | 决策 | 当前答案 | 影响 |
+|---|---|---|---|
+| D-01 | 核心结果 | 已接入用户无需重跑完整接入 | 更新流程与首次接入解耦 |
+| D-02 | 执行时机 | 下一次 AI 客户端启动前 | 浏览器只记录意图，不能伪造本地执行 |
+| D-03 | 用户确认 | 用户点击“安排下次启动更新” | 不做后台静默更新 |
+| D-04 | 发布权威 | 服务端不可变 release manifest | 本地版本不能反向定义可用版本 |
+| D-05 | 设备事实 | 本地 installation manifest + MCP 启动回报 | 页面以回读结果显示完成 |
+| D-06 | 版本单元 | MCP/Skill 配套 release 一起切换 | 禁止半更新对外可见 |
+| D-07 | 失败边界 | 摘要、语法、Smoke、权限或磁盘失败都回滚 | 旧版必须继续可用 |
+| D-08 | 凭据边界 | 复用设备会话，凭据与版本目录分离 | 不新增连接码和页面 token |
+| D-09 | 稳定入口 | AI 客户端最终配置指向版本无关的 launcher | 旧用户需要一次迁移，新用户从接入时安装 |
+| D-10 | MVP | Windows + stable + 手动确认 + 下次启动 + 回滚 | 深链接、守护、多平台、灰度后置 |
 
 ## 4. MVP 范围
 
-MVP 只证明一个闭环：服务端发布一个兼容的 MCP/Skill 版本，已接入用户收到通知，点击后本地更新器完成校验、切换、回读和失败恢复。
+MVP 只证明一条端到端路径：发布兼容版本 → 伏羲通知 → 用户确认“下次启动更新” → 客户端下次启动 → launcher 消费意图 → 本地安全切换 → MCP/Skill Smoke 通过 → 伏羲显示完成；任何失败均回到旧版。
 
 ```mermaid
 flowchart LR
-  P[维护者发布稳定版本] --> M[服务端保存不可变 manifest]
-  M --> N[伏羲显示有更新]
-  N --> C[用户点击更新组件]
-  C --> T[创建一次性 update ticket]
-  T --> U[本地更新器下载并校验]
-  U --> S[原子切换 MCP 与 Skill]
-  S --> V[check_connection 与 Skill 发现]
-  V --> R{回读成功?}
-  R -->|是| D[显示更新完成]
-  R -->|否| B[恢复上一版本并显示原因]
-  B --> C
+  P[维护者发布不可变版本] --> R[服务端保存 release manifest]
+  R --> N[伏羲显示有更新]
+  N --> C[用户确认下次启动更新]
+  C --> I[服务端记录 update intent]
+  I --> W[等待 AI 客户端下一次启动]
+  W --> L[稳定 launcher 读取设备会话和 intent]
+  L --> S[下载到 staging并校验]
+  S --> A[current 原子切换并保留 previous]
+  A --> T{MCP/Skill Smoke通过?}
+  T -->|是| D[启动 MCP并回报完成]
+  T -->|否| B[恢复 previous并回报已回滚]
 ```
 
-- 所有权：发布清单和更新作业由伏羲服务端持有；文件替换由用户设备上的更新器执行。
-- 最高成本失败：MCP 进程无法启动或 Skill 目录被半替换；必须保留上一版本并能继续使用。
-- 对应验收：场景 A 正常更新、场景 B 更新失败回滚、场景 F 真实环境。
+### 4.1 必须有
 
-### 4.1 MVP 必须有
+- `agent_releases` 或等价的不可变版本清单：MCP/Skill 版本、摘要、兼容 API、最低 Node.js、stable 渠道。
+- `update_intents` 或等价的用户确认记录：用户、设备会话、目标 release、状态和时间。
+- 版本无关的本地 launcher：启动前消费待更新，旧版不可用时保留 previous。
+- 本地安装清单、`current`/`previous`、staging 目录、锁和结果状态。
+- `node --check`、MCP `--smoke`/等价连接检查和 Skill 发现检查。
+- 页面提示和结果状态与真实本地回报一致。
 
-- `agent_releases` 发布清单：MCP 版本、Skill 版本、摘要、下载地址、最低运行时、兼容 API 和发布渠道。
-- MCP 会话在启动/刷新时上报本地版本，伏羲能计算“已是最新/有更新/状态未知”。
-- 用户侧更新通知、版本详情、确认按钮、阶段进度和结果回读。
-- 一次性 update ticket、`fuxi-agent://update` 深链接和无深链接时的命令行回退。
-- 独立本地更新器：临时下载、SHA-256/签名校验、备份、原子切换、Smoke、回滚、结果回报。
+### 4.2 明确不做
 
-### 4.2 MVP 明确不做
-
-- 不做浏览器直接执行 PowerShell/Node，不把任意脚本内容塞进深链接。
-- 不做无感后台更新、定时自动重启 MCP、跨设备批量强推。
-- 不做多渠道灰度、复杂审批流、在线修改 Skill、Node.js 自动升级。
-- 不做服务端浏览器自动化；MCP/Skill 更新验证只做本地进程和能力发现 Smoke。
+- 不在浏览器中执行任意脚本，不注册 `fuxi-agent://`。
+- 不要求客户端关闭时立即发生更新，不运行 Windows 常驻后台服务。
+- 不新增日常连接码、update ticket 或第二套长期身份系统。
+- 不在更新器内修改 AI 客户端的业务配置、项目文件、Node.js 安装和凭据文件。
+- 不做多平台、灰度渠道、无人确认、自动重启和远程强制更新。
 
 ## 5. 用户、角色与权限
 
 ### 5.1 角色
 
-- **发布维护者**：发布或撤回稳定渠道的不可变版本，不能读取用户 refresh token。
-- **已接入用户**：查看自己设备的更新状态，为自己选定设备创建更新票据并确认更新。
-- **本地更新器**：只执行绑定用户/设备/版本的票据，不拥有平台管理权限。
-- **伏羲服务**：计算可用版本、签发票据、保存作业状态和审计记录。
+- **发布维护者**：发布或撤回 stable release；不能读取用户设备凭据。
+- **已接入用户**：查看自己设备的版本并确认下次启动更新。
+- **稳定 launcher**：在本机执行固定更新流程；不接受页面下发的任意命令。
+- **伏羲服务**：保存发布清单、设备会话、更新意图和结果投影。
 
-### 5.2 固定权限矩阵
-
-| 操作 | 发布维护者 | 已接入用户 | 本地更新器 | 伏羲服务 |
+| 操作 | 发布维护者 | 已接入用户 | launcher | 伏羲服务 |
 |---|---:|---:|---:|---:|
-| 查看稳定版本摘要 | ✓ | ✓ | 通过票据 | ✓ |
-| 发布/撤回版本 | ✓ | — | — | 执行校验 |
-| 查看自己的设备 | — | ✓ | 仅自身 | ✓ |
-| 创建更新票据 | — | ✓ | — | ✓ |
-| 下载绑定制品 | — | — | 票据范围内 | ✓ |
-| 原子替换本地文件 | — | — | ✓ | — |
-| 回滚本地版本 | — | 用户确认 | ✓ | 记录结果 |
+| 发布 stable release | ✓ | — | — | 校验并保存 |
+| 查看自己的更新 | — | ✓ | 通过会话 | ✓ |
+| 确认下次启动更新 | — | ✓ | — | 记录意图 |
+| 下载目标制品 | — | — | 既有会话 | 提供固定文件 |
+| 替换本地版本 | — | — | ✓ | — |
+| 回滚本地版本 | — | 选择稍后重试 | ✓ | 记录结果 |
 
-### 5.3 权限不变量
+### 5.2 权限不变量
 
-更新票据同时绑定 `userId`、`sessionId/deviceId`、`releaseId` 和过期时间；票据消费后不能被第二台设备使用。用户只能更新自己的设备会话，发布维护者不能借此远程执行用户设备上的命令。
+更新意图绑定用户和设备会话；launcher 只能使用本机凭据、目标 release 和固定版本目录。用户没有权限把更新意图指向别人的设备；维护者没有权限通过发布接口执行用户本地命令。
 
 ## 6. 用户旅程与信息架构
 
-默认路径必须让已接入用户在伏羲首页完成“知道有更新、确认更新、看到结果”三步，版本文件和实现机制按需展开。
+用户只需要理解“有更新、何时执行、失败后怎么办”，实现机制默认隐藏。
 
 ```mermaid
 flowchart TB
-  Home[伏羲工作首页] --> Notice[组件更新通知]
-  Notice --> Detail[版本详情与影响]
-  Detail --> Confirm[确认更新]
-  Confirm --> Progress[更新进度]
-  Progress --> Result[成功/回滚结果]
-  Result --> Detail
-  Notice --> Missing[未检测到本地更新器]
-  Missing --> Fallback[安装更新器或复制回退命令]
-  Detail -. 用户可选 .-> History[更新历史与审计]
+  H[伏羲工作首页] --> A[有更新通知]
+  A --> D[更新详情]
+  D --> C[安排下次启动更新]
+  C --> P[已安排/等待下次启动]
+  P --> R[下次启动后的结果]
+  R -->|完成| U[继续使用新版]
+  R -->|已回滚| O[继续使用旧版并稍后重试]
+  A --> S[更新记录]
 ```
 
-- 默认落点：登录后的伏羲工作首页右上角通知和“组件管理”入口。
-- 渐进披露：默认只显示目标版本、更新内容、是否需要重启；SHA-256、Node 版本和文件清单放在“查看详情”。
-- 角色差异：普通用户只看到自己的设备；管理员可看到发布渠道和全局失败统计，但不能替用户点击更新。
-- 对应原型：`index.html` 的 overview、progress、rules 三个视图及四个状态弹窗。
+### 6.1 页面状态
 
-## 7. 核心交互设计
+| 页面/状态 | 用户要知道什么 | 主操作 | 必须显示 |
+|---|---|---|---|
+| 有更新 | 更新现在不会发生 | 查看更新 | 当前/目标版本、执行时机 |
+| 更新详情 | 更新什么、是否影响工作 | 安排下次启动更新 | MCP/Skill 变更、会话保留 |
+| 已安排 | 平台已经记住选择 | 关闭提示或查看记录 | 下次启动执行、当前仍可用 |
+| 等待启动 | 为什么还没有完成 | 等待重启客户端 | “客户端关闭后才会执行” |
+| 完成 | 新版是否真的可用 | 继续使用 | MCP/Skill 实际版本、检查结果 |
+| 已回滚 | 失败是否影响当前工作 | 稍后重试/继续旧版 | 旧版版本、稳定错误码 |
 
-### 7.1 页面和状态
+## 7. 核心交互与启动时序
 
-| 页面/状态 | 用户问题 | 主操作 | 次要信息 | 禁止出现 |
-|---|---|---|---|---|
-| 工作首页 | 有什么需要我处理 | 更新组件 | 版本、设备名、重启提示 | “后台已自动更新” |
-| 版本详情 | 更新什么、是否安全 | 确认更新 | 变更摘要、兼容条件、大小 | 暴露 token 或内部路径 |
-| 更新进度 | 现在进行到哪一步 | 等待/查看日志 | 下载、校验、切换、Smoke | 在切换前显示完成 |
-| 成功结果 | 是否真的可用 | 继续使用 | MCP/Skill 版本、会话保留 | 仅凭 HTTP 200 宣称成功 |
-| 失败结果 | 发生了什么、怎么恢复 | 重试或继续旧版 | 回滚版本、错误码 | 删除上一版本 |
-
-### 7.2 关键交互时序
-
-成功只在本地更新器回报并由服务端读回作业状态后反馈；浏览器点击本身不等于更新成功。
+浏览器点击只写服务端意图，不等待本地脚本，也不把“已安排”说成“已更新”。
 
 ```mermaid
 sequenceDiagram
-  actor U as 已接入用户
+  actor U as 用户
   participant UI as 伏羲 Web
-  participant API as 更新 API
-  participant A as 本地更新器
-  participant F as 文件系统
+  participant API as 伏羲服务
+  participant L as 稳定 launcher
+  participant F as 本地版本目录
   participant M as MCP stdio
-  U->>UI: 点击“更新组件”
-  UI->>API: 创建绑定 release 的 update ticket
-  API-->>UI: ticket、fuxi-agent 深链接、过期时间
-  UI->>A: 唤起本地更新器
-  A->>API: 兑换 ticket，取得短时制品下载授权
-  A->>API: 下载 MCP/Skill manifest 与 ZIP
-  A->>A: 校验签名、摘要、兼容条件
-  A->>F: 写入 staging，保留 previous，原子切换 current
-  A->>M: 启动 check_connection/tools-list Smoke
-  alt Smoke 通过
-    M-->>A: 工具和 Skill 发现成功
-    A->>API: 回报 completed 与版本
-    API-->>UI: 权威状态 completed
-    UI-->>U: 显示更新完成
-  else 下载/校验/启动失败
-    A->>F: 恢复 previous
-    A->>API: 回报 rolled_back 与原因
-    API-->>UI: 显示失败和恢复动作
-    UI-->>U: 继续使用旧版本或重试
+  U->>UI: 点击“安排下次启动更新”
+  UI->>API: 创建/幂等更新意图
+  API-->>UI: 返回 scheduled 和目标版本
+  UI-->>U: 显示“下次启动执行，当前仍可用”
+  Note over U,M: 用户关闭后再次打开 AI 客户端
+  L->>API: 使用既有设备会话读取待更新意图和 manifest
+  L->>F: 下载到 staging，摘要/兼容检查
+  L->>F: 保留 previous，原子切换 current
+  L->>L: node --check、MCP Smoke、Skill 发现
+  alt 检查通过
+    L->>M: 启动新版本 MCP
+    L->>API: 回报 completed 和实际版本
+    API-->>UI: 页面显示完成
+  else 检查失败
+    L->>F: 恢复 previous
+    L->>API: 回报 rolled_back 和稳定错误码
+    API-->>UI: 页面显示已恢复旧版
   end
 ```
 
-- 等待点：深链接唤起、下载、校验、MCP 重启和本地 Smoke，全部显示进度。
-- 人工决定点：用户点击确认和失败后是否重试；发布维护者负责发布，不替用户更新。
-- 对应接口：§14；对应验收：§22 场景 A、B、E。
+### 7.1 用户提示规则
+
+| 时点 | 固定文案 | 禁止文案 |
+|---|---|---|
+| 有更新 | 更新不会立即修改本地文件；下次打开 AI 客户端时自动更新 | 正在更新、立即完成 |
+| 点击后 | 已安排下次启动更新；当前客户端继续可用 | 更新成功 |
+| 客户端仍运行 | 更新会等到本次客户端退出后、下一次启动前执行 | 已在后台替换 |
+| 完成 | MCP 与 Skill 检查通过，已使用新版本 | 下载成功 |
+| 回滚 | 新版本检查未通过，已恢复上一版本，当前仍可继续使用 | 更新失败，无法使用 |
 
 ## 8. 目标系统架构
 
-权威状态只有服务端发布清单和更新作业；本地版本是设备事实，浏览器只展示投影，更新器是受票据约束的不可信执行边界。
+这张图的结论是：浏览器只产生确认意图，launcher 才拥有本地文件写权限；服务端、设备会话和本地版本目录各自保持单一所有权。
 
 ```mermaid
 flowchart LR
-  Maintainer[发布维护者] --> ReleaseAPI[发布 API]
-  ReleaseAPI --> Releases[(agent_releases)]
-  User[已接入用户] --> Web[伏羲 Web]
-  Web --> UpdateAPI[更新 API]
-  UpdateAPI --> Jobs[(agent_update_jobs)]
-  UpdateAPI --> Sessions[(mcp_sessions 版本心跳)]
-  Web -->|fuxi-agent 深链接| Updater[本地更新器]
-  Updater -->|短期票据| UpdateAPI
-  UpdateAPI --> Artifacts[(不可变 MCP/Skill 制品)]
-  Updater --> Local[(versions/current/previous + credentials 分离)]
-  Updater --> Stdio[MCP stdio]
-  Stdio --> Fuxi[伏羲业务 API]
+  Maintainer[发布维护者] --> ReleaseAPI[发布接口]
+  ReleaseAPI --> Releases[(release manifest)]
+  User[用户] --> Web[伏羲 Web]
+  Web --> IntentAPI[更新意图接口]
+  IntentAPI --> Intents[(update intents)]
+  Launcher[稳定 launcher] --> SessionAPI[设备会话/更新接口]
+  SessionAPI --> Releases
+  SessionAPI --> Intents
+  Launcher --> Local[(versions/current/previous)]
+  Launcher --> Credentials[(独立凭据文件)]
+  Launcher --> Skill[Skill 目录]
+  Launcher --> MCP[MCP stdio]
+  MCP --> Fuxi[伏羲业务 API]
 ```
 
-- 事实源：`agent_releases` 是发布权威，`agent_update_jobs` 是作业权威，`mcp_sessions` 是设备上报事实。
-- 信任边界：浏览器和本地更新器均不可信；update ticket 限定权限；refresh token 永不进入更新 URL。
-- 外部依赖：操作系统深链接、Node.js、网络下载和 AI 客户端的 MCP 配置机制；缺失时提供回退。
-- 故障隔离：更新器失败只影响本地组件，服务端和正式原型不被改写；旧版本目录保留。
-
-### 8.1 组件职责
+### 8.1 边界与所有权
 
 | 组件 | 负责 | 不负责 | 权威数据 |
 |---|---|---|---|
-| 伏羲 Web | 通知、确认、进度、结果 | 执行本地脚本、保存 refresh token | 作业状态投影 |
-| 更新 API | 发布清单、票据、下载授权、作业回读 | 操作用户文件、远程执行命令 | releases/jobs |
-| MCP stdio | 上报版本、接受票据后的 Smoke、正常业务工具 | 自行决定发布版本、覆盖凭据 | 本地版本清单投影 |
-| 本地更新器 | 下载、校验、备份、切换、回滚 | 修改业务源码、扩大票据权限 | 本地安装清单 |
-| Skill | 提供领域流程和能力缓存 | 执行更新脚本、存储账号凭据 | `SKILL.md`/cache 版本 |
+| 伏羲 Web | 通知、确认、结果展示 | 执行本地脚本、保存 refresh token | 服务端状态投影 |
+| 发布接口 | 校验并发布不可变制品 | 操作用户设备 | release manifest |
+| 更新意图接口 | 记录用户选择、幂等和权限 | 直接改本地文件 | update intent |
+| launcher | 下载、校验、切换、回滚、启动 MCP | 接受任意命令、改业务目录 | installation manifest |
+| MCP/Skill | 提供能力、上报版本 | 自行发布或覆盖凭据 | 本地运行事实 |
 
 ## 9. 核心对象生命周期
 
-### 9.1 身份与创建
+### 9.1 Release
 
-维护者提交完整发布包，服务端校验 MCP/Skill 版本兼容性、制品摘要、入口文件和禁止内容后创建 `releaseId`。发布包不可覆盖；撤回只改变渠道可见性，不删除已经下载的制品。MCP 首次连接或 refresh 时上报 `mcpVersion`、`skillVersion`、`deviceId`、`runtimeVersion` 和 `clientPlatform`。
+维护者提交 MCP/Skill 配套制品，服务端校验目录边界、摘要、Node/API 兼容性和禁止文件后生成不可变 `releaseId`。发布后不原地修改；撤回只阻止新的更新意图，不删除已存在制品。
 
-### 9.2 修改、并发与完成
+### 9.2 Update intent
 
-用户从一个设备选择一个稳定发布版本创建 update job。一个设备只能有一个 `active` job；重复点击返回同一 job。更新器成功切换后必须向服务端回报实际版本和本地安装摘要，服务端将 job 置为 `completed`。更新过程中 MCP 正在处理不可中断调用时，更新器进入 `waiting_idle`，不强杀进程。
+用户确认后创建 `(userId, sessionId, releaseId)` 的待更新意图。重复点击返回同一活动意图。客户端尚未启动时意图保持 `scheduled`；launcher 领取后进入 `running`，成功为 `completed`，失败但旧版恢复为 `rolled_back`。
 
-### 9.3 失败与恢复
+### 9.3 Local installation
 
-任一下载、摘要、兼容、权限、切换或 Smoke 失败都进入 `failed`；若已经切换则先恢复 `previous` 并进入 `rolled_back`。失败 job 保留诊断摘要但不保留 token、完整路径和业务源码。用户可创建新 ticket 重试，旧 ticket 不重复消费。
+本地 `installation.json` 记录当前 release 和路径；`current.json` 是启动入口读取的原子指针；`previous.json` 记录最近一次成功版本；凭据文件独立存放，不随版本切换移动。
 
 ## 10. 构建、检查与制品
 
-更新制品必须从已提交的 MCP/Skill 仓库构建，发布清单记录内容摘要和兼容条件；服务器不执行用户上传的脚本。
+发布前最小门禁：
 
-| Gate | 通过条件 | 失败影响 | 用户文案 |
-|---|---|---|---|
-| 结构 | ZIP 包含 MCP `src/server.js`、Skill `SKILL.md`，无 `.git`/凭据/`node_modules` | 不可发布 | 此版本制品不完整 |
-| 兼容 | Node.js、API schema、MCP/Skill 版本矩阵满足目标设备 | 不生成可用票据 | 当前设备暂不支持此更新 |
-| 摘要 | manifest 中每个制品 SHA-256 与下载 bytes 一致 | 更新器删除 staging，不切换 | 下载内容校验失败 |
-| 行为 | `node --check`、MCP `check_connection`、tools/list 和 Skill 发现通过 | 回滚 previous | 新版本启动检查失败，已恢复旧版 |
-| 安全 | 票据单次消费、目录边界、签名/摘要验证、权限最小 | 阻断并审计 | 更新授权或安全校验失败 |
+| Gate | 通过条件 | 失败行为 |
+|---|---|---|
+| 包结构 | MCP 入口、Skill `SKILL.md` 存在；无 `.git`、凭据、`node_modules` | release 不可发布 |
+| 摘要 | manifest 摘要与下载 bytes 一致 | 删除 staging，不切换 |
+| 运行时 | Node.js 满足最低版本、API schema 兼容 | 保留旧版，标记不可更新 |
+| MCP Smoke | `node --check`、启动检查和最小工具发现通过 | 恢复 previous |
+| Skill 发现 | `SKILL.md`、名称和能力缓存可读 | 恢复 previous |
+| 凭据隔离 | 版本包不包含凭据路径和内容 | 阻断发布 |
 
-MCP 发布包不携带用户凭据；Skill 包不携带 `.npmrc`、长期 token、业务项目和运行时 `dist`。Skill 的 `cache/contract.md` 与 `cache/tools.json` 必须与 Skill 版本一致，构建时由 `build-capability-cache.cjs` 生成或校验。
+本地试验使用目录制品模拟下载；正式实现必须将相同校验应用于临时下载文件，不得因来源从本地变成 HTTP 而放宽门禁。
+
+### 10.1 Manifest 与校验顺序
+
+manifest 本身也要作为不可变输入校验：先确认 releaseId、channel、目标版本和 API schema，再按制品种类校验大小与 SHA-256，最后检查解压后的相对路径和入口文件。校验顺序不能先替换再补检查，因为 Windows 上半替换会把旧版的可恢复边界变成不确定状态。所有失败都只能发生在 staging；`current` 在最后一个检查通过前保持不变。
+
+### 10.2 Smoke 最小集合
+
+MCP Smoke 至少覆盖 Node 语法、进程可启动、`check_connection` 或等价连接检查和 `tools/list` 的稳定核心工具；Skill Smoke 至少覆盖 `SKILL.md` 可读、名称可发现和能力缓存版本一致。Smoke 只证明“组件可用”，不替代真实业务写入、原型上传或生产验收。
 
 ## 11. 版本、发布与回滚
 
 ### 11.1 版本身份
 
-`releaseId` 是不可变发布身份；`mcpVersion` 与 `skillVersion` 使用人类可读 semver。manifest 至少包含：
+`releaseId` 不复用；`mcpVersion` 和 `skillVersion` 是配套版本；manifest 至少包含渠道、API schema、最低 Node.js、两个制品的 URL/大小/SHA-256 和发布时间。
 
-| 字段 | 说明 |
-|---|---|
-| `releaseId` | 发布身份，不复用 |
-| `channel` | MVP 只允许 `stable` |
-| `mcpVersion`/`skillVersion` | 两个制品版本 |
-| `apiSchemaVersion` | 与服务端接口兼容范围 |
-| `minNodeVersion` | 本地运行时下限 |
-| `artifacts` | URL、大小、SHA-256、签名摘要 |
-| `publishedAt`/`withdrawnAt` | 发布和撤回时间 |
+### 11.2 本地切换
 
-### 11.2 发布
+launcher 先把两个制品写入 `staging/<releaseId>-<runId>`，通过所有检查后复制到不可变 `versions/<releaseId>`，写入 `previous`，最后用同目录临时文件重命名更新 `current`。切换后再执行一次 Smoke，失败则把 `previous` 恢复为 `current`。
 
-维护者在发布前运行 MCP check、Skill cache 校验、ZIP 内容检查和独立集成测试，生成不可变 manifest。发布只把 release 标记为 `published` 并进入 stable 渠道；客户端发现版本后仍由用户点击更新。已撤回版本不能新建票据，但已开始的 job 根据策略完成或回滚。
+```mermaid
+flowchart TD
+  C[读取 current] --> L[取得本地 lock]
+  L --> S[创建 staging]
+  S --> V[摘要/兼容/语法检查]
+  V -->|失败| K[清理 staging，保留 current]
+  V -->|通过| P[写入不可变 versions/release]
+  P --> A[保存 previous]
+  A --> X[原子替换 current]
+  X --> M[Smoke MCP + Skill]
+  M -->|通过| D[写 installation 并完成]
+  M -->|失败| R[恢复 previous]
+  R --> E[回报 rolled_back]
+```
 
-### 11.3 回滚
+### 11.3 保留策略
 
-本地目录采用：`versions/<releaseId>/mcp`、`versions/<releaseId>/skill`、`current`、`previous`、`manifest.json`；凭据目录独立。更新器先写 `versions/<new>`，再用同目录临时链接原子替换 `current`，将旧指针保存为 `previous`。Smoke 失败时把 `previous` 恢复为 `current`，不删除上一成功版本。
+至少保留 `current` 和 `previous`。清理由 launcher 在成功后进行，不能删除 current 指向的目录；清理失败不影响已完成更新。
 
 ## 12. 跨模块交互
 
-首次接入模块负责安装更新器和建立设备会话；MCP stdio 负责版本心跳和 Smoke；Skill 负责报告自身版本与能力缓存摘要；伏羲 Web 负责用户确认；更新 API 负责发布/票据/作业；发布脚本负责制品生成。更新流程不改变原型上传、任务码、候选采纳和正式版本 CAS。
+首次接入负责安装 MCP、Skill、凭据和稳定 launcher；日常更新只使用已建立的设备会话。伏羲协作任务、原型版本、候选预览和任务码不参与组件更新状态，也不会被更新器改写。
 
-版本兼容采用三层判断：服务端 API schema 是否兼容、MCP/Skill 是否是配套 release、设备 Node.js/操作系统是否满足最低条件。任何一层不满足，UI 显示“暂不可更新”并提供当前版本继续使用。
+兼容判断分三层：服务端 API schema、MCP/Skill 配套 release、本机 Node.js/操作系统。任一层不满足，页面显示“当前设备暂不支持此更新”，不删除旧版。
 
 ## 13. 数据模型
-
-发布者拥有 `agent_releases`，用户拥有设备会话，更新作业连接两者；制品对象不可变，作业状态可审计。
 
 ```mermaid
 erDiagram
   USER ||--o{ MCP_SESSION : owns
-  AGENT_RELEASE ||--o{ UPDATE_JOB : targets
-  MCP_SESSION ||--o{ UPDATE_JOB : receives
-  USER ||--o{ UPDATE_JOB : requests
+  AGENT_RELEASE ||--o{ UPDATE_INTENT : targets
+  MCP_SESSION ||--o{ UPDATE_INTENT : receives
+  USER ||--o{ UPDATE_INTENT : confirms
   AGENT_RELEASE ||--|{ ARTIFACT : contains
-  UPDATE_JOB ||--o{ AUDIT_EVENT : emits
+  UPDATE_INTENT ||--o{ UPDATE_EVENT : emits
 ```
 
-- 身份所有权：`user_id + session_id` 定位设备，`release_id` 定位不可变版本，job 有独立 UUID。
-- 版本关系：一个 release 包含一个 MCP artifact 和一个 Skill artifact；一个 session 可有多次完成/回滚 job。
-- 删除/保留策略：release 不物理删除；job 审计长期保留；本地只保留当前和上一成功版本，清理由更新器执行。
-- 对应表结构：下表；状态：§15。
+| 实体 | 身份 | 关键字段 | 约束 |
+|---|---|---|---|
+| `agent_releases` | `release_id` | channel、版本、兼容条件、状态 | 发布后摘要不可变 |
+| `agent_artifacts` | release + kind | URL、size、sha256 | MCP/Skill 各一份 |
+| `mcp_sessions` | 既有 session id | user、设备、过期、最近版本 | refresh token 只存哈希 |
+| `update_intents` | intent id | session、release、status、requested_at | 同设备同 release 只保留一个活动意图 |
+| `update_events` | event id | intent、stage、error_code、versions | append-only，不写 token |
+| `installation.json` | 本地文件 | current release、路径、更新时间 | 不含 refresh token 内容 |
 
-### 13.1 实体定义
+### 13.1 并发约束
 
-| 实体 | 身份 | 所有者 | 关键约束 | 生命周期 |
-|---|---|---|---|---|
-| `agent_releases` | `release_id` | 发布维护者/平台 | stable 渠道只允许不可变摘要 | draft → published → withdrawn |
-| `agent_artifacts` | `release_id + kind` | 平台 | MCP/Skill 各一份，URL/大小/摘要完整 | 随 release 保留 |
-| `mcp_sessions` | 既有 session id | 用户 | refresh token 只存 hash；追加本地版本字段 | active → revoked/expired |
-| `agent_update_jobs` | job id | 发起用户和设备 | 同一 session 只能一个 active；ticket 单次消费 | created → running → completed/rolled_back |
-| `agent_update_tickets` | ticket id/hash | 服务端 | 绑定 user/session/release，短期、单次 | issued → consumed/expired |
-| `audit_events` | 既有审计 id | 平台 | 不写 token、源码、完整路径 | append-only |
-
-### 13.2 并发与持久化约束
-
-服务端用事务创建 ticket/job、消费 ticket 和推进状态；更新器用本地 lock 防止同一设备并发替换。心跳是幂等 upsert，旧客户端缺少版本字段时显示“状态未知”，不自动降级为“有更新”。job 结果以最后一次合法状态为准，重复 `completed` 回报返回原结果。
+服务端创建意图使用幂等条件；launcher 使用本地独占 lock。同一设备同时只有一个切换过程。结果回报允许重试，但终态不能被旧事件覆盖。
 
 ## 14. 接口设计
 
-### 14.1 用户侧接口
+以下是正式接入的最小接口方向，当前尚未实现：
 
-| 方法/动作 | 输入 | 输出 | 权限 | 幂等/竞争条件 |
-|---|---|---|---|---|
-| `GET /api/integrations/updates` | 当前用户/设备过滤 | 可用 release、当前版本、原因 | 登录用户 | 只读，可轮询；不返回 token |
-| `POST /api/integrations/update-jobs` | `sessionId, releaseId` | job、一次性深链接、过期时间 | 设备所属用户 | 同一 active job 返回原 job |
-| `GET /api/integrations/update-jobs/:id` | job id | 阶段、版本、错误、结果 | job 所属用户 | 只读回读 |
-| `POST /api/integrations/release/:id/withdraw` | release id | withdrawn 状态 | 发布维护者 | 已完成 job 不回溯 |
-| `GET /api/integrations/release/:id/manifest` | release id + ticket | manifest 与 artifact URL | 更新器票据 | ticket 单次、短期 |
-
-### 14.2 自动执行者接口
-
-| 方法/动作 | 输入 | 输出 | 权限 |
+| 方法 | 输入 | 输出 | 语义 |
 |---|---|---|---|
-| `POST /api/auth/mcp/heartbeat` | session、MCP/Skill/Node/OS 版本 | 接收确认、更新建议 | 有效 MCP 会话 |
-| `POST /api/integrations/update-tickets/consume` | ticket、device nonce | 下载授权、job id | 一次性 ticket |
-| `POST /api/integrations/update-jobs/:id/progress` | stage、percent、local release | 接收确认 | job 绑定设备 |
-| `POST /api/integrations/update-jobs/:id/result` | completed/rolled_back、versions、error code | 权威 job 状态 | job 绑定设备 |
+| `GET /api/integrations/updates` | 当前用户/设备 | 当前版本、可用 release、原因 | 页面只读 |
+| `POST /api/integrations/update-intents` | session、release | intent、scheduled、expires | 用户确认，幂等 |
+| `GET /api/integrations/update-intents/:id` | intent id | stage、结果、错误码 | 页面轮询回读 |
+| `GET /api/integrations/agent-manifest` | 设备会话 | manifest 与制品地址 | launcher 读取 |
+| `POST /api/integrations/update-intents/:id/progress` | stage、版本 | 接收结果 | launcher 上报阶段 |
+| `POST /api/integrations/update-intents/:id/result` | completed/rolled_back | 权威终态 | launcher 上报结果 |
 
-### 14.3 错误语义
-
-| 错误 | 对用户的影响 | 下一步 | 是否可重试 |
-|---|---|---|---:|
-| `UPDATE_AGENT_MISSING` | 浏览器无法唤起更新器 | 首次安装更新器或复制命令 | 是 |
-| `UPDATE_TICKET_EXPIRED` | 本次授权窗口结束 | 返回伏羲重新点击更新 | 是 |
-| `RELEASE_INCOMPATIBLE` | 当前 Node/API 不满足 | 保留旧版，升级运行时后重试 | 条件性 |
-| `ARTIFACT_DIGEST_MISMATCH` | 下载内容不可信 | 删除 staging，报告平台 | 是 |
-| `UPDATE_LOCKED` | MCP 正在执行不可中断操作 | 等待空闲后重试 | 是 |
-| `UPDATE_SMOKE_FAILED` | 新版不能启动或能力缺失 | 已自动回滚，查看原因 | 是 |
-| `UPDATE_PARTIAL_FAILURE` | MCP/Skill 未形成配套版本 | 整体回滚，不允许半成功 | 是 |
+错误语义：`UPDATE_NOT_SCHEDULED`、`RELEASE_INCOMPATIBLE`、`ARTIFACT_DIGEST_MISMATCH`、`UPDATE_LOCKED`、`UPDATE_SMOKE_FAILED`、`SKILL_DISCOVERY_FAILED`。错误响应不包含完整路径、token 或源码。
 
 ## 15. 状态机
 
-核心状态由服务端 job 和本地更新器共同推进，UI 不得根据深链接点击自行宣布完成。
+这张图的结论是：用户确认后的主要等待状态是 `Scheduled/WaitingForStartup`，不是失败；只有 launcher 实际开始处理后，才进入校验、切换和回滚分支。
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Available: 发布清单匹配旧版本
-  Available --> TicketIssued: 用户确认并创建票据
-  TicketIssued --> Running: 更新器消费票据
-  TicketIssued --> Expired: 超过票据有效期
-  Running --> WaitingIdle: MCP 正在执行调用
-  WaitingIdle --> Running: MCP 空闲
-  Running --> Verifying: 制品下载完成
-  Verifying --> Switching: 摘要与兼容校验通过
-  Verifying --> Failed: 校验失败
-  Switching --> SmokeTesting: current 原子切换
-  SmokeTesting --> Completed: check_connection 与 Skill 发现通过
-  SmokeTesting --> RollingBack: 启动或能力检查失败
-  RollingBack --> RolledBack: previous 恢复成功
-  RollingBack --> Failed: 恢复也失败
+  [*] --> Available: stable release高于本地版本
+  Available --> Scheduled: 用户确认
+  Scheduled --> WaitingForStartup: 客户端尚未启动
+  WaitingForStartup --> Running: launcher启动并领取
+  Running --> Verifying: staging完成
+  Verifying --> Switching: 检查通过
+  Verifying --> Scheduled: 网络/摘要/兼容失败，可重试
+  Switching --> SmokeTesting: current已切换
+  SmokeTesting --> Completed: MCP与Skill通过
+  SmokeTesting --> RollingBack: 任一检查失败
+  RollingBack --> RolledBack: previous恢复
+  RollingBack --> Failed: previous也不可恢复
   Completed --> [*]
   RolledBack --> [*]
   Failed --> [*]
-  Expired --> [*]
 ```
 
-- transition guard：ticket 未过期且未消费、设备 session 匹配、release 仍可下载、lock 可获得、摘要和兼容检查通过。
-- 非法转换：`completed`/`rolled_back`/`expired` 不得重新执行；旧 ticket 不得更新另一个 release。
-- UI 文案映射：`Available=有更新`、`Running=更新中`、`Verifying=安全检查中`、`Completed=更新完成`、`RolledBack=已恢复旧版`。
-- 对应接口：§14；对应验收：§22 场景 A、B、D。
+### 15.1 状态文案
+
+| 内部状态 | 用户文案 | 允许动作 |
+|---|---|---|
+| `available` | 有更新 | 查看详情 |
+| `scheduled` | 已安排下次启动更新 | 取消/查看记录（取消是否做由后续决策决定） |
+| `waiting_for_startup` | 等待下次打开 AI 客户端 | 继续使用当前版本 |
+| `running` | 正在启动前检查 | 等待 |
+| `completed` | 更新完成 | 继续使用 |
+| `rolled_back` | 已恢复旧版 | 查看原因、稍后重试 |
+| `failed` | 更新未完成，需要处理 | 查看稳定错误码、人工介入 |
 
 ## 16. 系统不变量
 
 1. 浏览器永远不能直接执行服务器下发的任意脚本。
-2. refresh token、access token 和用户凭据永远不进入深链接、更新日志或制品。
-3. 一个 update ticket 只能绑定并消费一次，且只能作用于签发的用户、设备和 release。
-4. MCP 和 Skill 必须以兼容 release 为单位完成切换，不能对外报告半更新成功。
-5. 更新失败必须保留上一成功版本；没有 previous 时不得删除 current。
-6. 更新器只能写入自己的版本目录和 manifest，不能覆盖业务项目、凭据或任意路径。
-7. UI 只有在服务端回读 `completed` 后才能显示更新成功。
-8. 发布清单和审计记录不可被用户更新作业改写。
+2. 用户点击确认后，当前运行中的 AI 客户端和本地 MCP 不被强杀。
+3. 没有稳定 launcher 时，页面不能声称“下次自动更新”；只能提示一次性迁移。
+4. MCP 与 Skill 必须以兼容 release 一起对外可见。
+5. 更新失败时 current 或 previous 至少有一个可启动版本；没有 previous 时不得删除 current。
+6. 凭据、业务项目和 AI 客户端配置不属于版本目录，更新器不得覆盖。
+7. 只有 launcher 的本地结果和服务端回读都完成，页面才能显示“更新完成”。
+8. 意图、发布清单和审计事件不能被用户制品内容改写。
 
 ## 17. 安全与信任边界
 
-### 17.1 身份与委托
+### 17.1 身份
 
-首次连接码只在首次设备建立阶段使用；日常更新用 session 绑定的 update ticket。ticket 的明文只返回给当前伏羲页面和深链接一次，服务端只保存 hash。更新器消费时提交设备 nonce、session id 和 release id，服务端重新校验用户归属、会话未撤销和版本仍可见。
+更新意图使用已登录用户和已建立设备会话。launcher 通过本地凭据完成现有 access/refresh 流程；页面永远看不到 refresh token。若会话已撤销，launcher 不下载、不切换，页面提示重新接入。
 
-### 17.2 密钥、输入与执行隔离
+### 17.2 制品和路径
 
-浏览器只接收状态和短期深链接，不接收 refresh token。更新器对 manifest、ZIP 条目、路径、文件大小、摘要和签名做校验；禁止绝对路径、`..`、`.git`、凭据、`node_modules` 和脚本覆盖。服务器只提供固定 artifact 下载，不接收“要执行的命令”。更新器下载到临时目录，切换前创建 lock，完成后清理临时目录。
+服务端发布固定 artifact，不接受“执行命令”。launcher 验证 HTTPS/网络响应、长度、SHA-256、ZIP 条目路径和 release 绑定；拒绝绝对路径、`..`、`.git`、`node_modules`、凭据文件和业务项目路径。所有写入都限制在自身 versions/staging 目录。
 
-### 17.3 审计
+### 17.3 日志
 
-记录发布、撤回、ticket 签发/消费、下载、校验失败、切换、Smoke、回滚和用户重试。审计只记录 release/job/device 标签和稳定错误码，不记录 token、完整 URL 查询串、refresh token、用户目录或源码内容。
+只记录 release、intent、stage、稳定 error code 和耗时；不记录 token、完整下载查询串、用户完整目录、源码和命令行敏感参数。
 
 ## 18. 一致性与故障恢复
 
-### 18.1 幂等、重试与去重
+### 18.1 断网/客户端关闭
 
-创建 job 使用 `(session_id, release_id, active)` 约束或事务查询，重复点击返回同一 job。ticket 消费和状态推进使用条件更新；更新器重试必须复用 job 但重新申请 ticket。进度回报允许重复，结果回报只接受同一 job 的第一次终态。
+断网发生在客户端启动时，保留 `scheduled` 意图和旧版，下一次启动重试；不因一次网络失败删除旧版。用户仍可使用当前 MCP，页面显示“等待重试”。
 
-### 18.2 权威回读与对账
+### 18.2 正在运行
 
-服务端以 job result 为业务状态，以心跳版本为设备状态；两者冲突时显示“需要重新检查”，不自动把旧心跳当成完成。更新器启动时读取本地 manifest 并上报；平台定期将 session 当前版本与 stable release 对比，生成通知投影。
+用户点击后不触碰当前进程。launcher 只会在 AI 客户端启动边界执行；若检测到旧进程锁，返回 `WAITING_FOR_CLIENT_EXIT`，待下一次启动再消费。
 
-### 18.3 降级与人工介入
+### 18.3 失败后对账
 
-深链接无法唤起时，UI 显示一次性复制命令和手动下载页；更新器不可用不阻断 MCP 旧版继续工作。回滚失败时保留 staging/previous，job 标记 `failed`，通知用户不要删除目录并联系维护者；维护者可依据 job id 指导恢复，不直接远程执行。
+服务端以结果事件记录业务状态，以 launcher 上报的 installation manifest 作为设备事实。两者冲突时显示“需要重新检查”，不把浏览器上的 scheduled 当作 completed。
+
+### 18.4 回滚失败
+
+若 previous 恢复也失败，保留 current、previous、staging 和错误事件，不自动删除文件；页面给出稳定错误码和人工恢复入口。这是需要真实 Windows 验证的最高风险路径。
 
 ## 19. 现状迁移
 
-### 19.1 当前事实与差异
+### 19.1 当前差异
 
-当前已有：首次接入提示词、10 分钟连接码（本迭代调整为 20 分钟）、MCP ZIP/Skill ZIP 下载、`mcp_sessions` 设备会话、refresh token 轮换、Skill 能力缓存和 `FUXI_CREDENTIALS_FILE`。当前没有：版本发布清单、版本心跳、更新 ticket、更新器、深链接和更新作业表。
+现有系统已有首次接入提示词、MCP ZIP/Skill ZIP、设备会话、refresh token 轮换和 `FUXI_CREDENTIALS_FILE`。现有提示词仍把 MCP stdio 指向 `src/server.js`，因此还没有稳定 launcher、发布清单、更新意图或启动前消费路径。
 
-### 19.2 迁移步骤与回滚
+### 19.2 一次性迁移
 
-1. 在服务端增加发布清单、artifact 和 update job 数据结构，不改变现有 session/credentials。
-2. 在 MCP 启动和 refresh 路径增加版本上报；旧 MCP 不上报时保持原业务可用并显示“需要更新器”。
-3. 首次接入包中附带本地更新器和版本 manifest；老用户首次更新前只需安装一次更新器，不重新完成完整平台接入。
-4. 先在 16077 发布稳定版本并使用新用户/测试设备验证；16088 只接受完整 release 门禁后的同一制品。
-5. 回滚服务端只需撤回 release/关闭通知；回滚本地由更新器恢复 previous，不删除用户凭据。
+1. 先实现稳定 launcher，并让它能在无待更新时完全等价地启动当前 MCP。
+2. 新用户接入时把 AI 客户端 stdio 配置写为 launcher；凭据文件路径保持不变。
+3. 旧用户通过一次受控的组件刷新把配置从 `server.js` 改为 launcher；这次刷新是迁移，不是日常更新，必须明确告知。
+4. 16077 先用独立测试设备验证“无待更新启动不回归”和“下次启动更新”；16088 只接收同一不可变 release 的完整门禁结果。
+
+迁移失败时，保留原有 `server.js` 配置和旧版 MCP；不能把 launcher 安装失败误报为日常更新成功。
 
 ## 20. 可观测性与运维
 
-| 信号 | 目的 | 标签/维度 | 告警或行动 |
+| 事件 | 目的 | 关键字段 | 行动 |
 |---|---|---|---|
-| `release.published` | 确认稳定版本进入渠道 | release/channel | 发布失败则阻断通知 |
-| `update.ticket_issued/consumed` | 观察用户确认到本地执行 | user/session/release | 消费率异常检查深链接 |
-| `update.stage` | 定位下载、校验、切换瓶颈 | job/stage/duration | P95 超标检查网络或包大小 |
-| `update.completed` | 统计成功率和版本覆盖 | old/new/platform | 成功率下降暂停 release |
-| `update.rolled_back` | 发现新版运行风险 | errorCode/release | 自动撤回渠道并保留制品 |
-| `agent.version_drift` | 发现长期未更新设备 | stable/current/age | 只通知，不强制远程更新 |
+| `release.published` | stable 版本进入渠道 | release/channel | 发布失败阻断通知 |
+| `update.scheduled` | 用户确认意图 | user/session/release | 统计确认率 |
+| `update.started` | launcher 消费意图 | intent/stage | 定位启动失败 |
+| `update.verification_failed` | 摘要或兼容问题 | release/error code | 阻断切换并重试 |
+| `update.completed` | 版本覆盖率 | old/new/platform | 观察成功率 |
+| `update.rolled_back` | 新版运行风险 | release/error code | 暂停或撤回 release |
 
-### 20.1 审计事件
-
-最小事件集为 `release.created`、`release.published`、`release.withdrawn`、`update.ticket_issued`、`update.ticket_consumed`、`update.verification_failed`、`update.completed`、`update.rolled_back`、`update.failed`。所有事件关联 release/job/session，但不持久化凭据和文件内容。
-
-### 20.2 清理与保留
-
-服务端保留稳定 release、上一版本和 job 审计；过期 ticket 可只保留 hash 与结果。更新器成功后按保留策略删除更旧本地版本和 staging；删除前确认 current/previous 不指向目标。清理失败只记录，不影响已完成更新。
+服务端保留 release 和审计；本地只保留 current、previous、installation 和最近结果，清理由成功后的 launcher 执行。
 
 ## 21. 性能与体验目标
 
-| 指标 | 目标 | 测量位置 | 超标影响 |
-|---|---:|---|---|
-| 更新通知发现 | 60 秒内（MVP 轮询） | 伏羲 Web → updates API | 延迟只影响通知，不影响安全 |
-| 点击到进度反馈 | P95 < 2 秒 | UI 创建 job/唤起 updater | 显示“正在连接本机更新器” |
-| 制品校验 | 100 MB 内 P95 < 10 秒 | 本地更新器 | 不切换，显示校验阶段 |
-| 切换与 Smoke | P95 < 8 秒，不含下载 | 更新器 | 超时回滚并记录 |
-| 更新结果可见 | 回报后 < 1 秒 | jobs API/页面轮询 | 页面继续轮询，不伪造完成 |
+| 指标 | MVP 目标 | 说明 |
+|---|---:|---|
+| 页面发现更新 | 登录页面 60 秒内 | 轮询延迟不影响本地安全 |
+| 确认反馈 | P95 < 2 秒 | 只确认服务端已记录意图 |
+| 启动前本地检查 | 100 MB 制品 P95 < 10 秒（不含下载） | 超时保留旧版 |
+| 切换与 Smoke | P95 < 8 秒 | 不含网络下载和 AI 客户端自身加载 |
+| 结果回读 | launcher 回报后 1 秒内可见 | 页面不得提前显示完成 |
 
 ## 22. 验收设计
 
-### 场景 A：主用户完成正常闭环
+### 场景 A：正常延后更新
 
-Given 已接入用户的设备当前为旧 MCP/Skill，When 稳定 release 发布且用户点击更新，Then 生成绑定 ticket，本地更新器完成下载、摘要校验、原子切换，`check_connection`/tools-list/Skill 发现通过，伏羲显示 `completed`，refresh token 与业务配置不变。
+Given 用户设备当前为 v1，When 用户在伏羲确认下次启动更新且关闭后再次启动 AI 客户端，Then launcher 读取意图、切换到 v2，MCP/Skill 检查通过，页面显示完成，凭据内容不变。
 
-### 场景 B：最高成本失败被阻断
+### 场景 B：客户端尚未关闭
 
-Given 新 MCP 不能通过 `node --check` 或 Skill manifest 摘要不匹配，When 更新器校验或 Smoke 失败，Then 不显示成功，恢复 previous，MCP 旧版仍能启动，job 为 `rolled_back`，审计包含稳定错误码。
+Given AI 客户端仍在运行，When 用户点击确认，Then 页面显示已安排，当前会话不被打断；下一次启动前才执行更新。
 
-### 场景 C：无权限角色尝试不可逆操作
+### 场景 C：摘要或 Smoke 失败
 
-Given 用户 A 的 session 或已撤销 session，When 用户 B 或撤销设备提交 update ticket，Then 返回稳定 403/401，不能下载 artifact、不能推进 job，版本和审计状态不变。
+Given v2 摘要不匹配或 Smoke 失败，When launcher 处理意图，Then 不显示完成，current 恢复 v1，页面显示已恢复旧版。
 
-### 场景 D：并发或重复请求得到一致结果
+### 场景 D：重复确认和并发启动
 
-Given 用户连续点击两次更新或两个 updater 同时消费，When API 收到请求，Then只产生一个 active job，ticket 只有一次消费成功，第二次得到同一 job 或 `TICKET_ALREADY_USED`，本地 lock 阻止并行切换。
+Given 用户连续确认或两个 launcher 同时启动，When 服务端和本地锁处理请求，Then 只保留一个活动意图和一个切换过程，第二个调用得到幂等/锁定结果。
 
-### 场景 E：失败后恢复
+### 场景 E：会话失效
 
-Given 深链接未注册、网络中断、磁盘不足或 MCP 正在执行调用，When 用户启动更新，Then 显示可理解的阶段和恢复动作：安装/复制回退、等待空闲、清理 staging 后重试；旧 MCP 不被删除。
+Given 设备会话已撤销，When launcher 启动，Then 不下载、不切换，旧 MCP 仍可保留，页面提示重新接入而不是重新生成普通任务码。
 
-### 场景 F：真实环境验收边界
+### 场景 F：真实环境边界
 
-在 Windows 真实设备上完成首次接入一次、发布稳定版本、伏羲通知、深链接唤起、MCP/Skill 原子更新、凭据保留、旧版本回滚和再次连接；保留发布 manifest、job 回读、MCP tools/list、Skill 发现、文件指针和 16077 健康证据。浏览器原型、单元测试和本地模拟不能替代真实深链接与文件切换证据。
+在 Windows 真实设备完成一次迁移、服务端发布、页面确认、AI 客户端重启、MCP tools/list、Skill 发现、凭据保留和回滚；记录 16077 健康、intent 回读和本地文件指针。静态原型与本地 spike 不能替代这一场景。
 
 ## 23. 实施拆解
 
-### 阶段 0：设计冻结
+### 阶段 0：本地机制试验（已完成）
 
-- 工作：确认更新器形态（Windows CLI + `fuxi-agent://`）、stable 单渠道、manifest 字段、回滚边界和通知文案。
-- 退出条件：摘要、原型、详细设计、接口、状态机和验收场景无根决策缺口。
+用两个本地 fixture 验证启动前消费、摘要/Smoke 回滚、凭据隔离、运行中等待和并发锁。退出条件是 `npm run test:update-spike` 通过并输出结构化证据。
 
-### 阶段 1：服务端版本与票据底座
+### 阶段 1：稳定 launcher（未开始）
 
-- 工作：增加 release/artifact/job/ticket 表与 API；扩展 mcp session 版本字段；实现签名/摘要清单和审计。
-- 退出条件：真实 API 能发布、列出更新、创建/消费一次性 ticket，并拒绝过期/跨设备/重复票据。
+实现无待更新时的等价启动、installation manifest、current/previous、lock 和启动前结果回报。退出条件是旧版业务工具与 launcher 启动行为一致。
 
-### 阶段 2：本地更新器与 MCP/Skill 原子切换
+### 阶段 2：服务端发布与意图（未开始）
 
-- 工作：实现 Windows 更新器、深链接注册、版本目录、lock、下载校验、previous、切换、Smoke、回滚和结果回报。
-- 退出条件：用两个本地 fixture 证明成功更新、摘要失败回滚、凭据文件不变、并发更新被阻断。
+增加 release manifest、update intent、幂等回读和版本上报；不增加深链接和后台服务。退出条件是 API 能记录意图并被设备会话读取。
 
-### 阶段 3：伏羲通知与人工更新体验
+### 阶段 3：真实 MCP/Skill 制品切换（未开始）
 
-- 工作：实现版本轮询/通知、版本详情、确认、进度、失败/回滚结果和无更新器回退；MCP 上报版本。
-- 退出条件：原型核心路径与真实 API 状态一致，页面不在深链接点击时伪造成功。
+把本地试验的校验、切换、Smoke 和回滚接入真实包，先保护凭据和用户配置。退出条件是隔离测试设备完成 v1→v2 和失败恢复。
 
-### 阶段 4：16077 真实验收与发布收口
+### 阶段 4：伏羲提示与 16077 人工验收（未开始）
 
-- 工作：用独立测试设备和新 release 完成真实首次接入、通知、更新、回滚、会话保留和旧版继续使用。
-- 退出条件：保留完整回读证据；同一不可变 release 才允许进入 16088 完整发布门禁。
+实现通知、详情、已安排、等待启动、完成和回滚文案；用户人工关闭/重启 AI 客户端验证。退出条件是完整回读证据，而非页面截图 alone。
 
 ## 24. 实施顺序约束
 
-1. 先建立不可变 manifest、ticket 和 job 状态，再做 UI 通知；不能先做“更新按钮”再补权威状态。
-2. 先实现本地 staging/previous/lock/Smoke/回滚，再开放深链接；不能让浏览器直接执行脚本。
-3. 先保证凭据和用户配置目录隔离，再允许覆盖 MCP/Skill current；不能把 refresh token 与版本包放在同一目录。
-4. 先在 16077 用真实 Windows 设备验收，再把同一 release 送入 16088 完整门禁；轻量测试证据不能替代生产验收。
+1. 先实现 launcher 无待更新等价启动，再开放平台确认；否则新用户会因入口变化无法启动 MCP。
+2. 先实现本地 staging、lock、current/previous、Smoke 和回滚，再接真实下载。
+3. 先接 update intent 和回读，再做“有更新”通知；浏览器不能先做一个没有权威状态的更新按钮。
+4. 先保护凭据、业务目录和用户配置边界，再允许替换 MCP/Skill 文件。
+5. 先在 16077 用独立 Windows 设备人工验收，再考虑 16088 完整门禁；轻量测试不等于生产证明。
 
-禁止以“下载成功”代替“更新完成”，禁止用长效 refresh token 作为更新 URL 凭据，禁止跳过回滚测试，禁止在旧 MCP 正在执行不可中断调用时强制杀进程。
+禁止以“已安排”代替“已完成”，禁止以“下载成功”代替 Smoke 通过，禁止在当前 MCP 运行时强杀进程，禁止把旧用户未迁移误报为自动更新可用。
 
 ## 25. 完成定义
 
 ### 产品与交互
 
-- 伏羲用户能看到版本差异、确认更新、看到阶段进度和成功/回滚结果。
-- 正常路径不暴露 MCP 配置路径、token 或脚本内容；缺少更新器时有明确回退。
+- 用户清楚知道更新不会立即发生、何时发生、失败后能否继续工作。
+- 页面状态只来自服务端意图和 launcher 回报，不根据按钮点击伪造完成。
 
-### 技术与数据
+### 本地技术
 
-- release、artifact、ticket、job、session 版本字段和状态 guard 已实现，制品摘要可回读。
-- MCP/Skill 以兼容 release 原子切换，凭据、业务项目和用户配置不被覆盖。
+- 稳定 launcher 在 Windows 上可靠启动旧版和新版 MCP。
+- MCP/Skill 兼容 release 可原子切换，摘要、语法、Smoke、Skill 发现失败自动恢复。
+- refresh token、凭据文件、业务项目和 AI 客户端配置不被覆盖。
 
-### 验证与安全
+### 平台与验证
 
-- 通过结构、摘要、签名/票据、路径边界、并发 lock、Smoke、回滚和审计测试。
-- 失败时只返回稳定错误码，不泄露 token、完整路径、源码或执行命令。
-
-### 真实环境
-
-- Windows 真实设备完成深链接唤起、下载、切换、Skill 发现、MCP tools/list、会话保留和回滚。
-- 16077 轻量人工验收通过后，才以同一不可变 release 进入 16088 完整发布流程；在此之前不能宣称主动更新已上线。
+- release、intent、设备版本和结果事件具备权限、幂等和稳定错误语义。
+- `npm run test:update-spike` 通过；随后完成真实 Windows 迁移和 16077 人工回读。
+- 在真实环境证据形成前，只能称为“设计完成/本地试验通过”，不能称为主动更新已上线。

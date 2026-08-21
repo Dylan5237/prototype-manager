@@ -5,8 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/fuxi-zip.js && node --check tests/integration.js",
-    "test:integration": "node tests/integration.js"
+    "check": "node --check src/server.js && node --check src/fuxi-zip.js && node --check tests/integration.js && node --check tests/update-spike/updater.js && node --check tests/update-spike/launcher.js && node --check tests/update-spike/run-spike.js",
+    "test:integration": "node tests/integration.js",
+    "test:update-spike": "node tests/update-spike/run-spike.js"
   },
   "engines": {
     "node": ">=18.0.0"
