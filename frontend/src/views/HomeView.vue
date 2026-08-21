@@ -232,6 +232,7 @@ const agentUpdateSubmitting = ref(false)
 const agentUpdateSession = ref(null)
 const agentUpdate = ref(null)
 const agentUpdateIntent = ref(null)
+const agentUpdateAvailable = ref(false)
 
 const mcpTokenExpiresLocal = computed(() => {
   if (!mcpTokenExpiresAt.value) return ''
@@ -247,21 +248,29 @@ const mcpConnectCodeExpiresLocal = computed(() => {
   return d.toLocaleString('zh-CN', { hour12: false })
 })
 
-const agentUpdateRelease = computed(() => agentUpdate.value?.release || null)
+const agentUpdateRelease = computed(() => agentUpdate.value || agentUpdateIntent.value?.release || null)
 const agentUpdateIntentStatus = computed(() => agentUpdateIntent.value?.status || '')
 const agentUpdateScheduled = computed(() => ['scheduled', 'running'].includes(agentUpdateIntentStatus.value))
-const agentUpdateCanSchedule = computed(() => Boolean(agentUpdateRelease.value) && !agentUpdateScheduled.value)
+const agentUpdateCompleted = computed(() => agentUpdateIntentStatus.value === 'completed')
+const agentUpdateRolledBack = computed(() => ['rolled_back', 'failed'].includes(agentUpdateIntentStatus.value))
+const agentUpdateCanSchedule = computed(() => agentUpdateAvailable.value && Boolean(agentUpdateRelease.value) && !agentUpdateScheduled.value && !agentUpdateCompleted.value)
 const agentUpdateVisible = computed(() => Boolean(agentUpdateRelease.value || agentUpdateScheduled.value))
 const agentUpdateType = computed(() => {
   if (agentUpdateScheduled.value) return 'success'
+  if (agentUpdateCompleted.value) return 'success'
+  if (agentUpdateRolledBack.value) return 'warning'
   return agentUpdateRelease.value ? 'warning' : 'info'
 })
 const agentUpdateTitle = computed(() => {
+  if (agentUpdateCompleted.value) return 'MCP 与 Skill 更新完成'
+  if (agentUpdateRolledBack.value) return '更新未通过，已恢复旧版本'
   if (agentUpdateIntentStatus.value === 'running') return '更新正在等待客户端启动完成'
   if (agentUpdateIntentStatus.value === 'scheduled') return '已安排下次启动更新'
   return '发现 MCP 与 Skill 更新'
 })
 const agentUpdateDescription = computed(() => {
+  if (agentUpdateCompleted.value) return '新版本已通过启动前检查，当前客户端下次调用将使用新版本。'
+  if (agentUpdateRolledBack.value) return '新版本检查未通过，旧版本仍可继续使用；可以稍后重新安排更新。'
   if (agentUpdateIntentStatus.value === 'running') return '启动器已经领取更新，客户端下次启动前会完成校验和切换。'
   if (agentUpdateIntentStatus.value === 'scheduled') return '当前客户端继续可用；关闭并重新打开 AI 客户端后才会执行更新。'
   return '更新不会立即修改本地文件；确认后将在 AI 客户端下一次启动前执行，失败会自动恢复旧版本。'
@@ -401,16 +410,23 @@ async function loadAgentUpdate() {
     if (!agentUpdateSession.value) {
       agentUpdate.value = null
       agentUpdateIntent.value = null
+      agentUpdateAvailable.value = false
       return
     }
     const updatesRes = await getAgentUpdates(agentUpdateSession.value.id)
     const data = updatesRes.data.data || {}
+    agentUpdateAvailable.value = (data.updates || []).length > 0
     agentUpdate.value = data.updates?.[0] || null
-    agentUpdateIntent.value = data.intents?.find(intent => intent.releaseId === agentUpdate.value?.releaseId) || data.intents?.[0] || null
+    const candidateIntents = [...(data.intents || []), ...(data.recentIntents || [])]
+    agentUpdateIntent.value = candidateIntents.find(intent => intent.releaseId === agentUpdate.value?.releaseId) || candidateIntents[0] || null
+    if (!agentUpdate.value && agentUpdateIntent.value?.release) {
+      agentUpdate.value = agentUpdateIntent.value.release
+    }
   } catch (err) {
     // 没有设备会话时不打扰原型列表；只有已接入用户才显示更新状态。
     agentUpdate.value = null
     agentUpdateIntent.value = null
+    agentUpdateAvailable.value = false
   } finally {
     agentUpdateLoading.value = false
   }

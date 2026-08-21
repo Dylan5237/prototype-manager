@@ -114,6 +114,9 @@ test('heartbeat finds a published release and update intent is idempotent throug
   });
   assert.equal(completed.status, 'completed');
   assert.equal(completed.release.releaseId, 'release-2');
+  const after = getAvailableUpdates({ userId: 2, sessionId: 'session-1' });
+  assert.equal(after.recentIntents[0].status, 'completed');
+  assert.equal(after.recentIntents[0].releaseId, 'release-2');
 });
 
 test('update intent and heartbeat enforce session ownership and lifecycle', () => {

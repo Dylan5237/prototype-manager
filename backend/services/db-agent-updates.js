@@ -183,11 +183,19 @@ function getAvailableUpdates({ userId, sessionId }) {
      ORDER BY requested_at DESC`,
     [userId, sessionId]
   ).map(row => mapIntent(row));
+  const recentIntents = query(
+    `SELECT * FROM agent_update_intents
+     WHERE user_id = ? AND session_id = ? AND status IN ('completed', 'rolled_back', 'failed')
+       AND updated_at >= ?
+     ORDER BY updated_at DESC LIMIT 10`,
+    [userId, sessionId, new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()]
+  ).map(row => mapIntent(row));
   return {
     session: mapSession(session),
     current: { mcpVersion: currentMcp, skillVersion: currentSkill, versionsKnown },
     updates,
-    intents
+    intents,
+    recentIntents
   };
 }
 
