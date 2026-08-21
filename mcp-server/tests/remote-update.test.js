@@ -6,7 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { prepareArtifactBundle, commitArtifactBundle, getArtifactMetadata, artifactFile } = require('../../backend/services/agent-artifacts');
-const { prepareStartup, readJson, paths } = require('../src/update-runtime');
+const { prepareStartup, readJson, paths, reportSessionRuntime } = require('../src/update-runtime');
 
 let tempRoot;
 let sourceRoot;
@@ -14,6 +14,7 @@ let server;
 let previousAgentRoot;
 let previousToken;
 let previousSkillTarget;
+let heartbeatPayload;
 
 function json(res, value, status = 200) {
   const body = JSON.stringify(value);
@@ -27,6 +28,7 @@ test.beforeEach(async () => {
   previousAgentRoot = process.env.FUXI_AGENT_RELEASE_ROOT;
   previousToken = process.env.FUXI_TOKEN;
   previousSkillTarget = process.env.FUXI_SKILL_TARGET;
+  heartbeatPayload = null;
   process.env.FUXI_AGENT_RELEASE_ROOT = path.join(tempRoot, 'server-artifacts');
   process.env.FUXI_TOKEN = 'test-access-token';
   process.env.FUXI_SKILL_TARGET = path.join(tempRoot, 'native-skill');
@@ -50,6 +52,15 @@ test.beforeEach(async () => {
   const skill = getArtifactMetadata('remote-v2', 'skill');
 
   server = http.createServer((req, res) => {
+    if (req.url === '/api/auth/mcp/heartbeat') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        heartbeatPayload = JSON.parse(body);
+        return json(res, { success: true, data: { session: heartbeatPayload, updates: [] } });
+      });
+      return;
+    }
     if (req.url === '/api/integrations/update-intents/claim') {
       return json(res, {
         success: true,
@@ -118,4 +129,25 @@ test('remote claim downloads, verifies, smokes, and installs a release before MC
   assert.equal(fs.existsSync(path.join(installed.mcpPath, 'src', 'server.js')), true);
   assert.equal(fs.existsSync(path.join(installed.skillPath, 'SKILL.md')), true);
   assert.match(fs.readFileSync(path.join(process.env.FUXI_SKILL_TARGET, 'SKILL.md'), 'utf8'), /Test Skill/);
+});
+
+test('launcher runtime heartbeat reports versions for legacy MCP targets', async () => {
+  const port = server.address().port;
+  const data = await reportSessionRuntime({
+    apiUrl: `http://127.0.0.1:${port}`,
+    token: 'test-access-token',
+    sessionId: 'session-legacy',
+    mcpVersion: '0.1.0',
+    skillVersion: '0.1.0',
+    runtimeVersion: 'v20.0.0',
+    platform: 'win32'
+  });
+  assert.equal(data.session.mcpVersion, '0.1.0');
+  assert.deepEqual(heartbeatPayload, {
+    sessionId: 'session-legacy',
+    mcpVersion: '0.1.0',
+    skillVersion: '0.1.0',
+    runtimeVersion: 'v20.0.0',
+    platform: 'win32'
+  });
 });

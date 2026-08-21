@@ -296,6 +296,22 @@ async function reportUpdateResult({ apiUrl, token, intentId, status, localMcpVer
   return body.data;
 }
 
+async function reportSessionRuntime({ apiUrl, token, sessionId, mcpVersion, skillVersion, runtimeVersion = process.version, platform = process.platform }) {
+  if (!token || !sessionId) return null;
+  const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/heartbeat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ sessionId, mcpVersion, skillVersion, runtimeVersion, platform })
+  });
+  const body = await response.json().catch(() => null);
+  if (!response.ok || !body || body.success === false) {
+    const error = new Error((body && body.message) || `运行时版本回报失败: HTTP ${response.status}`);
+    error.code = (body && body.code) || 'RUNTIME_REPORT_FAILED';
+    throw error;
+  }
+  return body.data;
+}
+
 function updateState(p, value) {
   writeJsonAtomic(p.state, { ...value, updatedAt: nowIso() });
 }
@@ -506,6 +522,7 @@ module.exports = {
   getSessionAuth,
   claimUpdate,
   reportUpdateResult,
+  reportSessionRuntime,
   applyRelease,
   prepareStartup,
   resolveCurrentTarget,

@@ -5,7 +5,8 @@ const path = require('path');
 const {
   prepareStartup,
   startMcp,
-  reportReadyUpdate
+  reportReadyUpdate,
+  reportSessionRuntime
 } = require('./update-runtime');
 
 async function main() {
@@ -44,6 +45,23 @@ async function main() {
     } catch (error) {
       // 本地版本已经完成安全切换；结果回报失败不污染 MCP stdout，也不阻断当前进程。
       process.stderr.write(`[fuxi-update] completed result report failed: ${error.code || error.message}\n`);
+    }
+  }
+
+  if (startup.auth && startup.current) {
+    try {
+      await reportSessionRuntime({
+        apiUrl,
+        token: startup.auth.token,
+        sessionId: startup.auth.sessionId,
+        mcpVersion: startup.current.mcpVersion,
+        skillVersion: startup.current.skillVersion,
+        runtimeVersion: process.version,
+        platform: process.platform
+      });
+    } catch (error) {
+      // 心跳失败不阻断本地 MCP；下一次 launcher 启动会重试。
+      process.stderr.write(`[fuxi-update] runtime report skipped: ${error.code || error.message}\n`);
     }
   }
 
