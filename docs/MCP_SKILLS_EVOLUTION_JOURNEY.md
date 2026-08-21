@@ -963,6 +963,8 @@ commit：
 - release/intent 数据模型和 API 尚未实现。
 - 稳定 launcher 尚未接入真实 MCP 启动配置；真实制品下载、原子目录切换和回滚尚未接入产品代码。
 - 已完成隔离 Windows 本地技术试验：成功切换、摘要/Smoke 回滚、凭据不变、客户端运行中等待、并发锁均有脚本证据；真实设备通知、Skill 发现和 16077 端到端证据尚未形成。
+- 已用 Cursor 测试环境完成真实 MCP launcher 协议试验：临时副本 v1→v2、`initialize`、`tools/list`（26 个工具，含 `deliver_project`）和 `check_connection`（16077、verified）通过；Cursor 已打开工作区会缓存 `user-fuxi-platform`，仅改全局 `mcp.json` 不会热切换现有实例。
+- 当前 Cursor Skill 的 `SKILL.md` 与能力 cache 摘要不一致，检查返回 `CACHE_STALE_FILE SKILL.md`；本轮不自动重建或覆盖，避免把用户现有 Skill 改动误认为更新结果。
 
 ## 更新规则
 

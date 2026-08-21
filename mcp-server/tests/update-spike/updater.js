@@ -125,9 +125,28 @@ function smokeCheck(mcpRoot, skillRoot) {
 
   const smoke = spawnSync(process.execPath, [server, '--smoke'], { encoding: 'utf8' });
   if (smoke.status !== 0 || !(smoke.stdout || '').includes('SMOKE_OK')) {
-    const error = new Error(`MCP Smoke 失败: ${(smoke.stderr || smoke.stdout || '').trim()}`);
-    error.code = 'UPDATE_SMOKE_FAILED';
-    throw error;
+    const probeInput = [
+      JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
+      JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })
+    ].join('\n') + '\n';
+    const probe = spawnSync(process.execPath, [server], {
+      input: probeInput,
+      encoding: 'utf8',
+      timeout: 2500,
+      killSignal: 'SIGTERM'
+    });
+    const replies = (probe.stdout || '').split(/\r?\n/).filter(Boolean).flatMap(line => {
+      try { return [JSON.parse(line)]; } catch { return []; }
+    });
+    const initialized = replies.some(item => item.id === 1 && item.result && item.result.serverInfo);
+    const listed = replies.some(item => item.id === 2 && item.result && Array.isArray(item.result.tools));
+    if (!initialized || !listed) {
+      const message = [smoke.stderr, smoke.stdout, probe.stderr, probe.stdout]
+        .filter(Boolean).join(' ').trim();
+      const error = new Error(`MCP Smoke 失败: ${message}`);
+      error.code = 'UPDATE_SMOKE_FAILED';
+      throw error;
+    }
   }
 
   const skillFile = path.join(skillRoot, 'SKILL.md');

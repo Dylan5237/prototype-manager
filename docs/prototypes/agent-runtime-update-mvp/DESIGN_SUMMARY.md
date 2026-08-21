@@ -86,5 +86,5 @@
 - 查看详细设计：[FULL_DESIGN.md](./FULL_DESIGN.md)
 - 严格校验：`python C:\Users\howyo\.codex\skills\first-principles-product-design\scripts\validate_design_package.py docs/prototypes/agent-runtime-update-mvp --strict`
 - 运行 Windows 本地试验：`cd mcp-server; npm run test:update-spike`
-- 已验证：本地成功切换、摘要失败回滚、Smoke 失败回滚、凭据保留、客户端运行中等待、并发锁。
-- 尚未验证：真实服务端发布/通知、稳定启动器接入真实 AI 客户端、Skill 缓存刷新、16077 真实设备验收。
+- 已验证：本地成功切换、摘要失败回滚、Smoke 失败回滚、凭据保留、客户端运行中等待、并发锁；真实测试安装的 16077 health、26 个工具、`deliver_project`、`check_connection=verified`；真实 MCP 副本经 Cursor launcher 协议探针完成 v1→v2。
+- 尚未验证：真实服务端发布/通知、Cursor 已打开工作区切换到新 launcher、Skill 缓存刷新、16077 真实用户更新闭环。
