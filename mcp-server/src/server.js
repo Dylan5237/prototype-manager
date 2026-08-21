@@ -1242,7 +1242,7 @@ async function handle(message) {
     result(message.id, {
       protocolVersion: message.params && message.params.protocolVersion || '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'fuxi-platform-mcp-server', version: '0.1.0' }
+      serverInfo: { name: 'fuxi-platform-mcp-server', version: MCP_VERSION }
     });
     return;
   }

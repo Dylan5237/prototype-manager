@@ -3,7 +3,7 @@
 > 设计基线：2026-08-21
 > 关联原型：[index.html](./index.html)
 > 设计摘要：[DESIGN_SUMMARY.md](./DESIGN_SUMMARY.md)
-> 状态：延后更新决策已确认；本地 Windows 技术试验完成；服务端状态与版本回报第一切片已实现
+> 状态：延后更新决策已确认；本地 Windows 技术试验和远程 launcher 协议验证完成；16077 真实验收待执行
 
 ## 1. 文档地位
 
@@ -211,11 +211,11 @@ flowchart LR
 
 ### 9.1 Release
 
-维护者提交 MCP/Skill 配套制品，服务端校验清单字段和摘要后生成不可变 `releaseId`。当前代码已实现清单持久化和 stable 发布接口；制品目录边界、真实上传/下载和撤回接口仍待接入。发布后不原地修改；撤回只阻止新的更新意图，不删除已存在制品。
+维护者提交 MCP/Skill 配套制品，服务端校验清单字段、ZIP 入口和摘要后生成不可变 `releaseId`。当前代码已实现从配置源目录生成 ZIP、清单持久化和带会话鉴权的下载接口；真实上传/撤回接口仍待后续补充。发布后不原地修改；撤回只阻止新的更新意图，不删除已存在制品。
 
 ### 9.2 Update intent
 
-用户确认后创建 `(userId, sessionId, releaseId)` 的待更新意图。当前代码已实现重复点击幂等、launcher claim 和终态结果回报。客户端尚未启动时意图保持 `scheduled`；launcher 领取后进入 `running`，成功为 `completed`，失败但旧版恢复为 `rolled_back`。
+用户确认后创建 `(userId, sessionId, releaseId)` 的待更新意图。当前代码已实现重复点击幂等、launcher claim、启动前下载/校验/切换和终态结果回报。客户端尚未启动时意图保持 `scheduled`；launcher 领取后进入 `running`，成功为 `completed`，失败但旧版恢复为 `rolled_back`。
 
 ### 9.3 Local installation
 

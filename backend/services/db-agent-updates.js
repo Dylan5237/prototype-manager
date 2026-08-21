@@ -130,6 +130,10 @@ function getRelease(releaseId, publishedOnly = false) {
   return row;
 }
 
+function getReleaseInfo(releaseId, publishedOnly = false) {
+  return mapRelease(getRelease(releaseId, publishedOnly));
+}
+
 function createRelease({ actorUserId, manifest: input }) {
   const manifest = normalizeManifest(input);
   if (queryOne(`SELECT release_id FROM agent_releases WHERE release_id = ?`, [manifest.releaseId])) {
@@ -173,10 +177,17 @@ function getAvailableUpdates({ userId, sessionId }) {
   const updates = versionsKnown
     ? releases.filter(release => release.mcpVersion !== currentMcp || release.skillVersion !== currentSkill)
     : [];
+  const intents = query(
+    `SELECT * FROM agent_update_intents
+     WHERE user_id = ? AND session_id = ? AND status IN ('scheduled', 'running')
+     ORDER BY requested_at DESC`,
+    [userId, sessionId]
+  ).map(row => mapIntent(row));
   return {
     session: mapSession(session),
     current: { mcpVersion: currentMcp, skillVersion: currentSkill, versionsKnown },
-    updates
+    updates,
+    intents
   };
 }
 
@@ -295,6 +306,7 @@ module.exports = {
   AgentUpdateError,
   normalizeManifest,
   createRelease,
+  getReleaseInfo,
   listPublishedReleases,
   getAvailableUpdates,
   createUpdateIntent,

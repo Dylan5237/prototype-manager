@@ -544,9 +544,10 @@ PREFLIGHT -> deliver_project -> COMPLETE
 当前实现进度:
 
 - 已落地服务端数据底座：`agent_releases`、`agent_update_intents`，以及 `mcp_sessions` 的 MCP/Skill/运行时版本回报字段。
-- 已落地最小 API：管理员发布 stable manifest、用户查询设备更新、创建幂等更新意图、launcher claim、结果回报、MCP heartbeat。
+- 已落地真实制品与最小 API：管理员从配置源目录生成 stable MCP/Skill ZIP，服务端保存并鉴权下载；用户查询设备更新、创建幂等更新意图、launcher claim、结果回报、MCP heartbeat。
+- 已落地 Windows launcher：启动前下载、SHA-256、受限解压、MCP/Skill Smoke、current/previous 切换、native Skill 替换和结果回报。
 - MCP `check_connection` 会上报运行时版本并返回第一条可用更新；旧服务端没有 heartbeat 时保持兼容，不阻断现有连接。
-- 已通过后端 35 项测试、MCP 语法检查和真实集成测试；尚未把制品下载、稳定 launcher 远程 claim、页面通知接入 16077。
+- 已通过后端 37 项测试、MCP 语法检查、远程更新协议测试和真实集成测试；前端通知已接入，尚待 16077 真实重启验收。
 
 ---
 

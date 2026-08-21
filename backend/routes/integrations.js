@@ -9,6 +9,7 @@ const { GitLabProvider } = require('../services/gitlab-provider');
 const {
   AgentUpdateError,
   createRelease,
+  getReleaseInfo,
   listPublishedReleases,
   getAvailableUpdates,
   createUpdateIntent,
@@ -16,6 +17,13 @@ const {
   claimUpdateIntent,
   recordUpdateResult
 } = require('../services/db-agent-updates');
+const {
+  prepareArtifactBundle,
+  commitArtifactBundle,
+  discardArtifactBundle,
+  removeArtifactBundle,
+  getArtifactMetadata
+} = require('../services/agent-artifacts');
 
 const router = express.Router();
 const SKILL_NAME = 'fuxi-skyui-prototype';
@@ -128,16 +136,19 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 请严格按以下顺序执行；任何一步失败立即停止，不要声称接入成功：
 1. 先识别当前 AI 客户端原生的 MCP 配置机制和本地工具目录，不假定固定 JSON 路径；创建临时安装目录，禁止把安装 token、连接码或 refresh token 写入业务仓库、Skill 文件或日志。
 2. 使用 Authorization: Bearer <安装 token> 只下载 MCP ZIP 到临时目录并解压；确认 Node.js >=18。先不要安装 Skill，也不要调用任何业务工具。
-3. 立即用下面的 stdio 配置启动 MCP，并优先调用 check_connection；这一步会兑换一次性连接码、建立设备会话、把 refresh token 写入 FUXI_CREDENTIALS_FILE。只有 check_connection 成功后才能继续：
+3. 立即用下面的 stdio 配置启动稳定 launcher，并优先调用 check_connection；这一步会通过 launcher 启动 MCP、兑换一次性连接码、建立设备会话、把 refresh token 写入 FUXI_CREDENTIALS_FILE。只有 check_connection 成功后才能继续：
      command: node
-     args: [<MCP解压目录>/fuxi-platform-mcp/src/server.js]
+     args: [<MCP解压目录>/fuxi-platform-mcp/src/launcher.js]
      env: {
      FUXI_API_URL: "${baseUrl}",
      FUXI_CONNECT_CODE: "${connect.code}",
-     FUXI_CREDENTIALS_FILE: "<用户主目录>/.fuxi/mcp-credentials.json"
+     FUXI_CREDENTIALS_FILE: "<用户主目录>/.fuxi/mcp-credentials.json",
+     FUXI_MCP_TARGET: "<MCP解压目录>/fuxi-platform-mcp/src/server.js",
+     FUXI_INSTALL_ROOT: "<用户主目录>/.fuxi/agent-runtime",
+     FUXI_SKILL_TARGET: "<用户主目录>/.cursor/skills/fuxi-skyui-prototype"
      }
 4. 连接成功后，使用安装 token 下载 Skill ZIP；将其中的 ${SKILL_NAME}/ 安装到原生 Skill 目录，先备份已有版本，再以临时目录完成替换，验证 SKILL.md 可发现。
-5. 将 MCP ZIP 的正式目录接入 AI 客户端的 stdio 配置，保留 FUXI_API_URL 和 FUXI_CREDENTIALS_FILE，连接码只用于本次首次兑换；兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
+5. 将稳定 launcher 接入 AI 客户端的 stdio 配置，保留 FUXI_API_URL、FUXI_CREDENTIALS_FILE、FUXI_INSTALL_ROOT 和 FUXI_SKILL_TARGET；连接码只用于本次首次兑换；兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
 6. 重启或刷新 AI 客户端，调用 check_connection，确认 tools/list 包含 deliver_project，再确认 ${SKILL_NAME} 可被发现和调用；不要用业务写入动作代替连接验证。
 7. 成功后只报告安装位置、连接结果、Skill 状态和会话有效期，不回显完整安装 token、access token 或 refresh token。
 
@@ -161,7 +172,7 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 });
 
 function sendAgentUpdateError(res, error) {
-  const status = error instanceof AgentUpdateError ? error.status : 500;
+  const status = error instanceof AgentUpdateError || Number.isInteger(error.status) ? error.status : 500;
   res.status(status).json({
     success: false,
     code: error.code || 'AGENT_UPDATE_FAILED',
@@ -170,11 +181,72 @@ function sendAgentUpdateError(res, error) {
   });
 }
 
-// 发布不可变 stable release。当前只提供维护者 API，下载制品的真实发布接线后续补上。
+// 发布不可变 stable release。buildFromSources=true 时从当前配置的 MCP/Skill 源目录构建真实 ZIP。
 router.post('/agent-releases', requireAuth, requireRole(['admin']), (req, res) => {
+  let bundle = null;
+  let committed = false;
   try {
-    const release = createRelease({ actorUserId: req.user.id, manifest: req.body && (req.body.manifest || req.body) });
+    const body = req.body || {};
+    const input = { ...(body.manifest || body) };
+    const buildFromSources = Boolean(body.buildFromSources || input.buildFromSources);
+    const releaseId = String(input.releaseId || '').trim();
+    if (buildFromSources) {
+      const mcpDir = configuredMcpDir();
+      const skillDir = configuredSkillDir();
+      if (!mcpDir || !skillDir) {
+        throw new AgentUpdateError('AGENT_ARTIFACT_SOURCE_UNAVAILABLE', 'MCP/Skill 分发源目录不可用', 503);
+      }
+      bundle = prepareArtifactBundle({ releaseId, mcpDir, skillDir });
+      const baseUrl = publicBaseUrl(req);
+      input.artifacts = {
+        mcp: {
+          url: `${baseUrl}/api/integrations/agent-releases/${releaseId}/mcp.zip`,
+          size: bundle.artifacts.mcp.size,
+          sha256: bundle.artifacts.mcp.sha256
+        },
+        skill: {
+          url: `${baseUrl}/api/integrations/agent-releases/${releaseId}/skill.zip`,
+          size: bundle.artifacts.skill.size,
+          sha256: bundle.artifacts.skill.sha256
+        }
+      };
+    }
+    if (!buildFromSources) {
+      throw new AgentUpdateError('AGENT_ARTIFACT_BUILD_REQUIRED', '发布测试版本必须使用 buildFromSources=true 生成不可变制品', 400);
+    }
+    commitArtifactBundle(bundle);
+    committed = true;
+    const release = createRelease({ actorUserId: req.user.id, manifest: input });
     res.status(201).json({ success: true, data: release });
+  } catch (error) {
+    if (bundle) {
+      if (committed) removeArtifactBundle(bundle.releaseId);
+      else discardArtifactBundle(bundle);
+    }
+    sendAgentUpdateError(res, error);
+  }
+});
+
+// launcher 使用既有设备会话下载已发布的固定制品；每次发送前重新验证文件摘要。
+router.get('/agent-releases/:releaseId/:kind.zip', requireAuth, (req, res) => {
+  try {
+    const { releaseId, kind } = req.params;
+    const release = getReleaseInfo(releaseId, true);
+    if (!['mcp', 'skill'].includes(kind)) {
+      throw new AgentUpdateError('INVALID_ARTIFACT_KIND', '制品类型只支持 mcp 或 skill', 400);
+    }
+    const artifact = getArtifactMetadata(releaseId, kind);
+    if (!artifact) {
+      throw new AgentUpdateError('AGENT_ARTIFACT_NOT_FOUND', '发布制品不存在', 404);
+    }
+    const expected = release.manifest && release.manifest.artifacts && release.manifest.artifacts[kind];
+    if (!expected || expected.sha256 !== artifact.sha256 || Number(expected.size) !== Number(artifact.size)) {
+      throw new AgentUpdateError('AGENT_ARTIFACT_INTEGRITY_FAILED', '服务端制品摘要与发布清单不一致', 500);
+    }
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Length', String(artifact.size));
+    res.setHeader('Content-Disposition', `attachment; filename="${artifact.fileName}"`);
+    res.sendFile(artifact.path);
   } catch (error) {
     sendAgentUpdateError(res, error);
   }

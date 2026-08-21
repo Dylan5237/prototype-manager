@@ -14,12 +14,20 @@ Set these environment variables in the MCP host:
 | `FUXI_TOKEN` | No | Legacy short-lived access token from `GET /api/auth/mcp-token`. Takes priority over username/password login but does not auto-refresh. |
 | `FUXI_USERNAME` | No | Login username when no connect code, refresh token, or `FUXI_TOKEN` is present. |
 | `FUXI_PASSWORD` | No | Login password for the username/password fallback. |
+| `FUXI_INSTALL_ROOT` | No | Stable launcher local runtime root; defaults to `~/.fuxi/agent-runtime`. |
+| `FUXI_SKILL_TARGET` | No | Native Skill directory to replace after a verified update; defaults to Cursor's `~/.cursor/skills/fuxi-skyui-prototype`. |
 
 On first connect, pass `FUXI_CONNECT_CODE` from the platform MCP dialog. The server exchanges it for an access token
 and a rotating refresh token, then writes the refresh token to `FUXI_CREDENTIALS_FILE`. Later starts restore the
 session from that file and refresh the access token automatically on `401`, so a connected device stays connected
 without re-entering the code. The refresh token rotates on every refresh and the session is revocable from the
 platform's MCP session list.
+
+For deferred updates, configure the AI client to start `src/launcher.js` instead of `src/server.js`. The launcher
+uses the existing device session to claim a scheduled update, downloads the fixed MCP/Skill ZIP artifacts, verifies
+their SHA-256 digests, runs local Smoke checks, replaces the native Skill directory, and only then starts the MCP
+server. Update logs are written to stderr so MCP JSON-RPC stdout remains clean. If no update is available, it starts
+the current installation unchanged.
 
 ## Tools
 

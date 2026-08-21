@@ -6,8 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "publish:agent-release": "node scripts/publish-agent-release.js",
     "test": "npm run test:collaboration",
-    "test:collaboration": "node --test --test-concurrency=1 tests/collaboration-foundation.test.js tests/gitlab-provider.test.js tests/collaboration-events.test.js tests/lightweight-collaboration.test.js tests/agent-updates.test.js"
+    "test:collaboration": "node --test --test-concurrency=1 tests/collaboration-foundation.test.js tests/gitlab-provider.test.js tests/collaboration-events.test.js tests/lightweight-collaboration.test.js tests/agent-updates.test.js tests/agent-artifacts.test.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.10",

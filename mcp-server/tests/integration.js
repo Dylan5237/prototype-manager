@@ -382,7 +382,7 @@ async function main() {
     assert(Array.isArray(restoredList.body.data));
     const restoredHealth = await callTool(codeMcp, 'check_connection');
     assert.equal(restoredHealth.body.authentication, 'verified');
-    assert.equal(restoredHealth.body.runtime.mcpVersion, '0.1.0');
+    assert.equal(restoredHealth.body.runtime.mcpVersion, '0.2.0');
     assert.equal(restoredHealth.body.runtime.skillVersion, 'unknown');
     assert.equal(restoredHealth.body.update, null);
     const persisted = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));

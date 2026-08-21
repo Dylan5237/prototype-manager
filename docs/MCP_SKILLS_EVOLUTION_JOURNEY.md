@@ -961,12 +961,14 @@ commit：
 
 已完成（服务端第一切片）：
 - 已实现 `agent_releases`、`agent_update_intents` 数据模型，以及 release 发布、设备更新查询、更新意图幂等创建、launcher claim、结果回报和 MCP heartbeat API。
+- 已接入真实制品第一版：管理员可从当前 MCP/Skill 源目录生成不可变 ZIP，服务端保存到 `backend/data/agent-releases` 并提供带会话鉴权的下载接口，发布/下载都会复核 ZIP 入口、禁止路径和 SHA-256。
+- 已接入产品版 Windows launcher：启动前 claim、下载、SHA-256、受限解压、MCP/Skill Smoke、current/previous 切换、native Skill 替换和结果回报；远程协议隔离测试通过。
 - MCP `check_connection` 已回报 MCP/Skill/Node/平台版本并读取服务端可用更新；对未升级的旧服务端保持兼容。
-- 后端 35 项测试、MCP 语法检查和集成测试通过；这只证明服务端状态机与版本回报，不等于 16077 真实用户验收。
+- 后端 37 项测试、MCP 语法检查、远程更新协议测试和集成测试通过；这只证明代码闭环，不等于 16077 真实用户验收。
 
 尚未完成：
-- 稳定 launcher 尚未接入服务端 claim 和真实制品下载；真实制品目录、原子目录切换和回滚仍停留在隔离试验代码。
-- 前端尚未显示更新通知、确认按钮和结果状态，16077 尚未部署本切片。
+- 需要在 16077 发布一个真实测试 release，并把 Cursor 测试配置一次性迁移到固定 launcher；生产 16088 尚未发布。
+- 前端已加入更新通知、确认和 scheduled/running 状态展示；完成/回滚结果需通过 16077 真实重启验收。
 - 已完成隔离 Windows 本地技术试验：成功切换、摘要/Smoke 回滚、凭据不变、客户端运行中等待、并发锁均有脚本证据；真实设备通知、Skill 发现和 16077 端到端证据尚未形成。
 - 已用 Cursor 测试环境完成真实 MCP launcher 协议试验：临时副本 v1→v2、`initialize`、`tools/list`（26 个工具，含 `deliver_project`）和 `check_connection`（16077、verified）通过；Cursor 已打开工作区会缓存 `user-fuxi-platform`，仅改全局 `mcp.json` 不会热切换现有实例。
 - 当前 Cursor Skill 的 `SKILL.md` 与能力 cache 摘要不一致，检查返回 `CACHE_STALE_FILE SKILL.md`；本轮不自动重建或覆盖，避免把用户现有 Skill 改动误认为更新结果。

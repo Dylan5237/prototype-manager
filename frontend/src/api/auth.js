@@ -16,6 +16,24 @@ export function getAgentBootstrap() {
   return api.get('/integrations/agent-bootstrap')
 }
 
+export function getMcpSessions() {
+  return api.get('/auth/mcp/sessions')
+}
+
+export function getAgentUpdates(sessionId) {
+  return api.get('/integrations/updates', {
+    params: sessionId ? { sessionId } : undefined
+  })
+}
+
+export function createAgentUpdateIntent(data) {
+  return api.post('/integrations/update-intents', data)
+}
+
+export function getAgentUpdateIntent(id) {
+  return api.get(`/integrations/update-intents/${encodeURIComponent(id)}`)
+}
+
 export function getUsers() {
   return api.get('/auth/users')
 }

@@ -29,6 +29,41 @@
       </div>
     </div>
 
+    <el-alert
+      v-if="agentUpdateVisible"
+      class="agent-update-banner"
+      :type="agentUpdateType"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        <div class="agent-update-title-row">
+          <span>{{ agentUpdateTitle }}</span>
+          <el-tag v-if="agentUpdateRelease" size="small" effect="plain">
+            MCP {{ agentUpdateRelease.mcpVersion }} / Skill {{ agentUpdateRelease.skillVersion }}
+          </el-tag>
+        </div>
+      </template>
+      <div class="agent-update-content">
+        <span>{{ agentUpdateDescription }}</span>
+        <div class="agent-update-actions">
+          <el-button
+            v-if="agentUpdateCanSchedule"
+            type="primary"
+            size="small"
+            :loading="agentUpdateSubmitting"
+            @click="scheduleAgentUpdate"
+          >安排下次启动更新</el-button>
+          <el-button
+            v-if="agentUpdateScheduled"
+            size="small"
+            :loading="agentUpdateLoading"
+            @click="loadAgentUpdate"
+          >刷新状态</el-button>
+        </div>
+      </div>
+    </el-alert>
+
     <!-- 归属者筛选标签 -->
     <div v-if="creators.length > 0" class="creator-filter-bar">
       <span class="filter-label">归属者：</span>
@@ -164,7 +199,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype, deletePrototype } from '../api/prototypes'
-import { getUsers, getAgentBootstrap } from '../api/auth'
+import { getUsers, getAgentBootstrap, getMcpSessions, getAgentUpdates, createAgentUpdateIntent } from '../api/auth'
 import { getCategories } from '../api/prototypes'
 import { Search, Plus, User, Loading, Delete, Connection, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
@@ -192,6 +227,11 @@ const mcpTokenExpiresAt = ref('')
 const mcpConnectCodeExpiresAt = ref('')
 const mcpLoading = ref(false)
 const mcpPrompt = ref('')
+const agentUpdateLoading = ref(false)
+const agentUpdateSubmitting = ref(false)
+const agentUpdateSession = ref(null)
+const agentUpdate = ref(null)
+const agentUpdateIntent = ref(null)
 
 const mcpTokenExpiresLocal = computed(() => {
   if (!mcpTokenExpiresAt.value) return ''
@@ -205,6 +245,26 @@ const mcpConnectCodeExpiresLocal = computed(() => {
   const d = new Date(mcpConnectCodeExpiresAt.value)
   if (Number.isNaN(d.getTime())) return mcpConnectCodeExpiresAt.value
   return d.toLocaleString('zh-CN', { hour12: false })
+})
+
+const agentUpdateRelease = computed(() => agentUpdate.value?.release || null)
+const agentUpdateIntentStatus = computed(() => agentUpdateIntent.value?.status || '')
+const agentUpdateScheduled = computed(() => ['scheduled', 'running'].includes(agentUpdateIntentStatus.value))
+const agentUpdateCanSchedule = computed(() => Boolean(agentUpdateRelease.value) && !agentUpdateScheduled.value)
+const agentUpdateVisible = computed(() => Boolean(agentUpdateRelease.value || agentUpdateScheduled.value))
+const agentUpdateType = computed(() => {
+  if (agentUpdateScheduled.value) return 'success'
+  return agentUpdateRelease.value ? 'warning' : 'info'
+})
+const agentUpdateTitle = computed(() => {
+  if (agentUpdateIntentStatus.value === 'running') return '更新正在等待客户端启动完成'
+  if (agentUpdateIntentStatus.value === 'scheduled') return '已安排下次启动更新'
+  return '发现 MCP 与 Skill 更新'
+})
+const agentUpdateDescription = computed(() => {
+  if (agentUpdateIntentStatus.value === 'running') return '启动器已经领取更新，客户端下次启动前会完成校验和切换。'
+  if (agentUpdateIntentStatus.value === 'scheduled') return '当前客户端继续可用；关闭并重新打开 AI 客户端后才会执行更新。'
+  return '更新不会立即修改本地文件；确认后将在 AI 客户端下一次启动前执行，失败会自动恢复旧版本。'
 })
 
 const activeTab = computed(() => route.query.tab || 'all')
@@ -332,6 +392,47 @@ async function loadAgentBootstrap() {
   }
 }
 
+async function loadAgentUpdate() {
+  agentUpdateLoading.value = true
+  try {
+    const sessionsRes = await getMcpSessions()
+    const sessions = (sessionsRes.data.data || []).filter(session => !session.revokedAt && new Date(session.expiresAt).getTime() > Date.now())
+    agentUpdateSession.value = sessions[0] || null
+    if (!agentUpdateSession.value) {
+      agentUpdate.value = null
+      agentUpdateIntent.value = null
+      return
+    }
+    const updatesRes = await getAgentUpdates(agentUpdateSession.value.id)
+    const data = updatesRes.data.data || {}
+    agentUpdate.value = data.updates?.[0] || null
+    agentUpdateIntent.value = data.intents?.find(intent => intent.releaseId === agentUpdate.value?.releaseId) || data.intents?.[0] || null
+  } catch (err) {
+    // 没有设备会话时不打扰原型列表；只有已接入用户才显示更新状态。
+    agentUpdate.value = null
+    agentUpdateIntent.value = null
+  } finally {
+    agentUpdateLoading.value = false
+  }
+}
+
+async function scheduleAgentUpdate() {
+  if (!agentUpdateSession.value || !agentUpdateRelease.value) return
+  agentUpdateSubmitting.value = true
+  try {
+    const res = await createAgentUpdateIntent({
+      sessionId: agentUpdateSession.value.id,
+      releaseId: agentUpdateRelease.value.releaseId
+    })
+    agentUpdateIntent.value = res.data.data.intent
+    ElMessage.success('已安排下次启动更新，当前客户端继续可用')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '安排更新失败')
+  } finally {
+    agentUpdateSubmitting.value = false
+  }
+}
+
 async function openMcpDialog() {
   showMcpDialog.value = true
   await loadAgentBootstrap()
@@ -388,6 +489,7 @@ onMounted(() => {
   loadData()
   loadUsers()
   loadCategories()
+  loadAgentUpdate()
 })
 </script>
 
@@ -414,6 +516,34 @@ onMounted(() => {
   margin-bottom: 24px;
   flex-wrap: wrap;
   gap: 16px;
+}
+
+.agent-update-banner {
+  margin: -8px 0 20px;
+}
+
+.agent-update-title-row,
+.agent-update-content,
+.agent-update-actions {
+  display: flex;
+  align-items: center;
+}
+
+.agent-update-title-row {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.agent-update-content {
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  line-height: 1.6;
+}
+
+.agent-update-actions {
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .page-title-wrapper {
