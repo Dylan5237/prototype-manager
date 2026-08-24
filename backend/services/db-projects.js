@@ -13,6 +13,16 @@ function insertAndGetId(sql, params) {
 const { generateId, rollbackVersion, findEntryFile, getRepoPath } = require('./storage');
 const { getPrototypeById, updatePrototype } = require('./db-prototypes');
 
+class PrototypeProjectConflictError extends Error {
+  constructor({ prototypeId, projectId, existingProjectId, existingProjectName }) {
+    super(`原型已归属项目「${existingProjectName || existingProjectId}」，请先解除原项目关联`);
+    this.name = 'PrototypeProjectConflictError';
+    this.code = 'PROTOTYPE_ALREADY_BOUND';
+    this.status = 409;
+    this.details = { prototypeId, projectId, existingProjectId, existingProjectName };
+  }
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -95,6 +105,22 @@ function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
   const t = now();
   const existing = findBinding(projectId, prototypeId, menuPath);
   if (existing) return existing;
+  const otherProject = queryOne(`
+    SELECT pp.project_id, p.name AS project_name
+    FROM project_prototypes pp
+    LEFT JOIN projects p ON p.id = pp.project_id
+    WHERE pp.prototype_id = ? AND pp.project_id <> ?
+    ORDER BY pp.id ASC
+    LIMIT 1
+  `, [prototypeId, projectId]);
+  if (otherProject) {
+    throw new PrototypeProjectConflictError({
+      prototypeId,
+      projectId,
+      existingProjectId: otherProject.project_id,
+      existingProjectName: otherProject.project_name
+    });
+  }
   const id = insertAndGetId(`
     INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
     VALUES (?, ?, ?, ?, ?)
@@ -126,6 +152,32 @@ function getProjectPrototypes(projectId) {
     WHERE pp.project_id = ?
     ORDER BY pp.sort_order ASC, pp.id ASC
   `, [projectId]);
+}
+
+function getPrototypeProjectBinding(prototypeId) {
+  const rows = query(`
+    SELECT pp.id AS binding_id, pp.project_id, pp.prototype_id, pp.menu_path, pp.sort_order,
+      pp.created_at AS bound_at, p.name AS project_name, p.description AS project_description,
+      p.created_by AS project_owner_id
+    FROM project_prototypes pp
+    LEFT JOIN projects p ON p.id = pp.project_id
+    WHERE pp.prototype_id = ? AND p.deleted_at IS NULL
+    ORDER BY pp.project_id, pp.sort_order, pp.id
+  `, [prototypeId]);
+  if (!rows.length) return null;
+  const first = rows[0];
+  return {
+    project_id: first.project_id,
+    project_name: first.project_name,
+    project_description: first.project_description,
+    project_owner_id: first.project_owner_id,
+    menu_positions: rows.map(row => ({
+      binding_id: row.binding_id,
+      menu_path: row.menu_path,
+      sort_order: row.sort_order,
+      bound_at: row.bound_at
+    }))
+  };
 }
 
 function updateProjectPrototype(id, { menuPath, sortOrder }) {
@@ -359,6 +411,8 @@ module.exports = {
   softDeleteProject,
 
   bindPrototype,
+  PrototypeProjectConflictError,
+  getPrototypeProjectBinding,
   getProjectPrototypeById,
   getProjectPrototypes,
   updateProjectPrototype,

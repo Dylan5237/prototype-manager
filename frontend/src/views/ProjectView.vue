@@ -466,8 +466,13 @@ const currentBinding = computed(() => {
 })
 
 const availablePrototypes = computed(() => {
-  const boundIds = new Set(project.value.prototypes?.map(pp => pp.prototype_id) || [])
-  return prototypes.value.filter(p => !boundIds.has(p.id))
+  const pathBoundIds = new Set(
+    project.value.prototypes
+      ?.filter(pp => pp.menu_path === activePath.value)
+      .map(pp => pp.prototype_id) || []
+  )
+  // 同一原型可以在同一项目的多个菜单位置展示；只排除当前菜单位置已经绑定的原型。
+  return prototypes.value.filter(p => !pathBoundIds.has(p.id))
 })
 
 const previewUrl = computed(() => {
@@ -736,7 +741,8 @@ async function handleBind() {
     selectedPrototypeId.value = ''
     loadProject()
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '绑定失败')
+    const message = err.response?.data?.message || '绑定失败'
+    ElMessage.error(message)
   } finally {
     binding.value = false
   }

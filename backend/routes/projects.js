@@ -6,6 +6,7 @@ const { requireAuth } = require('../middleware/auth');
 const {
   createProject, getProjects, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
+  PrototypeProjectConflictError,
   addProjectMember, getProjectMember, getProjectMembers, removeProjectMember,
   checkoutPrototype, checkinPrototype, forceReleaseCheckout, getActiveCheckout, getProjectCheckouts,
   createSnapshot, getProjectSnapshots, getSnapshotById, restoreSnapshot, deleteSnapshot
@@ -386,6 +387,9 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
     });
     res.json({ success: true, data: binding });
   } catch (err) {
+    if (err instanceof PrototypeProjectConflictError) {
+      return res.status(409).json({ success: false, code: err.code, message: err.message, details: err.details });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -394,7 +398,12 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
 router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   const { menuPath, sortOrder } = req.body;
   try {
-    const binding = updateProjectPrototype(parseInt(req.params.ppId, 10), { menuPath, sortOrder });
+    const ppId = parseInt(req.params.ppId, 10);
+    const existing = getProjectPrototypeById(ppId);
+    if (!existing || existing.project_id !== req.params.id) {
+      return res.status(404).json({ success: false, message: '绑定不存在' });
+    }
+    const binding = updateProjectPrototype(ppId, { menuPath, sortOrder });
     if (!binding) {
       return res.status(404).json({ success: false, message: '绑定不存在' });
     }
@@ -406,7 +415,12 @@ router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'ad
 
 // 解绑
 router.delete('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  removeProjectPrototype(parseInt(req.params.ppId, 10));
+  const ppId = parseInt(req.params.ppId, 10);
+  const existing = getProjectPrototypeById(ppId);
+  if (!existing || existing.project_id !== req.params.id) {
+    return res.status(404).json({ success: false, message: '绑定不存在' });
+  }
+  removeProjectPrototype(ppId);
   res.json({ success: true });
 });
 

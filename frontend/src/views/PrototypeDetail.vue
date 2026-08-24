@@ -61,6 +61,26 @@
       </div>
     </div>
 
+    <el-alert
+      v-if="prototype.project_binding"
+      class="project-binding-alert"
+      type="info"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        已归属项目「{{ prototype.project_binding.project_name }}」
+      </template>
+      <div class="project-binding-content">
+        <span>
+          当前原型在项目菜单中有 {{ prototype.project_binding.menu_positions?.length || 0 }} 个展示位置；归属后请在项目内发起修改。
+        </span>
+        <el-button link type="primary" @click="$router.push(`/projects/${prototype.project_binding.project_id}`)">
+          前往项目修改
+        </el-button>
+      </div>
+    </el-alert>
+
     <!-- 左右布局：左侧 Tab 导航 + 右侧内容 -->
     <div class="detail-content">
       <div class="tab-sidebar">

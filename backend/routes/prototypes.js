@@ -16,6 +16,7 @@ const {
   getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare,
   createShareLink, getShareLinkByCode, findShareLink
 } = require('../services/db-prototypes');
+const { getPrototypeProjectBinding } = require('../services/db-projects');
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
 } = require('../services/storage');
@@ -148,9 +149,10 @@ router.get('/:id', requireAuth, (req, res) => {
   }
 
   const sharedUserIds = getSharedUserIds(prototype.id);
+  const projectBinding = getPrototypeProjectBinding(prototype.id);
   res.json({
     success: true,
-    data: { ...prototype, files, shared_user_ids: sharedUserIds }
+    data: { ...prototype, files, shared_user_ids: sharedUserIds, project_binding: projectBinding }
   });
 });
 
