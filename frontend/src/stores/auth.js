@@ -56,6 +56,17 @@ export const useAuthStore = defineStore('auth', () => {
     return false
   }
 
+  async function register(data) {
+    const res = await api.post('/auth/register', data)
+    if (res.data.success) {
+      token.value = res.data.data.token
+      user.value = res.data.data.user
+      localStorage.setItem('token', token.value)
+      return true
+    }
+    return false
+  }
+
   async function fetchUser() {
     if (!token.value) return false
     try {
@@ -81,7 +92,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   return {
     token, user, isLoggedIn, isAdmin, isEditor,
-    login, fetchUser, logout
+    login, register, fetchUser, logout
   }
 })
 

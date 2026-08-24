@@ -198,7 +198,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype, deletePrototype } from '../api/prototypes'
@@ -540,10 +540,15 @@ watch(() => route.query.tab, () => {
 })
 
 onMounted(() => {
+  window.addEventListener('fuxi:open-mcp', openMcpDialog)
   loadData()
   loadUsers()
   loadCategories()
   loadAgentUpdate()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('fuxi:open-mcp', openMcpDialog)
 })
 </script>
 

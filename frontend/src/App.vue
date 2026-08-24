@@ -30,14 +30,7 @@
           </div>
           <div class="user-info" v-if="authStore.isLoggedIn && authStore.user">
             <AnnouncementCenter />
-            <el-tag v-for="r in userRoles" :key="r" size="small" :type="getRoleTagType(r)" effect="dark">
-              {{ getRoleLabel(r) }}
-            </el-tag>
-            <span class="nickname">{{ authStore.user.nickname || authStore.user.username }}</span>
-            <el-button text size="small" @click="authStore.logout" class="logout-btn">
-              <el-icon><SwitchButton /></el-icon>
-              退出
-            </el-button>
+            <AccountMenu />
           </div>
         </div>
       </el-header>
@@ -68,7 +61,8 @@ import { useAuthStore } from './stores/auth'
 import AdminLayout from './components/AdminLayout.vue'
 import PrototypeLayout from './components/PrototypeLayout.vue'
 import AnnouncementCenter from './components/AnnouncementCenter.vue'
-import { Files, FolderOpened, Setting, SwitchButton } from '@element-plus/icons-vue'
+import AccountMenu from './components/AccountMenu.vue'
+import { Files, FolderOpened, Setting } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 const route = useRoute()
@@ -78,22 +72,6 @@ const isHomePage = computed(() => route.path === '/')
 const isProjectPage = computed(() => route.path.startsWith('/projects') || route.path.startsWith('/project/'))
 const isProjectPreview = computed(() => /^\/project\/[^/]+\/preview$/.test(route.path))
 
-const userRoles = computed(() => {
-  const roles = authStore.user?.role
-  if (!roles) return []
-  return Array.isArray(roles) ? roles : [roles]
-})
-
-const roleLabelMap = { admin: '管理员', uploader: '编辑者', editor: '编辑者', viewer: '查看者' }
-const roleTagTypeMap = { admin: 'primary', uploader: 'success', editor: 'success', viewer: 'info' }
-
-function getRoleLabel(role) {
-  return roleLabelMap[role] || role
-}
-
-function getRoleTagType(role) {
-  return roleTagTypeMap[role] || 'info'
-}
 </script>
 
 <style>

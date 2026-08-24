@@ -17,7 +17,8 @@ function normalizeRoles(role) {
 
 // 登录
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { password } = req.body;
+  const username = String(req.body.username || '').trim().toLowerCase();
   if (!username || !password) {
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
   }
@@ -46,8 +47,7 @@ router.post('/login', (req, res) => {
   });
 });
 
-// 注册（仅admin）
-router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
+function createManagedUser(req, res) {
   const { username, password, nickname, role } = req.body;
   if (!username || !password) {
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
@@ -78,7 +78,38 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
     }
     res.status(500).json({ success: false, message: err.message });
   }
+}
+
+// 自助注册：账号保存为小写，默认获得普通编辑权限，不接受客户端传入角色。
+router.post('/register', (req, res) => {
+  const username = String(req.body.username || '').trim().toLowerCase();
+  const { password, passwordConfirmation, nickname } = req.body;
+  if (!/^[a-z][a-z0-9]*$/.test(username)) {
+    return res.status(400).json({ success: false, message: '账号必须以字母开头，只含英文字母和数字' });
+  }
+  if (!password || password !== passwordConfirmation) {
+    return res.status(400).json({ success: false, message: '密码不能为空，且两次输入必须一致' });
+  }
+  try {
+    const user = createUser({ username, password, nickname: String(nickname || '').trim() || username, role: ['uploader'] });
+    const token = generateToken(user);
+    res.status(201).json({
+      success: true,
+      data: {
+        token,
+        user: { id: user.id, username: user.username, nickname: user.nickname, role: user.role }
+      }
+    });
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ success: false, message: '账号已存在' });
+    }
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
+
+// 管理员代建用户，保留原有角色和用户组配置能力。
+router.post('/users', requireAuth, requireRole(['admin']), createManagedUser);
 
 // 获取当前用户
 router.get('/me', requireAuth, (req, res) => {

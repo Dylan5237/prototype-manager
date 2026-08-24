@@ -26,6 +26,7 @@
         </div>
 
         <el-form
+          v-if="!registerMode"
           :model="form"
           :rules="rules"
           ref="formRef"
@@ -66,6 +67,37 @@
             </button>
           </el-form-item>
         </el-form>
+        <el-form
+          v-else
+          :model="registerForm"
+          :rules="registerRules"
+          ref="registerFormRef"
+          @keyup.enter="handleRegister"
+          class="login-form"
+        >
+          <el-form-item prop="username">
+            <el-input v-model="registerForm.username" placeholder="例如：zhangsan1" :prefix-icon="User" size="large" class="dark-input" />
+            <span class="form-help">账号填写姓名全拼英文小写；重名可加数字后缀。</span>
+          </el-form-item>
+          <el-form-item prop="password">
+            <el-input v-model="registerForm.password" type="password" placeholder="请输入密码" :prefix-icon="Lock" size="large" show-password class="dark-input" />
+          </el-form-item>
+          <el-form-item prop="passwordConfirmation">
+            <el-input v-model="registerForm.passwordConfirmation" type="password" placeholder="请再次输入密码" :prefix-icon="Lock" size="large" show-password class="dark-input" />
+          </el-form-item>
+          <el-form-item prop="nickname">
+            <el-input v-model="registerForm.nickname" placeholder="请输入昵称" :prefix-icon="User" size="large" class="dark-input" />
+          </el-form-item>
+          <el-form-item>
+            <button type="button" class="login-btn" @click="handleRegister" :disabled="loading">
+              <span class="btn-text">{{ loading ? '注册中...' : '注册并登录' }}</span>
+              <span class="btn-shine"></span>
+            </button>
+          </el-form-item>
+        </el-form>
+        <button type="button" class="mode-switch" @click="toggleMode">
+          {{ registerMode ? '已有账号？返回登录' : '还没有账号？注册账号' }}
+        </button>
       </div>
     </div>
   </div>
@@ -81,12 +113,34 @@ import { useAuthStore } from '../stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 const formRef = ref(null)
+const registerFormRef = ref(null)
 const loading = ref(false)
+const registerMode = ref(false)
 const form = ref({ username: '', password: '' })
+const registerForm = ref({ username: '', password: '', passwordConfirmation: '', nickname: '' })
 
 const rules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
+}
+
+const registerRules = {
+  username: [
+    { required: true, message: '请输入账号', trigger: 'blur' },
+    { pattern: /^[a-zA-Z][a-zA-Z0-9]*$/, message: '账号必须以字母开头，只含英文字母和数字', trigger: 'blur' }
+  ],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+  passwordConfirmation: [
+    { required: true, message: '请再次输入密码', trigger: 'blur' },
+    { validator: (_rule, value, callback) => value === registerForm.value.password ? callback() : callback(new Error('两次输入的密码不一致')), trigger: 'blur' }
+  ],
+  nickname: [{ required: true, message: '请输入昵称', trigger: 'blur' }]
+}
+
+function toggleMode() {
+  registerMode.value = !registerMode.value
+  formRef.value?.clearValidate()
+  registerFormRef.value?.clearValidate()
 }
 
 async function handleLogin() {
@@ -104,6 +158,26 @@ async function handleLogin() {
     }
   } catch (err) {
     ElMessage.error(err.response?.data?.message || '登录失败')
+  } finally {
+    loading.value = false
+  }
+}
+
+async function handleRegister() {
+  registerForm.value.username = registerForm.value.username.trim().toLowerCase()
+  const valid = await registerFormRef.value.validate().catch(() => false)
+  if (!valid) return
+  loading.value = true
+  try {
+    const success = await authStore.register(registerForm.value)
+    if (success) {
+      ElMessage.success('注册成功，已登录')
+      router.push('/')
+    } else {
+      ElMessage.error('注册失败')
+    }
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '注册失败')
   } finally {
     loading.value = false
   }
@@ -282,6 +356,18 @@ async function handleLogin() {
   margin-bottom: 0;
   margin-top: 8px;
 }
+
+.mode-switch {
+  display: block;
+  margin: 4px auto 0;
+  padding: 5px 8px;
+  color: #67d8ff;
+  border: 0;
+  background: transparent;
+}
+
+.mode-switch:hover { text-decoration: underline; }
+.form-help { display: block; margin-top: 5px; color: rgba(255,255,255,.4); font-size: 12px; }
 
 /* 深色输入框 */
 .dark-input :deep(.el-input__wrapper) {

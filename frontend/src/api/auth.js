@@ -4,6 +4,10 @@ export function login(username, password) {
   return api.post('/auth/login', { username, password })
 }
 
+export function register(data) {
+  return api.post('/auth/register', data)
+}
+
 export function getMe() {
   return api.get('/auth/me')
 }
@@ -43,7 +47,7 @@ export function searchUsers(keyword) {
 }
 
 export function registerUser(data) {
-  return api.post('/auth/register', data)
+  return api.post('/auth/users', data)
 }
 
 export function updateUser(id, data) {
