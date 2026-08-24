@@ -81,6 +81,42 @@
       </div>
     </el-alert>
 
+    <section v-if="!prototype.project_binding && canEdit" class="direct-change-card" v-loading="directChangeLoading">
+      <div class="direct-change-head">
+        <div>
+          <h3><el-icon><MagicStick /></el-icon> 让 AI 修改</h3>
+          <p>独立原型修改会先预览校验，通过后自动生成正式版本。</p>
+        </div>
+        <el-button v-if="!directChange || ['completed', 'cancelled', 'stale'].includes(directChange.status)" type="primary" size="small" @click="openDirectChangeDialog()">
+          <el-icon><MagicStick /></el-icon>发起修改
+        </el-button>
+      </div>
+      <template v-if="directChange && !['cancelled'].includes(directChange.status)">
+        <div class="direct-change-meta">
+          <span>基线 v{{ directChange.base_version_number }}</span>
+          <span>版本策略：{{ directChange.version_strategy_type === 'custom' ? `自定义 v${directChange.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</span>
+          <span v-if="directChange.status === 'editing'">修改码：{{ directChange.handoff_status === 'redeemed' ? '已领取' : directCountdownLabel }}</span>
+        </div>
+        <el-alert v-if="directChange.status === 'editing' && directChange.handoff_status === 'redeemed'" title="AI 已领取修改码，任务内容和基线已锁定，等待候选上传。" type="info" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'preview_pending'" title="候选已上传，正在进行浏览器预览校验。校验通过后会自动形成正式版本。" type="info" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'invalid'" title="候选校验失败，正式版本未改变。请让 AI 修正后重新上传。" type="error" :closable="false" show-icon>
+          <ul class="validation-errors"><li v-for="error in directChange.validation_errors" :key="error.message || error">{{ error.message || error }}</li></ul>
+        </el-alert>
+        <el-alert v-else-if="directChange.status === 'stale'" title="基线版本已变化，当前修改未写入正式版本，请重新发起。" type="warning" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'completed'" :title="`修改已完成，正式版本已更新为 v${directChange.current_version_label || directChange.version_label || ''}`" type="success" :closable="false" show-icon />
+        <div v-if="directChange.preview_path && ['preview_pending', 'invalid'].includes(directChange.status)" class="direct-candidate-preview">
+          <div class="candidate-boundary-bar"><span class="candidate-chip">候选预览</span><span>仅供本次校验 · 不会绕过版本冲突检查</span></div>
+          <iframe :key="directPreviewUrl" :src="directPreviewUrl" class="candidate-preview" frameborder="0" @load="handleDirectPreviewLoad" />
+        </div>
+        <div class="direct-change-actions">
+          <el-button v-if="directChangeResult?.prompt" size="small" @click="copyDirectPrompt"><el-icon><DocumentCopy /></el-icon>复制完整提示词</el-button>
+          <el-button v-if="directChange.status === 'editing' && directChange.handoff_status !== 'redeemed'" size="small" @click="openDirectChangeDialog(directChange)">编辑并重新生成</el-button>
+          <el-button v-if="directChange.status === 'editing' && directChange.handoff_status !== 'redeemed'" size="small" type="danger" plain @click="cancelCurrentDirectChange">取消修改</el-button>
+        </div>
+      </template>
+      <el-empty v-else description="尚未发起独立修改" :image-size="60" />
+    </section>
+
     <!-- 左右布局：左侧 Tab 导航 + 右侧内容 -->
     <div class="detail-content">
       <div class="tab-sidebar">
@@ -250,6 +286,41 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="directChangeDialogVisible" :title="directChangeEditingId ? '编辑并重新生成提示词' : '让 AI 修改'" width="720px" destroy-on-close>
+      <template v-if="!directChangeResult">
+        <el-alert title="任务码有效期 10 分钟只用于首次领取；AI 领取后修改时间不受此限制。" type="info" :closable="false" show-icon />
+        <el-form label-position="top" class="direct-change-form">
+          <el-form-item label="修改要求" required>
+            <el-input v-model="directRequirement" type="textarea" :rows="7" maxlength="4000" show-word-limit placeholder="描述要修改的页面、交互、数据和验收结果。" />
+          </el-form-item>
+          <el-form-item label="版本号策略" required>
+            <el-radio-group v-model="directVersionStrategyType">
+              <el-radio label="auto">让 AI 决定版本号</el-radio>
+              <el-radio label="custom">自定义版本号</el-radio>
+            </el-radio-group>
+            <p class="form-help">AI 只能选择 major、minor 或 patch，平台负责计算准确版本号。</p>
+          </el-form-item>
+          <el-form-item v-if="directVersionStrategyType === 'custom'" label="自定义 SemVer" required>
+            <el-input v-model="directVersionStrategyValue" placeholder="例如 1.2.0" />
+            <p class="form-help">必须高于当前版本，且不能与历史版本重复。</p>
+          </el-form-item>
+        </el-form>
+      </template>
+      <template v-else>
+        <el-alert title="修改提示词已生成" type="success" :closable="false" show-icon>
+          <p>请复制完整提示词发送给已经接入伏羲的 AI 助手。领取后平台会锁定基线和版本策略。</p>
+        </el-alert>
+        <div class="task-code-row"><span>修改码</span><code>{{ directChangeResult.handoffCode }}</code></div>
+        <pre class="task-prompt">{{ directChangeResult.prompt }}</pre>
+      </template>
+      <template #footer>
+        <el-button @click="directChangeDialogVisible = false">{{ directChangeResult ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="directChangeResult" @click="returnDirectChangeEdit">返回编辑</el-button>
+        <el-button v-if="directChangeResult" type="primary" @click="copyDirectPrompt">复制完整提示词</el-button>
+        <el-button v-else type="primary" :loading="directChangeSubmitting" @click="submitDirectChange">生成修改提示词</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 编辑版本描述对话框 -->
     <el-dialog v-model="showVersionNoteDialog" title="编辑版本描述" width="500px">
       <el-form label-width="80px">
@@ -333,10 +404,10 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, computed, markRaw } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed, markRaw } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download } from '@element-plus/icons-vue'
+import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download, MagicStick, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
 import { getGroups } from '../api/groups'
@@ -346,6 +417,8 @@ import {
   getPrototypeShares, sharePrototype, unsharePrototype, getPublicShareLink,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
+  , getCurrentDirectChange, createDirectChange, updateDirectChange, cancelDirectChange,
+  recordDirectChangePreviewValidation
 } from '../api/prototypes'
 
 const route = useRoute()
@@ -398,6 +471,21 @@ const commentContent = ref('')
 const commentImages = ref([])
 const submittingComment = ref(false)
 
+// 独立原型 AI 修改
+const directChange = ref(null)
+const directChangeLoading = ref(false)
+const directChangeDialogVisible = ref(false)
+const directChangeEditingId = ref(null)
+const directChangeResult = ref(null)
+const directRequirement = ref('')
+const directVersionStrategyType = ref('auto')
+const directVersionStrategyValue = ref('')
+const directChangeSubmitting = ref(false)
+const directCountdownNow = ref(Date.now())
+const directPreviewSmokePending = ref(false)
+let directCountdownTimer = null
+let directPreviewFrameElement = null
+
 const canEdit = computed(() => {
   if (!prototype.value || !authStore.user) return false
   if (authStore.isAdmin || prototype.value.created_by === authStore.user.id) return true
@@ -411,6 +499,20 @@ const previewUrl = computed(() => {
   return `/preview/${prototype.value.id}/${prototype.value.entry_file}?token=${token}`
 })
 
+const directPreviewUrl = computed(() => {
+  if (!directChange.value?.preview_path) return ''
+  const token = authStore.token || ''
+  return `${directChange.value.preview_path}?token=${encodeURIComponent(token)}`
+})
+
+const directCountdownLabel = computed(() => {
+  if (!directChange.value?.handoff_expires_at) return '已过期'
+  const remaining = Math.max(0, new Date(directChange.value.handoff_expires_at).getTime() - directCountdownNow.value)
+  if (!remaining) return '已过期，请重新生成'
+  const seconds = Math.ceil(remaining / 1000)
+  return `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒`
+})
+
 async function loadData() {
   loading.value = true
   try {
@@ -418,10 +520,127 @@ async function loadData() {
     prototype.value = res.data.data
     loadReadme()
     loadVersions()
+    await loadDirectChange()
   } catch (err) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadDirectChange() {
+  if (!prototype.value || prototype.value.project_binding || !canEdit.value) {
+    directChange.value = null
+    return
+  }
+  directChangeLoading.value = true
+  try {
+    const res = await getCurrentDirectChange(prototype.value.id)
+    directChange.value = res.data.data || null
+    directPreviewFrameElement = null
+    directPreviewSmokePending.value = directChange.value?.status === 'preview_pending'
+  } catch (err) {
+    if (err.response?.status !== 409) directChange.value = null
+  } finally {
+    directChangeLoading.value = false
+  }
+}
+
+function openDirectChangeDialog(existing = null) {
+  if (prototype.value?.project_binding) return
+  directChangeEditingId.value = existing?.id || null
+  directRequirement.value = existing?.requirement || ''
+  directVersionStrategyType.value = existing?.version_strategy_type || 'auto'
+  directVersionStrategyValue.value = existing?.version_strategy_value || ''
+  directChangeResult.value = null
+  directChangeDialogVisible.value = true
+}
+
+function returnDirectChangeEdit() {
+  const result = directChangeResult.value
+  directRequirement.value = result?.change?.requirement || directRequirement.value
+  directVersionStrategyType.value = result?.change?.version_strategy_type || directVersionStrategyType.value
+  directVersionStrategyValue.value = result?.change?.version_strategy_value || directVersionStrategyValue.value
+  directChangeResult.value = null
+}
+
+async function submitDirectChange() {
+  if (!directRequirement.value.trim()) {
+    ElMessage.warning('请描述修改要求')
+    return
+  }
+  if (directVersionStrategyType.value === 'custom' && !directVersionStrategyValue.value.trim()) {
+    ElMessage.warning('请输入自定义版本号')
+    return
+  }
+  directChangeSubmitting.value = true
+  try {
+    const payload = {
+      requirement: directRequirement.value.trim(),
+      versionStrategy: {
+        type: directVersionStrategyType.value,
+        value: directVersionStrategyType.value === 'custom' ? directVersionStrategyValue.value.trim() : null
+      }
+    }
+    const res = directChangeEditingId.value
+      ? await updateDirectChange(prototype.value.id, directChangeEditingId.value, payload)
+      : await createDirectChange(prototype.value.id, payload)
+    directChangeResult.value = res.data.data
+    directChange.value = res.data.data.change
+    ElMessage.success(directChangeEditingId.value ? '提示词已重新生成' : '修改提示词已生成')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '生成修改提示词失败')
+  } finally {
+    directChangeSubmitting.value = false
+  }
+}
+
+async function cancelCurrentDirectChange() {
+  if (!directChange.value) return
+  try {
+    await ElMessageBox.confirm('确定取消这次独立修改吗？未领取的修改码将立即失效。', '取消修改', { type: 'warning' })
+    await cancelDirectChange(prototype.value.id, directChange.value.id)
+    directChange.value = null
+    directChangeResult.value = null
+    ElMessage.success('已取消修改')
+  } catch (err) {
+    if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '取消失败')
+  }
+}
+
+function copyDirectPrompt() {
+  if (!directChangeResult.value?.prompt) return
+  fallbackCopy(directChangeResult.value.prompt, '完整提示词已复制')
+}
+
+async function handleDirectPreviewLoad(event) {
+  directPreviewFrameElement = event?.target || null
+  if (!directChange.value || directChange.value.status !== 'preview_pending') return
+  directPreviewSmokePending.value = true
+}
+
+async function handleDirectPreviewSmokeMessage(event) {
+  if (event.origin !== window.location.origin || event.data?.source !== 'fuxi-preview-smoke') return
+  if (!directChange.value || directChange.value.status !== 'preview_pending') return
+  if (event.source !== directPreviewFrameElement?.contentWindow) return
+  directPreviewSmokePending.value = false
+  try {
+    const res = await recordDirectChangePreviewValidation(prototype.value.id, directChange.value.id, {
+      status: event.data.status,
+      errors: event.data.errors || [],
+      warnings: event.data.warnings || [],
+      durationMs: event.data.durationMs
+    })
+    const result = res.data.data
+    if (result?.change?.status === 'completed') {
+      ElMessage.success(`修改已完成，正式版本更新为 v${result.version?.version_label || ''}`)
+      await loadData()
+    } else {
+      directChange.value = result
+      ElMessage.error('候选预览校验失败，正式版本未改变')
+    }
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '预览校验回报失败')
   }
 }
 
@@ -860,10 +1079,17 @@ async function handleUnshare(userId) {
 }
 
 onMounted(async () => {
+  directCountdownTimer = window.setInterval(() => { directCountdownNow.value = Date.now() }, 1000)
+  window.addEventListener('message', handleDirectPreviewSmokeMessage)
   await loadData()
   await loadStats()
   await loadComments()
   try { await recordVisit(route.params.id) } catch (e) {}
+})
+
+onBeforeUnmount(() => {
+  if (directCountdownTimer) window.clearInterval(directCountdownTimer)
+  window.removeEventListener('message', handleDirectPreviewSmokeMessage)
 })
 </script><style scoped>
 .detail-view {
@@ -1011,6 +1237,96 @@ onMounted(async () => {
   border-radius: 6px;
   color: #c53030;
   font-size: 13px;
+}
+
+.project-binding-alert {
+  margin-bottom: 16px;
+}
+
+.project-binding-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.direct-change-card {
+  margin-bottom: 16px;
+  padding: 18px 22px;
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+}
+
+.direct-change-head,
+.direct-change-meta,
+.direct-change-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.direct-change-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 16px;
+  color: #1f2937;
+}
+
+.direct-change-head p {
+  margin: 5px 0 0;
+  color: #718096;
+  font-size: 13px;
+}
+
+.direct-change-meta {
+  justify-content: flex-start;
+  margin: 14px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.direct-change-meta span {
+  padding-right: 12px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.direct-change-meta span:last-child {
+  border-right: 0;
+}
+
+.direct-candidate-preview {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.direct-candidate-preview .candidate-preview {
+  width: 100%;
+  min-height: 460px;
+  display: block;
+  border: 0;
+}
+
+.direct-change-actions {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.direct-change-form {
+  margin-top: 18px;
+}
+
+.direct-change-form .form-help {
+  margin: 6px 0 0;
+  color: #718096;
+  font-size: 12px;
 }
 
 /* ========================================
