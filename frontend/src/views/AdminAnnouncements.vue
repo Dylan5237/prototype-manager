@@ -1,16 +1,22 @@
 <template>
-  <div class="admin-announcements">
-    <div class="page-toolbar">
+  <div class="management-page admin-announcements">
+    <div class="management-page-head">
       <div>
-        <h2 class="page-title">平台更新公告</h2>
-        <p class="page-subtitle">发布平台能力、维护窗口和使用影响说明；不用于执行 MCP/Skill 更新。</p>
+        <div class="management-title-line">
+          <h1>平台更新公告</h1>
+          <span class="management-count">{{ announcements.length }}</span>
+        </div>
+        <p class="management-description">发布平台能力、维护窗口和使用影响说明；不用于执行 MCP/Skill 更新。</p>
       </div>
-      <el-button type="primary" @click="openCreate">
-        <el-icon><Plus /></el-icon>新建公告
-      </el-button>
+      <div class="management-toolbar">
+        <el-button type="primary" @click="openCreate">
+          <el-icon><Plus /></el-icon>新建公告
+        </el-button>
+      </div>
     </div>
 
-    <el-table :data="announcements" v-loading="loading" stripe class="data-table">
+    <div class="management-panel">
+      <el-table :data="announcements" v-loading="loading">
       <el-table-column prop="title" label="标题" min-width="260">
         <template #default="{ row }">
           <div class="title-cell"><strong>{{ row.title }}</strong><span>{{ row.summary || '—' }}</span></div>
@@ -28,18 +34,20 @@
       <el-table-column prop="published_at" label="发布时间" width="180">
         <template #default="{ row }">{{ formatDate(row.published_at || row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="220" align="right" header-align="right" fixed="right">
         <template #default="{ row }">
-          <div class="table-actions">
+          <div class="management-table-actions">
             <el-button size="small" @click="openEdit(row)">编辑</el-button>
             <el-button v-if="row.status === 'draft'" size="small" type="primary" plain @click="publish(row)">发布</el-button>
             <el-button v-else-if="row.status === 'published'" size="small" type="warning" plain @click="archive(row)">归档</el-button>
           </div>
         </template>
       </el-table-column>
-    </el-table>
+      <template #empty><el-empty description="暂无平台更新公告" :image-size="96" /></template>
+      </el-table>
+    </div>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑公告' : '新建公告'" width="680px" destroy-on-close>
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑公告' : '新建公告'" width="680px" class="management-dialog" destroy-on-close>
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <el-form-item label="公告标题" prop="title"><el-input v-model="form.title" maxlength="120" show-word-limit placeholder="例如：伏羲平台 v1.8.0 更新" /></el-form-item>
         <div class="form-row">
@@ -95,7 +103,21 @@ async function save() {
 async function publish(row) { await changeStatus(row, 'published', '发布后所有登录用户都可能看到这条公告，确认继续？') }
 async function archive(row) { await changeStatus(row, 'archived', '归档后用户侧不再显示，历史记录仍保留，确认继续？') }
 async function changeStatus(row, status, message) {
-  try { await ElMessageBox.confirm(message, '确认操作', { type: status === 'archived' ? 'warning' : 'info' }); await updateAnnouncement(row.id, { status }); ElMessage.success(status === 'published' ? '公告已发布' : '公告已归档'); await load() } catch (error) { if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '操作失败') }
+  try {
+    await ElMessageBox.confirm(message, status === 'archived' ? '归档公告' : '发布公告', {
+      confirmButtonText: status === 'archived' ? '归档' : '发布',
+      cancelButtonText: '取消',
+      type: status === 'archived' ? 'warning' : 'info',
+      customClass: 'management-confirm'
+    })
+    await updateAnnouncement(row.id, { status })
+    ElMessage.success(status === 'published' ? `已发布「${row.title}」` : `已归档「${row.title}」`)
+    await load()
+  } catch (error) {
+    if (error !== 'cancel' && error !== 'close') {
+      ElMessage.error(error.response?.data?.message || '操作失败')
+    }
+  }
 }
 
 async function load() {
@@ -107,15 +129,8 @@ onMounted(load)
 </script>
 
 <style scoped>
-.admin-announcements { animation: fadeIn .25s ease-out; }
-.page-toolbar { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:20px; }
-.page-title { margin:0; font-size:22px; color:#1a202c; }
-.page-subtitle { margin:6px 0 0; color:#718096; }
-.data-table { border-radius:8px; overflow:hidden; }
 .title-cell strong,.title-cell span { display:block; }
 .title-cell span { margin-top:4px; overflow:hidden; color:#718096; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
-.table-actions { display:flex; gap:8px; }
 .form-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-@keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
-@media(max-width:600px){.page-toolbar,.form-row{display:block}.page-toolbar .el-button{margin-top:12px}}
+@media(max-width:600px){.form-row{display:block}}
 </style>

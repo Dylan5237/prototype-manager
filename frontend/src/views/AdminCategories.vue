@@ -1,24 +1,34 @@
 <template>
-  <div class="admin-categories">
-    <div class="page-toolbar">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索类别名称"
-        clearable
-        class="search-input"
-        @keyup.enter="loadData"
-      >
-        <template #suffix>
-          <el-icon @click="loadData" style="cursor:pointer"><Search /></el-icon>
-        </template>
-      </el-input>
-      <el-button type="primary" @click="openCreateDialog">
-        <el-icon><Plus /></el-icon>
-        新建类别
-      </el-button>
+  <div class="management-page admin-categories">
+    <div class="management-page-head">
+      <div>
+        <div class="management-title-line">
+          <h1>类别管理</h1>
+          <span class="management-count">{{ filteredCategories.length }}</span>
+        </div>
+        <p class="management-description">维护原型筛选使用的少量稳定类别。</p>
+      </div>
+      <div class="management-toolbar">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索类别"
+          clearable
+          class="management-search"
+          @keyup.enter="loadData"
+        >
+          <template #suffix>
+            <el-icon class="search-action" @click="loadData"><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-button type="primary" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          新建类别
+        </el-button>
+      </div>
     </div>
 
-    <el-table :data="filteredCategories" v-loading="loading" stripe class="data-table">
+    <div class="management-panel">
+      <el-table :data="filteredCategories" v-loading="loading">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="类别名称" width="200" />
       <el-table-column prop="description" label="描述" min-width="300">
@@ -31,9 +41,9 @@
           {{ formatDate(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="190" align="right" header-align="right" fixed="right">
         <template #default="{ row }">
-          <div class="table-actions">
+          <div class="management-table-actions">
             <el-button size="small" @click="openEditDialog(row)">
               <el-icon><Edit /></el-icon>编辑
             </el-button>
@@ -43,10 +53,12 @@
           </div>
         </template>
       </el-table-column>
-    </el-table>
+      <template #empty><el-empty description="暂无符合条件的类别" :image-size="96" /></template>
+      </el-table>
+    </div>
 
     <!-- 新建类别弹窗 -->
-    <el-dialog v-model="showCreateDialog" title="新建类别" width="420px" destroy-on-close>
+    <el-dialog v-model="showCreateDialog" title="新建类别" width="460px" class="management-dialog" destroy-on-close>
       <el-form :model="createForm" :rules="formRules" ref="createFormRef" label-width="80px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="createForm.name" placeholder="类别名称" />
@@ -62,7 +74,7 @@
     </el-dialog>
 
     <!-- 编辑类别弹窗 -->
-    <el-dialog v-model="showEditDialog" title="编辑类别" width="420px" destroy-on-close>
+    <el-dialog v-model="showEditDialog" title="编辑类别" width="460px" class="management-dialog" destroy-on-close>
       <el-form :model="editForm" :rules="formRules" ref="editFormRef" label-width="80px">
         <el-form-item label="名称" prop="name">
           <el-input v-model="editForm.name" placeholder="类别名称" />
@@ -118,7 +130,7 @@ async function handleCreate() {
   submitting.value = true
   try {
     await createCategory({ name: createForm.value.name, description: createForm.value.description })
-    ElMessage.success('创建成功')
+    ElMessage.success(`已创建类别「${createForm.value.name}」`)
     showCreateDialog.value = false
     loadData()
   } catch (err) {
@@ -151,7 +163,7 @@ async function handleEdit() {
       name: editForm.value.name,
       description: editForm.value.description
     })
-    ElMessage.success('更新成功')
+    ElMessage.success(`已更新类别「${editForm.value.name}」`)
     showEditDialog.value = false
     loadData()
   } catch (err) {
@@ -167,13 +179,13 @@ async function handleDelete(row) {
     await ElMessageBox.confirm(
       `确定删除类别 "${row.name}" 吗？该类别下的原型将变为未分类。`,
       '确认删除',
-      { type: 'warning' }
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', customClass: 'management-confirm' }
     )
     await deleteCategory(row.id)
-    ElMessage.success('删除成功')
-    loadData()
+    ElMessage.success(`已删除类别「${row.name}」`)
+    await loadData()
   } catch (err) {
-    if (err !== 'cancel') {
+    if (err !== 'cancel' && err !== 'close') {
       ElMessage.error(err.response?.data?.message || '删除失败')
     }
   }
@@ -203,36 +215,8 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.admin-categories {
-  animation: fadeIn 0.25s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.page-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  gap: 16px;
-}
-
-.search-input {
-  width: 260px;
-}
-
-.data-table {
-  border-radius: 8px;
-  overflow: hidden;
+.search-action {
+  cursor: pointer;
 }
 
 .description-text {
@@ -240,8 +224,4 @@ onMounted(loadData)
   font-size: 14px;
 }
 
-.table-actions {
-  display: flex;
-  gap: 8px;
-}
 </style>

@@ -1,24 +1,34 @@
 <template>
-  <div class="admin-groups">
-    <div class="page-toolbar">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索组名称"
-        clearable
-        class="search-input"
-        @keyup.enter="handleSearch"
-      >
-        <template #suffix>
-          <el-icon @click="handleSearch" style="cursor:pointer"><Search /></el-icon>
-        </template>
-      </el-input>
-      <el-button type="primary" @click="openCreateDialog">
-        <el-icon><Plus /></el-icon>
-        新建用户组
-      </el-button>
+  <div class="management-page admin-groups">
+    <div class="management-page-head">
+      <div>
+        <div class="management-title-line">
+          <h1>用户组管理</h1>
+          <span class="management-count">{{ filteredGroups.length }}</span>
+        </div>
+        <p class="management-description">按团队维护成员集合，用于共享和分发原型。</p>
+      </div>
+      <div class="management-toolbar">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索用户组"
+          clearable
+          class="management-search"
+          @keyup.enter="handleSearch"
+        >
+          <template #suffix>
+            <el-icon class="search-action" @click="handleSearch"><Search /></el-icon>
+          </template>
+        </el-input>
+        <el-button type="primary" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          新建用户组
+        </el-button>
+      </div>
     </div>
 
-    <el-table :data="filteredGroups" v-loading="loading" stripe class="data-table">
+    <div class="management-panel">
+      <el-table :data="filteredGroups" v-loading="loading">
       <el-table-column prop="id" label="ID" width="60" />
       <el-table-column prop="name" label="组名称" width="180" />
       <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
@@ -52,11 +62,11 @@
                     class="member-popover-item"
                   >{{ m.nickname || m.username }}</span>
                 </div>
-                <p v-else class="text-muted">暂无成员</p>
+                <p v-else class="management-muted">暂无成员</p>
               </div>
             </el-popover>
           </div>
-          <span v-else class="text-muted">未分配成员</span>
+          <span v-else class="management-muted">未分配成员</span>
         </template>
       </el-table-column>
       <el-table-column prop="creator_name" label="创建人" width="120" />
@@ -65,9 +75,9 @@
           {{ formatDate(row.created_at) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="190" align="right" header-align="right" fixed="right">
         <template #default="{ row }">
-          <div class="table-actions">
+          <div class="management-table-actions">
             <el-button size="small" @click="openEditDialog(row)">
               <el-icon><Edit /></el-icon>编辑
             </el-button>
@@ -77,10 +87,12 @@
           </div>
         </template>
       </el-table-column>
-    </el-table>
+      <template #empty><el-empty description="暂无符合条件的用户组" :image-size="96" /></template>
+      </el-table>
+    </div>
 
     <!-- 新建/编辑用户组弹窗 -->
-    <el-dialog v-model="showDialog" :title="isEdit ? '编辑用户组' : '新建用户组'" width="620px" destroy-on-close>
+    <el-dialog v-model="showDialog" :title="isEdit ? '编辑用户组' : '新建用户组'" width="620px" class="management-dialog" destroy-on-close>
       <el-form :model="form" :rules="rules" ref="formRef" label-width="80px">
         <el-form-item label="组名称" prop="name">
           <el-input v-model="form.name" placeholder="如：天宫后端产品" />
@@ -177,10 +189,10 @@ async function handleSubmit() {
     }
     if (isEdit.value) {
       await updateGroup(form.value.id, payload)
-      ElMessage.success('更新成功')
+      ElMessage.success(`已更新用户组「${form.value.name}」`)
     } else {
       await createGroup(payload)
-      ElMessage.success('创建成功')
+      ElMessage.success(`已创建用户组「${form.value.name}」`)
     }
     showDialog.value = false
     loadData()
@@ -196,13 +208,13 @@ async function handleDelete(row) {
     await ElMessageBox.confirm(
       `确定删除用户组 "${row.name}" 吗？删除后不影响已产生的分享记录。`,
       '确认删除',
-      { type: 'warning' }
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', customClass: 'management-confirm' }
     )
     await deleteGroup(row.id)
-    ElMessage.success('删除成功')
-    loadData()
+    ElMessage.success(`已删除用户组「${row.name}」`)
+    await loadData()
   } catch (err) {
-    if (err !== 'cancel') {
+    if (err !== 'cancel' && err !== 'close') {
       ElMessage.error(err.response?.data?.message || err.message || '删除失败')
     }
   }
@@ -271,41 +283,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.admin-groups {
-  animation: fadeIn 0.25s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.page-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  gap: 16px;
-}
-
-.search-input {
-  width: 260px;
-}
-
-.data-table {
-  border-radius: 8px;
-  overflow: hidden;
-}
-
-.table-actions {
-  display: flex;
-  gap: 8px;
+.search-action {
+  cursor: pointer;
 }
 
 .member-preview {
@@ -351,11 +330,6 @@ onMounted(() => {
   background: #f5f7fa;
   padding: 2px 8px;
   border-radius: 4px;
-}
-
-.text-muted {
-  color: #999;
-  font-size: 13px;
 }
 
 .group-transfer {

@@ -1,20 +1,30 @@
 <template>
-  <div class="admin-distribution">
-    <div class="page-toolbar">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索原型名称"
-        clearable
-        class="search-input"
-        @keyup.enter="loadData"
-      >
-        <template #suffix>
-          <el-icon @click="loadData" style="cursor:pointer"><Search /></el-icon>
-        </template>
-      </el-input>
+  <div class="management-page admin-distribution">
+    <div class="management-page-head">
+      <div>
+        <div class="management-title-line">
+          <h1>原型分发</h1>
+          <span class="management-count">{{ filteredPrototypes.length }}</span>
+        </div>
+        <p class="management-description">调整原型归属人，提交前明确显示影响对象。</p>
+      </div>
+      <div class="management-toolbar">
+        <el-input
+          v-model="searchKeyword"
+          placeholder="搜索原型"
+          clearable
+          class="management-search"
+          @keyup.enter="loadData"
+        >
+          <template #suffix>
+            <el-icon class="search-action" @click="loadData"><Search /></el-icon>
+          </template>
+        </el-input>
+      </div>
     </div>
 
-    <el-table :data="filteredPrototypes" v-loading="loading" stripe class="data-table">
+    <div class="management-panel">
+      <el-table :data="filteredPrototypes" v-loading="loading">
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="name" label="原型名称" min-width="200">
         <template #default="{ row }">
@@ -26,9 +36,9 @@
           <el-tag type="info" size="small" effect="light">{{ getOwnerName(row.created_by) }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="转移归属" width="280" fixed="right">
+      <el-table-column label="操作" width="290" align="right" header-align="right" fixed="right">
         <template #default="{ row }">
-          <div class="transfer-cell">
+          <div class="management-table-actions transfer-cell">
             <el-select
               v-model="transferTargets[row.id]"
               placeholder="选择新用户"
@@ -52,9 +62,11 @@
           </div>
         </template>
       </el-table-column>
-    </el-table>
+      <template #empty><el-empty description="暂无符合条件的原型" :image-size="96" /></template>
+      </el-table>
+    </div>
 
-    <el-dialog v-model="showTransferDialog" title="确认转移" width="400px">
+    <el-dialog v-model="showTransferDialog" title="变更原型归属" width="460px" class="management-dialog">
       <p class="transfer-confirm-text">
         确定将原型 <strong>{{ transferringPrototype?.name }}</strong> 的归属者从
         <strong>{{ getOwnerName(transferringPrototype?.created_by) }}</strong>
@@ -115,9 +127,9 @@ async function confirmTransfer() {
   transferring.value = true
   try {
     await transferPrototype(transferringPrototype.value.id, transferTargetId.value)
-    ElMessage.success('转移成功')
+    ElMessage.success(`已将「${transferringPrototype.value.name}」转移给「${getOwnerName(transferTargetId.value)}」`)
     showTransferDialog.value = false
-    loadData()
+    await loadData()
   } catch (err) {
     ElMessage.error(err.response?.data?.message || err.message || '转移失败')
   } finally {
@@ -145,35 +157,8 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.admin-distribution {
-  animation: fadeIn 0.25s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.page-toolbar {
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.search-input {
-  width: 260px;
-}
-
-.data-table {
-  border-radius: 8px;
-  overflow: hidden;
+.search-action {
+  cursor: pointer;
 }
 
 .prototype-link {
@@ -189,9 +174,7 @@ onMounted(loadData)
 }
 
 .transfer-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  width: 100%;
 }
 
 .transfer-confirm-text {

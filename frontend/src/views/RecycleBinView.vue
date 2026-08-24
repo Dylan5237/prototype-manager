@@ -1,14 +1,23 @@
 <template>
   <PrototypeLayout>
-    <div class="recycle-bin-container">
-      <div class="page-header">
-        <h2>回收站</h2>
-        <el-button type="primary" @click="fetchRecycleBin" :loading="loading">
+    <div class="management-page recycle-bin-container">
+      <div class="management-page-head">
+        <div>
+          <div class="management-title-line">
+            <h1>回收站</h1>
+            <span class="management-count">{{ recycleBinList.length }}</span>
+          </div>
+          <p class="management-description">可恢复已删除原型；彻底删除后无法恢复。</p>
+        </div>
+        <div class="management-toolbar">
+          <el-button @click="fetchRecycleBin" :loading="loading">
           <el-icon><Refresh /></el-icon>刷新
-        </el-button>
+          </el-button>
+        </div>
       </div>
 
-      <el-table :data="recycleBinList" v-loading="loading" style="width: 100%" stripe>
+      <div class="management-panel">
+        <el-table :data="recycleBinList" v-loading="loading" style="width: 100%">
         <el-table-column prop="name" label="名称" min-width="200">
           <template #default="{ row }">
             <div class="proto-name">{{ row.name }}</div>
@@ -30,30 +39,33 @@
             {{ formatDate(row.deleted_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="center" fixed="right">
+        <el-table-column label="操作" width="200" align="right" header-align="right" fixed="right">
           <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="handleRestore(row)"
-              v-if="authStore.isAdmin || row.created_by === authStore.user.id"
-            >
-              <el-icon><RefreshLeft /></el-icon>恢复
-            </el-button>
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleHardDelete(row)"
-              v-if="authStore.isAdmin"
-            >
-              <el-icon><Delete /></el-icon>彻底删除
-            </el-button>
+            <div class="management-table-actions">
+              <el-button
+                size="small"
+                @click="handleRestore(row)"
+                v-if="authStore.isAdmin || row.created_by === authStore.user.id"
+              >
+                <el-icon><RefreshLeft /></el-icon>恢复
+              </el-button>
+              <el-button
+                type="danger"
+                plain
+                size="small"
+                @click="handleHardDelete(row)"
+                v-if="authStore.isAdmin"
+              >
+                <el-icon><Delete /></el-icon>彻底删除
+              </el-button>
+            </div>
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty description="回收站为空" />
+          <el-empty description="回收站为空" :image-size="96" />
         </template>
-      </el-table>
+        </el-table>
+      </div>
     </div>
   </PrototypeLayout>
 </template>
@@ -118,14 +130,14 @@ const handleRestore = async (row) => {
   try {
     await ElMessageBox.confirm(
       `确定要恢复原型「${row.name}」吗？`,
-      '确认恢复',
-      { confirmButtonText: '恢复', cancelButtonText: '取消', type: 'info' }
+      '恢复原型',
+      { confirmButtonText: '恢复', cancelButtonText: '取消', type: 'info', customClass: 'management-confirm' }
     )
     await restorePrototype(row.id)
-    ElMessage.success('恢复成功')
-    fetchRecycleBin()
+    ElMessage.success(`已恢复「${row.name}」`)
+    await fetchRecycleBin()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('恢复失败')
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.response?.data?.message || '恢复失败')
   }
 }
 
@@ -133,14 +145,14 @@ const handleHardDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
       `确定要彻底删除原型「${row.name}」吗？此操作不可恢复！`,
-      '确认彻底删除',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      '彻底删除原型',
+      { confirmButtonText: '彻底删除', cancelButtonText: '取消', type: 'warning', customClass: 'management-confirm' }
     )
     await hardDeletePrototype(row.id)
-    ElMessage.success('彻底删除成功')
-    fetchRecycleBin()
+    ElMessage.success(`已彻底删除「${row.name}」`)
+    await fetchRecycleBin()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.response?.data?.message || '删除失败')
   }
 }
 
@@ -151,27 +163,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.recycle-bin-container {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-}
-
 .proto-name {
-  font-weight: 500;
-  color: #303133;
+  font-weight: 600;
+  color: #172033;
   margin-bottom: 4px;
 }
 
