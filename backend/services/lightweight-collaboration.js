@@ -4,10 +4,11 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 const { query, queryOne, runInTransaction } = require('../database/db');
 const { ACTIONS, AuthorizationError, AuthorizationService, normalizeRoles } = require('./authorization');
-const { getPrototypeById, createVersion, getLatestVersionNumber, updatePrototype } = require('./db-prototypes');
+const { getPrototypeById, createVersion, getLatestVersionNumber, getLatestVersionLabel, updatePrototype } = require('./db-prototypes');
 const { getProjectById } = require('./db-projects');
 const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb } = require('./storage');
 const { validateCandidateDirectory } = require('./candidate-validation');
+const { normalizeVersionStrategy, resolveVersionLabel } = require('./version-strategy');
 
 const DEFAULT_CANDIDATES_ROOT = path.join(UPLOADS_DIR, 'collaboration-candidates');
 const HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -127,6 +128,9 @@ function buildPrompt({ change, handoffCode, expiresAt }) {
   const projectName = project && project.name ? project.name : change.project_id;
   const prototypeName = prototype && prototype.name ? prototype.name : change.prototype_id;
   const menuPath = binding && binding.menu_path ? binding.menu_path : '未设置';
+  const versionStrategy = change.version_strategy_type === 'custom'
+    ? `固定使用 v${change.version_strategy_value}`
+    : '由 AI 选择 major、minor 或 patch，平台根据当前版本计算最终版本号';
   return [
     '你是伏羲原型修改 Agent。请严格按下面的任务完成一次“候选版本”交付。',
     '',
@@ -136,6 +140,7 @@ function buildPrompt({ change, handoffCode, expiresAt }) {
     `- 菜单路径：${menuPath}`,
     `- 任务 ID：${change.id}`,
     `- 基础版本：v${change.base_version_number}`,
+    `- 版本策略：${versionStrategy}`,
     `- 任务码：${handoffCode}`,
     `- 任务码有效期：${expiresAt}`,
     '',
@@ -143,7 +148,7 @@ function buildPrompt({ change, handoffCode, expiresAt }) {
     '1. 调用 redeem_change_handoff，参数 handoffCode 使用上面的任务码。',
     '2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。',
     '3. 在源码基础上实现“修改要求”，先本地检查入口、相对路径和主要交互。',
-    '4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。',
+    '4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。AI 决定版本策略时必须额外传入 versionType=major、minor 或 patch。',
     '5. 上传成功后调用 get_change_status 确认状态为 preview_pending；负责人打开伏羲候选页面后会自动完成轻量预览校验，校验通过才会变为 ready 并进入采纳流程。',
     '',
     '【交付约束】',
@@ -165,7 +170,8 @@ function getChangeById(changeId) {
     SELECT c.*, creator.username AS creator_username, creator.nickname AS creator_name,
       reviewer.nickname AS reviewer_name,
       handoff.status AS handoff_status, handoff.expires_at AS handoff_expires_at,
-      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = c.prototype_id) AS current_version_number
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = c.prototype_id) AS current_version_number,
+      (SELECT version_label FROM prototype_versions WHERE prototype_id = c.prototype_id ORDER BY version_number DESC LIMIT 1) AS current_version_label
     FROM prototype_changes c
     LEFT JOIN users creator ON creator.id = c.created_by
     LEFT JOIN users reviewer ON reviewer.id = c.reviewed_by
@@ -183,7 +189,8 @@ function listChanges(projectId, { prototypeId, status } = {}) {
     SELECT c.*, p.name AS prototype_name, creator.username AS creator_username,
       creator.nickname AS creator_name,
       handoff.status AS handoff_status, handoff.expires_at AS handoff_expires_at,
-      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = c.prototype_id) AS current_version_number
+      (SELECT COALESCE(MAX(version_number), 0) FROM prototype_versions WHERE prototype_id = c.prototype_id) AS current_version_number,
+      (SELECT version_label FROM prototype_versions WHERE prototype_id = c.prototype_id ORDER BY version_number DESC LIMIT 1) AS current_version_label
     FROM prototype_changes c
     JOIN prototypes p ON p.id = c.prototype_id
     LEFT JOIN users creator ON creator.id = c.created_by
@@ -216,7 +223,7 @@ class LightweightCollaborationService {
     }
   }
 
-  createChange({ actor, projectId, prototypeId, title, requirement }) {
+  createChange({ actor, projectId, prototypeId, title, requirement, versionStrategy = {} }) {
     const cleanRequirement = String(requirement || '').trim();
     if (!cleanRequirement || cleanRequirement.length > MAX_REQUIREMENT_LENGTH) {
       throw new LightweightCollaborationError('INVALID_REQUIREMENT', '修改目标不能为空且不能超过 4000 字');
@@ -229,6 +236,14 @@ class LightweightCollaborationService {
     );
     if (!prototype || !binding) {
       throw new LightweightCollaborationError('PROTOTYPE_NOT_IN_PROJECT', '原型不属于该项目', 404);
+    }
+
+    const currentLabel = getLatestVersionLabel(prototypeId);
+    let strategy;
+    try {
+      strategy = normalizeVersionStrategy(versionStrategy, currentLabel);
+    } catch (error) {
+      throw new LightweightCollaborationError('INVALID_VERSION_STRATEGY', error.message);
     }
 
     const createdAt = this.clock().toISOString();
@@ -248,11 +263,12 @@ class LightweightCollaborationService {
       db.run(`
         INSERT INTO prototype_changes
           (id, project_id, prototype_id, handoff_id, title, requirement, created_by,
-           branch_name, base_sha, base_version_number, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'editing', ?, ?)
+           branch_name, base_sha, base_version_number, version_strategy_type,
+           version_strategy_value, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'editing', ?, ?)
       `, [
         changeId, projectId, prototypeId, handoffId, cleanTitle, cleanRequirement, actor.id,
-        `no-git/${changeId}`, `version:${baseVersion}`, baseVersion, createdAt, createdAt
+        `no-git/${changeId}`, `version:${baseVersion}`, baseVersion, strategy.type, strategy.value, createdAt, createdAt
       ]);
       insertAudit(db, {
         actorUserId: actor.id,
@@ -271,7 +287,7 @@ class LightweightCollaborationService {
     };
   }
 
-  updateChange({ actor, projectId, changeId, title, requirement }) {
+  updateChange({ actor, projectId, changeId, title, requirement, versionStrategy }) {
     const change = this.getChange({ actor, projectId, changeId });
     this.assertCanManageTask(actor, ACTIONS.EDIT_CHANGE, change);
     if (change.status !== 'editing') {
@@ -285,6 +301,19 @@ class LightweightCollaborationService {
       throw new LightweightCollaborationError('INVALID_REQUIREMENT', '修改目标不能为空且不能超过 4000 字');
     }
     const cleanTitle = String(title || cleanRequirement).trim().slice(0, 120);
+    const currentLabel = getLatestVersionLabel(change.prototype_id);
+    const existingStrategy = {
+      type: change.version_strategy_type || 'auto',
+      value: change.version_strategy_value || null
+    };
+    let strategy;
+    try {
+      strategy = versionStrategy && Object.keys(versionStrategy).length
+        ? normalizeVersionStrategy(versionStrategy, currentLabel)
+        : existingStrategy;
+    } catch (error) {
+      throw new LightweightCollaborationError('INVALID_VERSION_STRATEGY', error.message);
+    }
     const updatedAt = this.clock().toISOString();
     const expiresAt = new Date(this.clock().getTime() + HANDOFF_TTL_MS).toISOString();
     const handoffCode = `FX-${crypto.randomBytes(18).toString('base64url')}`;
@@ -301,9 +330,10 @@ class LightweightCollaborationService {
       `, [hashValue(handoffCode), cleanRequirement, expiresAt, updatedAt, change.handoff_id]);
       db.run(`
         UPDATE prototype_changes
-        SET title = ?, requirement = ?, updated_at = ?
+        SET title = ?, requirement = ?, version_strategy_type = ?, version_strategy_value = ?,
+            chosen_version_type = NULL, base_version_number = ?, updated_at = ?
         WHERE id = ? AND status = 'editing'
-      `, [cleanTitle, cleanRequirement, updatedAt, changeId]);
+      `, [cleanTitle, cleanRequirement, strategy.type, strategy.value, getLatestVersionNumber(change.prototype_id), updatedAt, changeId]);
       insertAudit(db, {
         actorUserId: actor.id,
         action: 'change.updated',
@@ -408,7 +438,7 @@ class LightweightCollaborationService {
     return listChanges(projectId, { prototypeId, status });
   }
 
-  submitCandidate({ actor, projectId, changeId, zipPath }) {
+  submitCandidate({ actor, projectId, changeId, zipPath, versionType }) {
     const change = this.getChange({ actor, projectId, changeId });
     this.authorization.assertCan(actor, ACTIONS.SUBMIT_CHANGE, {
       type: 'change', projectId, prototypeId: change.prototype_id
@@ -418,6 +448,12 @@ class LightweightCollaborationService {
     }
     if (!['editing', 'invalid'].includes(change.status)) {
       throw new LightweightCollaborationError('CHANGE_NOT_EDITABLE', '当前修改不能再上传候选', 409);
+    }
+    if (change.version_strategy_type === 'auto' && versionType && !['major', 'minor', 'patch'].includes(versionType)) {
+      throw new LightweightCollaborationError('INVALID_VERSION_TYPE', 'versionType 只能是 major、minor 或 patch');
+    }
+    if (change.version_strategy_type === 'custom' && versionType) {
+      throw new LightweightCollaborationError('INVALID_VERSION_TYPE', '自定义版本策略不需要传入 versionType');
     }
     const handoff = queryOne('SELECT status FROM agent_handoffs WHERE id = ?', [change.handoff_id]);
     if (!handoff || handoff.status !== 'redeemed') {
@@ -485,10 +521,10 @@ class LightweightCollaborationService {
           UPDATE prototype_changes
           SET status = 'preview_pending', candidate_path = ?, candidate_entry_file = ?, candidate_digest = ?,
               candidate_size_kb = ?, submitted_at = ?, validation_status = 'pending',
-              validation_mode = 'static+browser', validation_errors_json = ?, validation_warnings_json = ?,
-              validated_at = ?, preview_validated_at = NULL, updated_at = ?
+            chosen_version_type = ?, validation_mode = 'static+browser', validation_errors_json = ?, validation_warnings_json = ?,
+            validated_at = ?, preview_validated_at = NULL, updated_at = ?
           WHERE id = ?
-        `, [changeId, entryFile, digest, sizeKb, now(), validationErrorsJson, validationWarningsJson, now(), now(), changeId]);
+        `, [changeId, entryFile, digest, sizeKb, now(), versionType || null, validationErrorsJson, validationWarningsJson, now(), now(), changeId]);
         insertAudit(db, {
           actorUserId: actor.id,
           action: 'candidate.preview_pending',
@@ -624,6 +660,18 @@ class LightweightCollaborationService {
         }
 
         const nextVersion = currentVersion + 1;
+        const currentLabel = getLatestVersionLabel(change.prototype_id);
+        let versionLabel;
+        try {
+          versionLabel = resolveVersionLabel({
+            strategyType: change.version_strategy_type || 'auto',
+            strategyValue: change.version_strategy_value || null,
+            chosenType: change.chosen_version_type || 'patch',
+            currentLabel
+          });
+        } catch (error) {
+          throw new LightweightCollaborationError('INVALID_VERSION_STRATEGY', error.message, 409);
+        }
         copyTree(candidateDir, path.join(staging, 'versions', `v${nextVersion}`), { exclude: new Set(['versions']) });
         if (fs.existsSync(repoDir)) {
           fs.renameSync(repoDir, backup);
@@ -640,7 +688,8 @@ class LightweightCollaborationService {
           createdBy: actor.id,
           sizeKb: change.candidate_size_kb,
           note: change.title,
-          versionType: 'patch'
+          versionType: change.chosen_version_type || 'patch',
+          versionLabel
         });
         db.run(`
           UPDATE prototype_versions

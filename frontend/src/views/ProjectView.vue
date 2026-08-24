@@ -146,6 +146,17 @@
               placeholder="例如：在客户列表增加最近跟进时间，并支持按跟进状态筛选"
             />
           </el-form-item>
+          <el-form-item label="版本号策略" required>
+            <el-radio-group v-model="changeVersionStrategyType">
+              <el-radio label="auto">让 AI 决定版本号</el-radio>
+              <el-radio label="custom">自定义版本号</el-radio>
+            </el-radio-group>
+            <p class="dialog-tip">AI 只选择 major、minor 或 patch，平台负责计算准确版本号。</p>
+          </el-form-item>
+          <el-form-item v-if="changeVersionStrategyType === 'custom'" label="自定义 SemVer" required>
+            <el-input v-model="changeVersionStrategyValue" placeholder="例如 1.2.0" />
+            <p class="dialog-tip">必须高于当前正式版本，且不能重复。</p>
+          </el-form-item>
         </el-form>
       </template>
       <template v-else>
@@ -156,6 +167,7 @@
           <span>任务码</span>
           <code>{{ changeTaskResult.handoffCode }}</code>
         </div>
+        <p class="dialog-tip">版本策略：{{ changeTaskResult.change?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.change.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
         <pre class="task-prompt">{{ changeTaskResult.prompt }}</pre>
         <p class="dialog-tip">候选上传后仍需项目负责人采用，当前正式版本不会自动改变。</p>
       </template>
@@ -379,6 +391,8 @@ const changeRequestVisible = ref(false)
 const editingChangeId = ref(null)
 const changeTitle = ref('')
 const changeRequirement = ref('')
+const changeVersionStrategyType = ref('auto')
+const changeVersionStrategyValue = ref('')
 const changeTaskResult = ref(null)
 const creatingChange = ref(false)
 const changesVisible = ref(false)
@@ -586,6 +600,8 @@ function openChangeRequest() {
   editingChangeId.value = null
   changeTitle.value = ''
   changeRequirement.value = ''
+  changeVersionStrategyType.value = 'auto'
+  changeVersionStrategyValue.value = ''
   changeTaskResult.value = null
   changeRequestVisible.value = true
 }
@@ -595,6 +611,8 @@ function editSelectedTask() {
   editingChangeId.value = selectedChange.value.id
   changeTitle.value = selectedChange.value.title || ''
   changeRequirement.value = selectedChange.value.requirement || ''
+  changeVersionStrategyType.value = selectedChange.value.version_strategy_type || 'auto'
+  changeVersionStrategyValue.value = selectedChange.value.version_strategy_value || ''
   changeTaskResult.value = null
   changeRequestVisible.value = true
 }
@@ -604,11 +622,19 @@ async function submitChangeTask() {
     ElMessage.warning('请描述修改目标')
     return
   }
+  if (changeVersionStrategyType.value === 'custom' && !changeVersionStrategyValue.value.trim()) {
+    ElMessage.warning('请输入自定义版本号')
+    return
+  }
   creatingChange.value = true
   try {
     const payload = {
       title: (changeTitle.value.trim() || changeRequirement.value.trim()).slice(0, 120),
-      requirement: changeRequirement.value.trim()
+      requirement: changeRequirement.value.trim(),
+      versionStrategy: {
+        type: changeVersionStrategyType.value,
+        value: changeVersionStrategyType.value === 'custom' ? changeVersionStrategyValue.value.trim() : null
+      }
     }
     const res = editingChangeId.value
       ? await updateProjectChange(route.params.id, editingChangeId.value, payload)

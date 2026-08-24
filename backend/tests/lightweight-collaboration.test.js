@@ -219,6 +219,28 @@ test('owner adoption creates a formal version and switches current files', () =>
   assert.equal(database.queryOne(`SELECT COUNT(*) AS count FROM audit_events WHERE action = 'change.adopted'`).count, 1);
 });
 
+test('project change locks custom SemVer and uses the AI-selected bump type', () => {
+  const custom = service.createChange({
+    actor: editor,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    requirement: '固定版本改动',
+    versionStrategy: { type: 'custom', value: '2.0.0' }
+  });
+  assert.equal(custom.change.version_strategy_type, 'custom');
+  assert.equal(custom.change.version_strategy_value, '2.0.0');
+  const redeemed = service.redeemHandoff({ actor: editor, handoffCode: custom.handoffCode });
+  service.submitCandidate({
+    actor: editor,
+    projectId: 'project-1',
+    changeId: redeemed.change.id,
+    zipPath: candidateZip('custom-version.zip')
+  });
+  service.recordPreviewValidation({ actor: editor, projectId: 'project-1', changeId: redeemed.change.id, status: 'passed' });
+  const adopted = service.adoptChange({ actor: owner, projectId: 'project-1', changeId: redeemed.change.id });
+  assert.equal(adopted.version.version_label, '2.0.0');
+});
+
 test('optimistic adoption marks a competing candidate stale without overwriting the winner', () => {
   const first = createReadyChange(editor, '候选一');
   const second = createReadyChange(editor, '候选二');

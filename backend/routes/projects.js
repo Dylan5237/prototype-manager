@@ -142,7 +142,11 @@ router.post('/:id/prototypes/:prototypeId/changes', requireAuth, requireProjectA
       projectId: req.params.id,
       prototypeId: req.params.prototypeId,
       title: req.body.title,
-      requirement: req.body.requirement
+      requirement: req.body.requirement,
+      versionStrategy: req.body.versionStrategy || {
+        type: req.body.versionStrategyType,
+        value: req.body.versionStrategyValue
+      }
     });
     res.status(201).json({ success: true, data: result });
   } catch (error) {
@@ -186,7 +190,8 @@ router.patch('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, 
       projectId: req.params.id,
       changeId: req.params.changeId,
       title: req.body.title,
-      requirement: req.body.requirement
+      requirement: req.body.requirement,
+      versionStrategy: req.body.versionStrategy
     });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -224,7 +229,8 @@ router.post(
         actor: req.user,
         projectId: req.params.id,
         changeId: req.params.changeId,
-        zipPath: req.file.path
+        zipPath: req.file.path,
+        versionType: req.body.versionType
       });
       res.json({ success: true, data: change });
     } catch (error) {
