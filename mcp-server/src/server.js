@@ -153,7 +153,62 @@ const tools = [
         projectId: { type: 'string' },
         prototypeId: { type: 'string' },
         title: { type: 'string' },
-        requirement: { type: 'string', minLength: 1, maxLength: 4000 }
+        requirement: { type: 'string', minLength: 1, maxLength: 4000 },
+        versionStrategyType: { type: 'string', enum: ['auto', 'custom'] },
+        versionStrategyValue: { type: 'string', description: 'Required for custom strategy; a higher SemVer.' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'create_prototype_change',
+    description: 'Create a standalone prototype AI change. It is unavailable once the prototype belongs to a project; the generated code is valid for ten minutes and does not change the current version.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'requirement'],
+      properties: {
+        prototypeId: { type: 'string' },
+        requirement: { type: 'string', minLength: 1, maxLength: 4000 },
+        versionStrategyType: { type: 'string', enum: ['auto', 'custom'] },
+        versionStrategyValue: { type: 'string', description: 'Required when versionStrategyType is custom; a higher SemVer.' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'redeem_prototype_change_handoff',
+    description: 'Redeem a one-time standalone prototype change code and read the locked base version and source download path.',
+    inputSchema: {
+      type: 'object',
+      required: ['handoffCode'],
+      properties: { handoffCode: { type: 'string' } },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_prototype_change_status',
+    description: 'Read a standalone prototype change, including preview status, version strategy, and final version.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'changeId'],
+      properties: {
+        prototypeId: { type: 'string' },
+        changeId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'submit_prototype_change',
+    description: 'Upload a validated ZIP for a redeemed standalone prototype change. The Fuxi page runs browser preview and then forms the formal version automatically; it never bypasses the base-version check.',
+    inputSchema: {
+      type: 'object',
+      required: ['prototypeId', 'changeId', 'zipPath'],
+      properties: {
+        prototypeId: { type: 'string' },
+        changeId: { type: 'string' },
+        zipPath: { type: 'string' },
+        versionType: { type: 'string', enum: ['major', 'minor', 'patch'] }
       },
       additionalProperties: false
     }
@@ -190,7 +245,8 @@ const tools = [
       properties: {
         projectId: { type: 'string' },
         changeId: { type: 'string' },
-        zipPath: { type: 'string' }
+        zipPath: { type: 'string' },
+        versionType: { type: 'string', enum: ['major', 'minor', 'patch'] }
       },
       additionalProperties: false
     }
@@ -966,6 +1022,7 @@ async function callTool(name, args) {
     const bytes = fs.readFileSync(zipPath);
     const form = new FormData();
     form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    if (args.versionType) form.set('versionType', args.versionType);
     form.set('versionNote', args.versionNote);
     form.set('versionType', args.versionType || 'patch');
     const uploaded = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/upload`, {
@@ -987,13 +1044,111 @@ async function callTool(name, args) {
     return contentJson(withFields(project, projectFields(project.data)));
   }
 
+  if (name === 'create_prototype_change') {
+    const created = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requirement: args.requirement,
+        versionStrategy: {
+          type: args.versionStrategyType || 'auto',
+          value: args.versionStrategyValue || null
+        }
+      })
+    });
+    const change = created.data.change;
+    return contentJson({
+      ...created,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      baseVersion: change.base_version_number,
+      versionStrategyType: change.version_strategy_type,
+      versionStrategyValue: change.version_strategy_value,
+      handoffCode: created.data.handoffCode,
+      prompt: created.data.prompt,
+      expiresAt: created.data.expiresAt
+    });
+  }
+
+  if (name === 'redeem_prototype_change_handoff') {
+    const redeemed = await authed('/api/prototypes/direct-changes/handoffs/redeem', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ handoffCode: args.handoffCode })
+    });
+    const change = redeemed.data.change;
+    return contentJson({
+      ...redeemed,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      requirement: change.requirement,
+      baseVersion: change.base_version_number,
+      versionStrategyType: change.version_strategy_type,
+      versionStrategyValue: change.version_strategy_value,
+      sourceDownloadUrl: new URL(redeemed.data.sourceDownloadPath, `${API_URL}/`).toString(),
+      nextAction: 'Download source, build and validate a Fuxi-compatible ZIP, then call submit_prototype_change.'
+    });
+  }
+
+  if (name === 'get_prototype_change_status') {
+    const status = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes/${encodeURIComponent(args.changeId)}`);
+    const change = status.data;
+    return contentJson({
+      ...status,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      status: change.status,
+      baseVersion: change.base_version_number,
+      currentVersion: change.current_version_number,
+      currentVersionLabel: change.current_version_label,
+      versionStrategyType: change.version_strategy_type,
+      versionStrategyValue: change.version_strategy_value,
+      chosenVersionType: change.chosen_version_type,
+      candidateEntryFile: change.candidate_entry_file,
+      candidatePreviewPath: change.preview_path,
+      finalVersionId: change.version_id || null
+    });
+  }
+
+  if (name === 'submit_prototype_change') {
+    const zipPath = path.resolve(args.zipPath);
+    if (!fs.existsSync(zipPath)) {
+      throw new ToolError('FILE_NOT_FOUND', 'ZIP file not found', { fileName: path.basename(zipPath) });
+    }
+    validateZipFile(zipPath);
+    const bytes = fs.readFileSync(zipPath);
+    const form = new FormData();
+    form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    if (args.versionType) form.set('versionType', args.versionType);
+    const submitted = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes/${encodeURIComponent(args.changeId)}/candidate`, {
+      method: 'POST',
+      body: form
+    });
+    const change = submitted.data;
+    return contentJson({
+      ...submitted,
+      changeId: change.id,
+      prototypeId: change.prototype_id,
+      status: change.status,
+      baseVersion: change.base_version_number,
+      currentVersion: change.current_version_number,
+      candidateEntryFile: change.candidate_entry_file,
+      candidatePreviewPath: change.preview_path,
+      nextAction: 'Wait for the Fuxi page browser preview validation, then call get_prototype_change_status until status is completed.'
+    });
+  }
+
   if (name === 'create_change_handoff') {
     const created = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes/${encodeURIComponent(args.prototypeId)}/changes`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         title: args.title || '',
-        requirement: args.requirement
+        requirement: args.requirement,
+        versionStrategy: {
+          type: args.versionStrategyType || 'auto',
+          value: args.versionStrategyValue || null
+        }
       })
     });
     return contentJson({
