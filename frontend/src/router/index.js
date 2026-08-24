@@ -18,7 +18,13 @@ const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/prototype/:id', name: 'prototype', component: PrototypeDetail, meta: { allowGuest: true } },
   { path: '/projects', name: 'projects', component: ProjectsView },
-  { path: '/project/:id', name: 'project', component: ProjectView, meta: { allowGuest: true } },
+  {
+    path: '/project/:id',
+    alias: '/projects/:id',
+    name: 'project',
+    component: ProjectView,
+    meta: { allowGuest: true }
+  },
   { path: '/project/:id/preview', name: 'project-preview', component: ProjectPreview, meta: { allowGuest: true } },
   { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },

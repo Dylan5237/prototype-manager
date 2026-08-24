@@ -420,6 +420,7 @@ async function loadProject() {
     const res = await getProject(route.params.id)
     project.value = res.data.data
     role.value = res.data.data.role
+    selectRequestedMenu()
   } catch (err) {
     ElMessage.error('加载项目失败')
   } finally {
@@ -462,6 +463,33 @@ function menuPath(group, item) {
 
 function menuPathLabel(group, item) {
   return `${group.label} / ${item.label}`
+}
+
+function findMenuByPath(path) {
+  if (!path) return null
+  for (const group of project.value.menu_config?.items || []) {
+    for (const item of group.children || []) {
+      if (menuPath(group, item) === path) return { group, item }
+    }
+  }
+  return null
+}
+
+function selectRequestedMenu() {
+  const requestedPrototypeId = Array.isArray(route.query.prototypeId)
+    ? route.query.prototypeId[0]
+    : route.query.prototypeId
+  const requestedMenuPath = Array.isArray(route.query.menuPath)
+    ? route.query.menuPath[0]
+    : route.query.menuPath
+
+  const requestedBinding = project.value.prototypes?.find(binding => {
+    if (requestedPrototypeId && binding.prototype_id !== requestedPrototypeId) return false
+    if (requestedMenuPath && binding.menu_path !== requestedMenuPath) return false
+    return Boolean(requestedPrototypeId || requestedMenuPath)
+  })
+  const target = findMenuByPath(requestedBinding?.menu_path || requestedMenuPath)
+  if (target) selectMenu(target.group, target.item)
 }
 
 const activePath = computed(() => {

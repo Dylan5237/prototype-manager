@@ -75,7 +75,7 @@
         <span>
           当前原型在项目菜单中有 {{ prototype.project_binding.menu_positions?.length || 0 }} 个展示位置；归属后请在项目内发起修改。
         </span>
-        <el-button link type="primary" @click="$router.push(`/projects/${prototype.project_binding.project_id}`)">
+        <el-button link type="primary" @click="goToBoundProject">
           前往项目修改
         </el-button>
       </div>
@@ -405,7 +405,7 @@
 </template>
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, markRaw } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download, MagicStick, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
@@ -422,6 +422,7 @@ import {
 } from '../api/prototypes'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const prototype = ref(null)
 const loading = ref(false)
@@ -512,6 +513,21 @@ const directCountdownLabel = computed(() => {
   const seconds = Math.ceil(remaining / 1000)
   return `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒`
 })
+
+function goToBoundProject() {
+  const binding = prototype.value?.project_binding
+  if (!binding?.project_id) return
+
+  const firstMenuPosition = binding.menu_positions?.[0]
+  router.push({
+    name: 'project',
+    params: { id: binding.project_id },
+    query: {
+      prototypeId: prototype.value.id,
+      ...(firstMenuPosition?.menu_path ? { menuPath: firstMenuPosition.menu_path } : {})
+    }
+  })
+}
 
 async function loadData() {
   loading.value = true
