@@ -1,6 +1,6 @@
 const { query, queryOne, run } = require('../database/db');
 
-function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy, page, pageSize } = {}) {
+function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy, page, pageSize, sort = 'updated_desc' } = {}) {
   const selectFields = `
     p.*, c.name as category_name, u.nickname as creator_name,
     (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
@@ -38,7 +38,13 @@ function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy,
   }
 
   whereSql += ` AND p.deleted_at IS NULL`;
-  const orderSql = ` ORDER BY p.updated_at DESC`;
+  const orderBy = {
+    updated_desc: 'p.updated_at DESC',
+    updated_asc: 'p.updated_at ASC',
+    created_desc: 'p.created_at DESC',
+    created_asc: 'p.created_at ASC'
+  }[sort] || 'p.updated_at DESC';
+  const orderSql = ` ORDER BY ${orderBy}`;
 
   // 总数统计
   const countSql = `SELECT COUNT(*) as total` + fromSql + whereSql;

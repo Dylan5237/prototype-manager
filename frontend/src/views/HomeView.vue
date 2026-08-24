@@ -20,6 +20,12 @@
         <el-select v-model="filterCategory" placeholder="按类别筛选" clearable class="category-select" @change="handleCategoryChange">
           <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
         </el-select>
+        <el-select v-model="sortOrder" class="sort-select" @change="handleSortChange">
+          <el-option label="最近更新" value="updated_desc" />
+          <el-option label="最早更新" value="updated_asc" />
+          <el-option label="最近创建" value="created_desc" />
+          <el-option label="最早创建" value="created_asc" />
+        </el-select>
         <el-button @click="openMcpDialog">
           <el-icon><Connection /></el-icon>接入平台MCP
         </el-button>
@@ -137,23 +143,38 @@
       />
     </div>
 
-    <el-dialog v-model="showCreateDialog" title="新建原型" width="480px">
-      <el-form :model="newPrototype" label-width="80px">
-        <el-form-item label="名称" required>
-          <el-input v-model="newPrototype.name" placeholder="请输入原型名称" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="newPrototype.description" type="textarea" :rows="3" placeholder="请输入原型描述" />
-        </el-form-item>
-        <el-form-item label="类别">
-          <el-select v-model="newPrototype.category_ids" multiple placeholder="选择类别" style="width:100%">
-            <el-option v-for="c in categories" :key="c.id" :label="c.name" :value="c.id" />
-          </el-select>
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="showCreateDialog" title="新建原型" width="760px" destroy-on-close>
+      <template v-if="!prototypePromptGenerated">
+        <el-alert type="info" :closable="false" show-icon title="先把需求整理成一段可复制提示词，再交给已接入伏羲的 AI 助手创建原型。" />
+        <el-form class="prompt-form" label-position="top">
+          <el-form-item label="创建模式">
+            <el-radio-group v-model="prototypePromptMode">
+              <el-radio-button label="alignment">快速验证</el-radio-button>
+              <el-radio-button label="implementation-proof">严格实现</el-radio-button>
+            </el-radio-group>
+            <span class="form-help">快速验证优先确认需求、布局和关键交互；严格实现增加构建、组件和交付校验。</span>
+          </el-form-item>
+          <el-form-item label="需求描述" required>
+            <el-input v-model="prototypeRequirement" type="textarea" :rows="8" placeholder="写清使用者、当前问题、期望结果、关键页面和验收方式。" />
+            <span class="form-help">只使用你提供的需求，不自动补充业务场景；文字需求与附件冲突时，以文字需求为准。</span>
+          </el-form-item>
+          <el-form-item label="需求文档（可选）">
+            <input ref="prototypeFileInput" class="file-input" type="file" accept=".doc,.docx,.pdf,.txt,.md" @change="handlePrototypeFile" />
+            <div class="file-picker"><el-button @click="prototypeFileInput?.click()">选择文件</el-button><span>{{ prototypeFileName || '支持 DOCX、PDF、TXT、Markdown' }}</span><el-button v-if="prototypeFileName" text type="danger" @click="removePrototypeFile">移除</el-button></div>
+          </el-form-item>
+        </el-form>
+      </template>
+      <template v-else>
+        <el-alert type="success" :closable="false" show-icon :title="'提示词已生成 · ' + (prototypePromptMode === 'alignment' ? '快速验证' : '严格实现')">
+          <p>复制完整提示词，发送给已经接入伏羲的 AI 助手。修改需求时可返回编辑，当前输入和附件会保留。</p>
+        </el-alert>
+        <el-input v-model="prototypePrompt" type="textarea" :rows="22" readonly class="prototype-prompt-output" />
+      </template>
       <template #footer>
-        <el-button @click="showCreateDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleCreate" :loading="creating">创建</el-button>
+        <el-button @click="showCreateDialog = false">{{ prototypePromptGenerated ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="prototypePromptGenerated" @click="returnPrototypePromptEdit">返回编辑</el-button>
+        <el-button v-if="prototypePromptGenerated" type="primary" @click="copyPrototypePrompt">复制完整提示词</el-button>
+        <el-button v-else type="primary" @click="generatePrototypePrompt">生成完整提示词</el-button>
       </template>
     </el-dialog>
 
@@ -201,12 +222,13 @@
 import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { getPrototypes, getMyPrototypes, getSharedPrototypes, createPrototype, deletePrototype } from '../api/prototypes'
+import { getPrototypes, getMyPrototypes, getSharedPrototypes, deletePrototype } from '../api/prototypes'
 import { getUsers, getAgentBootstrap, getMcpSessions, getAgentUpdates, createAgentUpdateIntent } from '../api/auth'
 import { getCategories } from '../api/prototypes'
 import { Search, Plus, User, Loading, Delete, Connection, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
+import { buildPrototypePrompt } from '../utils/prototype-prompts'
 import PlatformAnnouncementBanner from '../components/PlatformAnnouncementBanner.vue'
 
 const authStore = useAuthStore()
@@ -217,6 +239,7 @@ const users = ref([])
 const categories = ref([])
 const searchKeyword = ref('')
 const filterCategory = ref(null)
+const sortOrder = ref('updated_desc')
 const filterCreator = ref(null)
 const currentPage = ref(1)
 const pageSize = 12
@@ -224,8 +247,12 @@ const total = ref(0)
 const loading = ref(false)
 
 const showCreateDialog = ref(false)
-const newPrototype = ref({ name: '', description: '', category_ids: [] })
-const creating = ref(false)
+const prototypePromptMode = ref('alignment')
+const prototypeRequirement = ref('')
+const prototypeFileName = ref('')
+const prototypeFileInput = ref(null)
+const prototypePrompt = ref('')
+const prototypePromptGenerated = ref(false)
 const showMcpDialog = ref(false)
 const mcpTokenExpiresAt = ref('')
 const mcpConnectCodeExpiresAt = ref('')
@@ -321,6 +348,11 @@ function handleCategoryChange() {
   loadData()
 }
 
+function handleSortChange() {
+  currentPage.value = 1
+  loadData()
+}
+
 function toggleCreator(id) {
   filterCreator.value = filterCreator.value === id ? null : id
 }
@@ -353,6 +385,7 @@ async function loadData() {
       pageSize,
       keyword: searchKeyword.value || undefined,
       category_id: filterCategory.value || undefined,
+      sort: sortOrder.value,
       scope: activeTab.value === 'all' ? 'all' : undefined
     })
     prototypes.value = res.data.data || []
@@ -387,8 +420,44 @@ async function loadCategories() {
 }
 
 function openCreateDialog() {
-  newPrototype.value = { name: '', description: '', category_ids: [] }
+  prototypePromptMode.value = 'alignment'
+  prototypeRequirement.value = ''
+  prototypeFileName.value = ''
+  prototypePrompt.value = ''
+  prototypePromptGenerated.value = false
   showCreateDialog.value = true
+}
+
+function handlePrototypeFile(event) {
+  prototypeFileName.value = event.target.files?.[0]?.name || ''
+}
+
+function removePrototypeFile() {
+  prototypeFileName.value = ''
+  if (prototypeFileInput.value) prototypeFileInput.value.value = ''
+}
+
+function generatePrototypePrompt() {
+  if (!prototypeRequirement.value.trim() && !prototypeFileName.value) {
+    ElMessage.warning('请输入需求或选择一份需求文档')
+    return
+  }
+  prototypePrompt.value = buildPrototypePrompt({
+    requirement: prototypeRequirement.value.trim(),
+    mode: prototypePromptMode.value,
+    attachmentName: prototypeFileName.value
+  })
+  prototypePromptGenerated.value = true
+}
+
+function returnPrototypePromptEdit() {
+  prototypePromptGenerated.value = false
+}
+
+function copyPrototypePrompt() {
+  copyClipboardText(prototypePrompt.value)
+    .then(() => ElMessage.success('完整提示词已复制'))
+    .catch(() => ElMessage.warning('复制失败，请手工选择提示词'))
 }
 
 function agentUpdateDismissalKey(releaseId) {
@@ -515,24 +584,6 @@ async function handleCardCommand(command, p) {
   }
 }
 
-async function handleCreate() {
-  if (!newPrototype.value.name?.trim()) {
-    ElMessage.warning('请输入原型名称')
-    return
-  }
-  creating.value = true
-  try {
-    await createPrototype(newPrototype.value)
-    ElMessage.success('创建成功')
-    showCreateDialog.value = false
-    loadData()
-  } catch (err) {
-    ElMessage.error(err.response?.data?.message || err.message || '创建失败')
-  } finally {
-    creating.value = false
-  }
-}
-
 watch(() => route.query.tab, () => {
   currentPage.value = 1
   filterCreator.value = null
@@ -646,6 +697,51 @@ onBeforeUnmount(() => {
 .mcp-prompt :deep(textarea) {
   font-family: Consolas, Monaco, 'Courier New', monospace;
   line-height: 1.55;
+}
+
+.prompt-form {
+  margin-top: 18px;
+}
+
+.form-help {
+  display: block;
+  margin-top: 6px;
+  color: #718096;
+  font-size: 12px;
+}
+
+.file-input {
+  display: none;
+}
+
+.file-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.file-picker span {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sort-select {
+  width: 128px;
+}
+
+.prototype-prompt-output :deep(textarea) {
+  color: #e2e8f0;
+  background: #172033;
+  font-family: Consolas, Monaco, monospace;
+  line-height: 1.65;
 }
 
 /* 归属者筛选标签栏 */

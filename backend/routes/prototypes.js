@@ -76,19 +76,19 @@ const commentImageUpload = multer({
 // 获取原型列表
 // scope: my（我创建的，默认）| shared（分享给我的）| all（全部可访问的原型：管理员为全部，普通用户为自己的+分享给我的）
 router.get('/', requireAuth, (req, res) => {
-  const { keyword, category_id, scope } = req.query;
+  const { keyword, category_id, scope, sort } = req.query;
   const page = parseInt(req.query.page, 10) || 1;
   const pageSize = parseInt(req.query.pageSize, 10) || 12;
   const admin = isAdmin(req);
   let result;
 
   if (scope === 'shared') {
-    result = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id, page, pageSize });
+    result = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id, page, pageSize, sort });
   } else if (scope === 'all' && admin) {
-    result = getPrototypes({ keyword, categoryId: category_id, page, pageSize });
+    result = getPrototypes({ keyword, categoryId: category_id, page, pageSize, sort });
   } else if (scope === 'all') {
     // 普通用户查看全部：自己创建的 + 分享给我的
-    result = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id, page, pageSize });
+    result = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id, page, pageSize, sort });
   } else {
     // 默认返回自己创建的
     result = getPrototypes({ keyword, categoryId: category_id, createdBy: req.user.id, page, pageSize });
