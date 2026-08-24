@@ -33,8 +33,9 @@
       v-if="agentUpdateVisible"
       class="agent-update-banner"
       :type="agentUpdateType"
-      :closable="false"
+      :closable="true"
       show-icon
+      @close="dismissAgentUpdate"
     >
       <template #title>
         <div class="agent-update-title-row">
@@ -233,6 +234,9 @@ const agentUpdateSession = ref(null)
 const agentUpdate = ref(null)
 const agentUpdateIntent = ref(null)
 const agentUpdateAvailable = ref(false)
+const agentUpdateDismissed = ref(false)
+
+const AGENT_UPDATE_DISMISSED_PREFIX = 'fuxi.agent-update.completed-dismissed'
 
 const mcpTokenExpiresLocal = computed(() => {
   if (!mcpTokenExpiresAt.value) return ''
@@ -254,7 +258,7 @@ const agentUpdateScheduled = computed(() => ['scheduled', 'running'].includes(ag
 const agentUpdateCompleted = computed(() => agentUpdateIntentStatus.value === 'completed')
 const agentUpdateRolledBack = computed(() => ['rolled_back', 'failed'].includes(agentUpdateIntentStatus.value))
 const agentUpdateCanSchedule = computed(() => agentUpdateAvailable.value && Boolean(agentUpdateRelease.value) && !agentUpdateScheduled.value && !agentUpdateCompleted.value)
-const agentUpdateVisible = computed(() => Boolean(agentUpdateRelease.value || agentUpdateScheduled.value))
+const agentUpdateVisible = computed(() => Boolean((agentUpdateRelease.value || agentUpdateScheduled.value) && !agentUpdateDismissed.value))
 const agentUpdateType = computed(() => {
   if (agentUpdateScheduled.value) return 'success'
   if (agentUpdateCompleted.value) return 'success'
@@ -384,6 +388,32 @@ function openCreateDialog() {
   showCreateDialog.value = true
 }
 
+function agentUpdateDismissalKey(releaseId) {
+  const userId = authStore.user?.id || 'anonymous'
+  return `${AGENT_UPDATE_DISMISSED_PREFIX}:${userId}:${releaseId}`
+}
+
+function hasDismissedCompletedUpdate(releaseId) {
+  if (!releaseId) return false
+  try {
+    return localStorage.getItem(agentUpdateDismissalKey(releaseId)) === '1'
+  } catch (err) {
+    return false
+  }
+}
+
+function dismissAgentUpdate() {
+  const releaseId = agentUpdateRelease.value?.releaseId
+  if (agentUpdateCompleted.value && releaseId) {
+    try {
+      localStorage.setItem(agentUpdateDismissalKey(releaseId), '1')
+    } catch (err) {
+      // 本地存储不可用时仍允许本次页面关闭提示。
+    }
+  }
+  agentUpdateDismissed.value = true
+}
+
 async function loadAgentBootstrap() {
   mcpLoading.value = true
   try {
@@ -411,6 +441,7 @@ async function loadAgentUpdate() {
       agentUpdate.value = null
       agentUpdateIntent.value = null
       agentUpdateAvailable.value = false
+      agentUpdateDismissed.value = false
       return
     }
     const updatesRes = await getAgentUpdates(agentUpdateSession.value.id)
@@ -418,15 +449,19 @@ async function loadAgentUpdate() {
     agentUpdateAvailable.value = (data.updates || []).length > 0
     agentUpdate.value = data.updates?.[0] || null
     const candidateIntents = [...(data.intents || []), ...(data.recentIntents || [])]
-    agentUpdateIntent.value = candidateIntents.find(intent => intent.releaseId === agentUpdate.value?.releaseId) || candidateIntents[0] || null
+    agentUpdateIntent.value = candidateIntents.find(intent => intent.releaseId === agentUpdate.value?.releaseId)
+      || (agentUpdate.value ? null : candidateIntents[0] || null)
     if (!agentUpdate.value && agentUpdateIntent.value?.release) {
       agentUpdate.value = agentUpdateIntent.value.release
     }
+    agentUpdateDismissed.value = agentUpdateCompleted.value
+      && hasDismissedCompletedUpdate(agentUpdateRelease.value?.releaseId)
   } catch (err) {
     // 没有设备会话时不打扰原型列表；只有已接入用户才显示更新状态。
     agentUpdate.value = null
     agentUpdateIntent.value = null
     agentUpdateAvailable.value = false
+    agentUpdateDismissed.value = false
   } finally {
     agentUpdateLoading.value = false
   }
