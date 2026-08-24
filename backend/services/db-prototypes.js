@@ -222,7 +222,7 @@ function bumpVersion(currentLabel, bumpType) {
   }
 }
 
-function createVersion({ prototypeId, versionNumber, entryFile, syncSource, createdBy, sizeKb, note, versionType }) {
+function createVersion({ prototypeId, versionNumber, entryFile, syncSource, createdBy, sizeKb, note, versionType, versionLabel: requestedVersionLabel }) {
   const now = new Date().toISOString();
   // 计算 SemVer 标签
   const prev = queryOne(
@@ -230,7 +230,19 @@ function createVersion({ prototypeId, versionNumber, entryFile, syncSource, crea
     [prototypeId]
   );
   const currentLabel = prev ? prev.version_label || '' : '';
-  const versionLabel = versionNumber === 1 ? '1.0.0' : bumpVersion(currentLabel, versionType);
+  const versionLabel = requestedVersionLabel
+    ? String(requestedVersionLabel).replace(/^v/, '')
+    : versionNumber === 1 ? '1.0.0' : bumpVersion(currentLabel, versionType);
+  const duplicate = queryOne(
+    `SELECT id FROM prototype_versions WHERE prototype_id = ? AND version_label = ? LIMIT 1`,
+    [prototypeId, versionLabel]
+  );
+  if (duplicate) {
+    const error = new Error(`版本号 v${versionLabel} 已存在`);
+    error.code = 'VERSION_LABEL_CONFLICT';
+    error.status = 409;
+    throw error;
+  }
   run(`
     INSERT INTO prototype_versions (prototype_id, version_number, entry_file, sync_source, created_by, size_kb, note, version_label, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -305,6 +317,14 @@ function getLatestVersionNumber(prototypeId) {
   return result && result.max_version ? result.max_version : 0;
 }
 
+function getLatestVersionLabel(prototypeId) {
+  const result = queryOne(
+    `SELECT version_label FROM prototype_versions WHERE prototype_id = ? ORDER BY version_number DESC LIMIT 1`,
+    [prototypeId]
+  );
+  return result && result.version_label ? result.version_label : '0.0.0';
+}
+
 // README缓存
 function getReadme(prototypeId) {
   return queryOne(`SELECT * FROM readme_cache WHERE prototype_id = ?`, [prototypeId]);
@@ -372,6 +392,7 @@ module.exports = {
   deleteVersion,
   updateVersionNote,
   getLatestVersionNumber,
+  getLatestVersionLabel,
   bumpVersion,
   getPrototypeShares,
   getSharedUserIds,

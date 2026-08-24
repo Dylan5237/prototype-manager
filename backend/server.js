@@ -8,6 +8,7 @@ const { initDefaultAdmin, initGuestUser } = require('./services/db-users');
 const { migrateFromJson } = require('./routes/prototypes');
 const authRoutes = require('./routes/auth');
 const { router: prototypeRoutes } = require('./routes/prototypes');
+const prototypeDirectChangeRoutes = require('./routes/prototype-direct-changes');
 const groupRoutes = require('./routes/groups');
 const projectRoutes = require('./routes/projects');
 const previewRoutes = require('./routes/preview');
@@ -69,6 +70,7 @@ async function startServer() {
   app.use('/api/auth', authRoutes);
   app.use('/api/groups', groupRoutes);
   app.use('/api/prototypes', prototypeRoutes);
+  app.use('/api/prototypes', prototypeDirectChangeRoutes);
   app.use('/api/projects', projectRoutes);
   app.use('/api/integrations', integrationRoutes);
   app.use('/api/announcements', announcementRoutes);

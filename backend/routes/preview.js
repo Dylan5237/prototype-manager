@@ -9,6 +9,10 @@ const {
   DEFAULT_CANDIDATES_ROOT,
   getChangeById
 } = require('../services/lightweight-collaboration');
+const {
+  DIRECT_CANDIDATES_ROOT,
+  getDirectChangeById
+} = require('../services/prototype-direct-changes');
 const router = express.Router();
 
 // 检查当前登录用户是否有权访问原型
@@ -147,6 +151,49 @@ router.use('/changes/:changeId', (req, res, next) => {
   const change = getChangeById(req.params.changeId);
   const candidateDir = candidateDirectory(change);
   if (!candidateDir || !fs.existsSync(candidateDir)) return res.status(404).send('候选不存在');
+  express.static(candidateDir)(req, res, next);
+});
+
+function directCandidateDirectory(change) {
+  if (!change || !change.candidate_path) return null;
+  const root = path.resolve(DIRECT_CANDIDATES_ROOT);
+  const candidateDir = path.isAbsolute(change.candidate_path)
+    ? path.resolve(change.candidate_path)
+    : path.resolve(root, change.candidate_path);
+  if (!candidateDir.startsWith(`${root}${path.sep}`)) return null;
+  return candidateDir;
+}
+
+function canViewDirectChange(change, user) {
+  if (!change || !user) return false;
+  const roles = Array.isArray(user.roles) ? user.roles : [user.role];
+  return roles.includes('admin') || Number(change.created_by) === Number(user.id);
+}
+
+// 独立原型修改候选预览：仅任务创建者/管理员可见，校验通过后保留为正式版本切换证据。
+router.get('/direct-changes/:changeId/*.html', requireAuth, (req, res) => {
+  const change = getDirectChangeById(req.params.changeId);
+  const candidateDir = directCandidateDirectory(change);
+  if (!change || change.status === 'editing' || !candidateDir) return res.status(404).send('候选不存在');
+  if (!canViewDirectChange(change, req.user)) return res.status(403).send('无权查看该候选');
+  const filePath = `${req.params[0]}.html`;
+  const fullPath = path.resolve(candidateDir, filePath);
+  if (!fullPath.startsWith(`${candidateDir}${path.sep}`) || !fs.existsSync(fullPath)) {
+    return res.status(404).send('文件不存在');
+  }
+  let content = fs.readFileSync(fullPath, 'utf-8');
+  const fileDir = path.dirname(filePath).replace(/\\/g, '/');
+  const dirPart = fileDir && fileDir !== '.' ? `${fileDir}/` : '';
+  content = processHtml(content, `/preview/direct-changes/${encodeURIComponent(change.id)}/${dirPart}`, { smoke: true });
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(content);
+});
+
+router.use('/direct-changes/:changeId', (req, res, next) => {
+  const change = getDirectChangeById(req.params.changeId);
+  const candidateDir = directCandidateDirectory(change);
+  if (!candidateDir || !fs.existsSync(candidateDir)) return res.status(404).send('候选不存在');
+  if (!canViewDirectChange(change, req.user)) return res.status(403).send('无权查看该候选');
   express.static(candidateDir)(req, res, next);
 });
 
