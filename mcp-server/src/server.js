@@ -1207,6 +1207,7 @@ async function callTool(name, args) {
     const bytes = fs.readFileSync(zipPath);
     const form = new FormData();
     form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    if (args.versionType) form.set('versionType', args.versionType);
     const submitted = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/changes/${encodeURIComponent(args.changeId)}/candidate`, {
       method: 'POST',
       body: form
