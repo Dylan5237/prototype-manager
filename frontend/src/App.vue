@@ -215,32 +215,11 @@ body {
   font-size: 16px;
 }
 
-/* 用户信息 - 简约胶囊 */
+/* 用户操作区 */
 .user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 20px;
-}
-
-.user-info .nickname {
-  font-size: 14px;
-  color: #1a202c;
-  font-weight: 600;
-}
-
-.logout-btn {
-  color: #718096 !important;
-  transition: color 0.2s ease;
-}
-
-.logout-btn:hover {
-  color: #1a202c !important;
+  gap: 6px;
 }
 
 /* ========================================
@@ -276,12 +255,7 @@ body {
   }
   
   .user-info {
-    gap: 8px;
-    padding: 4px 10px;
-  }
-  
-  .user-info .nickname {
-    display: none;
+    gap: 4px;
   }
 }
 </style>

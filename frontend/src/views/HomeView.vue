@@ -26,9 +26,6 @@
           <el-option label="最近创建" value="created_desc" />
           <el-option label="最早创建" value="created_asc" />
         </el-select>
-        <el-button @click="openMcpDialog">
-          <el-icon><Connection /></el-icon>接入平台MCP
-        </el-button>
         <el-button v-if="authStore.isAdmin || authStore.isEditor" type="primary" @click="openCreateDialog">
           <el-icon><Plus /></el-icon>新建原型
         </el-button>
@@ -225,7 +222,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, deletePrototype } from '../api/prototypes'
 import { getUsers, getAgentBootstrap, getMcpSessions, getAgentUpdates, createAgentUpdateIntent } from '../api/auth'
 import { getCategories } from '../api/prototypes'
-import { Search, Plus, User, Loading, Delete, Connection, DocumentCopy } from '@element-plus/icons-vue'
+import { Search, Plus, User, Loading, Delete, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
 import { buildPrototypePrompt } from '../utils/prototype-prompts'

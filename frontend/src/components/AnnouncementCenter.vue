@@ -1,7 +1,7 @@
 <template>
   <div class="announcement-center">
     <el-badge :value="store.unreadCount" :hidden="store.unreadCount === 0" :max="99" class="announcement-badge">
-      <el-button text class="announcement-trigger" title="平台更新公告" @click="openCenter">
+      <el-button text class="announcement-trigger" title="平台更新公告" aria-label="打开平台更新公告" @click="openCenter">
         <el-icon :size="19"><Bell /></el-icon>
       </el-button>
     </el-badge>
@@ -132,7 +132,9 @@ onMounted(() => { store.load().catch(() => {}) })
 <style scoped>
 .announcement-center { display: flex; align-items: center; }
 .announcement-badge :deep(.el-badge__content) { top: 4px; right: 4px; border: 2px solid #fff; }
-.announcement-trigger { width: 36px; height: 36px; color: #526075; }
+.announcement-trigger { width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #526075; transition: color .2s ease, background-color .2s ease; }
+.announcement-trigger:hover { background: rgba(15, 23, 42, .05); color: #1e293b; }
+.announcement-trigger:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
 .drawer-header { display: flex; flex-direction: column; gap: 4px; }
 .drawer-header strong { display: block; font-size: 18px; }
 .drawer-header span { display: block; color: #64748b; font-size: 12px; font-weight: 400; }

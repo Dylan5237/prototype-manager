@@ -1,10 +1,10 @@
 <template>
   <el-popover v-model:visible="visible" placement="bottom-end" :width="248" trigger="click" popper-class="account-menu-popper">
     <template #reference>
-      <button class="account-trigger" type="button" aria-label="打开用户菜单">
+      <button class="account-trigger" type="button" aria-label="打开用户菜单" :aria-expanded="visible">
         <span class="account-avatar">{{ avatarText }}</span>
         <span class="account-name">{{ authStore.user?.nickname || authStore.user?.username }}</span>
-        <span class="account-arrow">⌄</span>
+        <el-icon :class="['account-arrow', { 'is-open': visible }]" aria-hidden="true"><ArrowDown /></el-icon>
       </button>
     </template>
     <div class="account-menu">
@@ -21,6 +21,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { ArrowDown } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 
 const authStore = useAuthStore()
@@ -38,11 +39,14 @@ function logout() { visible.value = false; authStore.logout() }
 </script>
 
 <style scoped>
-.account-trigger { display:flex; align-items:center; gap:8px; padding:5px 9px 5px 5px; border:1px solid transparent; border-radius:999px; background:transparent; color:#1a202c; }
-.account-trigger:hover { border-color:rgba(0,0,0,.08); background:rgba(255,255,255,.8); }
+.account-trigger { display:flex; align-items:center; gap:8px; min-height:40px; padding:5px 4px; border:0; border-radius:8px; background:transparent; color:#1a202c; cursor:pointer; transition:color .2s ease, background-color .2s ease; }
+.account-trigger:hover { background:rgba(15,23,42,.05); }
+.account-trigger:focus-visible { outline:2px solid #3b82f6; outline-offset:2px; }
 .account-avatar { width:30px; height:30px; display:grid; place-items:center; color:#1d4ed8; border-radius:50%; background:#dbeafe; font-size:12px; font-weight:800; }
 .account-name { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
-.account-arrow { color:#64748b; font-size:16px; }
+.account-arrow { margin-left:1px; color:#64748b; font-size:13px; transition:transform .2s ease, color .2s ease; }
+.account-trigger:hover .account-arrow { color:#334155; }
+.account-arrow.is-open { transform:rotate(180deg); }
 .account-menu { display:grid; gap:3px; }
 .account-summary { padding:5px 9px 10px; border-bottom:1px solid #edf2f7; margin-bottom:3px; }
 .account-summary strong,.account-summary small { display:block; }
