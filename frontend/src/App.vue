@@ -29,6 +29,7 @@
             </router-link>
           </div>
           <div class="user-info" v-if="authStore.isLoggedIn && authStore.user">
+            <AnnouncementCenter />
             <el-tag v-for="r in userRoles" :key="r" size="small" :type="getRoleTagType(r)" effect="dark">
               {{ getRoleLabel(r) }}
             </el-tag>
@@ -66,6 +67,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import AdminLayout from './components/AdminLayout.vue'
 import PrototypeLayout from './components/PrototypeLayout.vue'
+import AnnouncementCenter from './components/AnnouncementCenter.vue'
 import { Files, FolderOpened, Setting, SwitchButton } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()

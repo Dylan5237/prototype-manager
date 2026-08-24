@@ -29,6 +29,8 @@
       </div>
     </div>
 
+    <PlatformAnnouncementBanner />
+
     <el-alert
       v-if="agentUpdateVisible"
       class="agent-update-banner"
@@ -205,6 +207,7 @@ import { getCategories } from '../api/prototypes'
 import { Search, Plus, User, Loading, Delete, Connection, DocumentCopy } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
+import PlatformAnnouncementBanner from '../components/PlatformAnnouncementBanner.vue'
 
 const authStore = useAuthStore()
 const route = useRoute()

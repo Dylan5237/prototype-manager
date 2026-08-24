@@ -33,6 +33,10 @@
           <el-icon><Collection /></el-icon>
           <span class="menu-text">类别管理</span>
         </el-menu-item>
+        <el-menu-item index="/admin/announcements">
+          <el-icon><Bell /></el-icon>
+          <span class="menu-text">平台更新公告</span>
+        </el-menu-item>
       </el-menu>
     </aside>
     <main class="admin-content">
@@ -44,7 +48,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Setting, User, Promotion, Collection } from '@element-plus/icons-vue'
+import { Setting, User, Promotion, Collection, Bell } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)

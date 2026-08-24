@@ -391,11 +391,42 @@ function createTables() {
       FOREIGN KEY (release_id) REFERENCES agent_releases(release_id)
     )
   `);
+
+  // 平台更新公告：公告内容与 MCP/Skill 更新意图分离，用户已读状态按账号记录。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS platform_announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      summary TEXT,
+      body TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'feature',
+      version TEXT,
+      status TEXT NOT NULL DEFAULT 'published',
+      published_at TEXT,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS platform_announcement_reads (
+      announcement_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      read_at TEXT NOT NULL,
+      PRIMARY KEY (announcement_id, user_id),
+      FOREIGN KEY (announcement_id) REFERENCES platform_announcements(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_session ON agent_update_intents(session_id, status, requested_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_user ON agent_update_intents(user_id, updated_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcements_status ON platform_announcements(status, published_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcement_reads_user ON platform_announcement_reads(user_id, read_at)`); } catch (e) {}
 
   // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
   applyCollaborationSchema(db);

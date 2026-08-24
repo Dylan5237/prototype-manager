@@ -7,6 +7,7 @@ import AdminUsers from '../views/AdminUsers.vue'
 import AdminDistribution from '../views/AdminDistribution.vue'
 import AdminCategories from '../views/AdminCategories.vue'
 import AdminGroups from '../views/AdminGroups.vue'
+import AdminAnnouncements from '../views/AdminAnnouncements.vue'
 import RecycleBinView from '../views/RecycleBinView.vue'
 import ProjectsView from '../views/ProjectsView.vue'
 import ProjectView from '../views/ProjectView.vue'
@@ -23,6 +24,7 @@ const routes = [
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
   { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },
   { path: '/admin/groups', name: 'admin-groups', component: AdminGroups, meta: { requireAdmin: true } },
+  { path: '/admin/announcements', name: 'admin-announcements', component: AdminAnnouncements, meta: { requireAdmin: true } },
   { path: '/recycle-bin', name: 'recycle-bin', component: RecycleBinView, meta: { requireAdmin: true } }
 ]
 
