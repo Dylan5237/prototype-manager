@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# This script is uploaded to Linux and must remain LF-only.
 set -Eeuo pipefail
 
 ROOT=/zoesoft/fuxi
