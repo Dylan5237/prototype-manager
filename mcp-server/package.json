@@ -1,0 +1,16 @@
+{
+  "name": "fuxi-platform-mcp-server",
+  "version": "0.2.0",
+  "description": "MCP tools for the Fuxi prototype management platform.",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "check": "node --check src/server.js && node --check src/fuxi-zip.js && node --check src/update-runtime.js && node --check src/launcher.js && node --check tests/integration.js && node --check tests/remote-update.test.js && node --check tests/update-spike/updater.js && node --check tests/update-spike/launcher.js && node --check tests/update-spike/cursor-launcher.js && node --check tests/update-spike/run-spike.js",
+    "test:integration": "node tests/integration.js",
+    "test:remote-update": "node --test --test-concurrency=1 tests/remote-update.test.js",
+    "test:update-spike": "node tests/update-spike/run-spike.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

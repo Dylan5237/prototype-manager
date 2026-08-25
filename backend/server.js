@@ -8,8 +8,14 @@ const { initDefaultAdmin, initGuestUser } = require('./services/db-users');
 const { migrateFromJson } = require('./routes/prototypes');
 const authRoutes = require('./routes/auth');
 const { router: prototypeRoutes } = require('./routes/prototypes');
+const prototypeDirectChangeRoutes = require('./routes/prototype-direct-changes');
 const groupRoutes = require('./routes/groups');
+const projectRoutes = require('./routes/projects');
 const previewRoutes = require('./routes/preview');
+const shareRoutes = require('./routes/share');
+const integrationRoutes = require('./routes/integrations');
+const announcementRoutes = require('./routes/announcements');
+const collaborationWebhookRoutes = require('./routes/collaboration-webhooks');
 const { initProxy } = require('./services/github');
 
 const app = express();
@@ -51,6 +57,12 @@ async function startServer() {
   }
   
   // 中间件
+  // Webhook 签名必须基于原始 JSON bytes 校验，因此在通用 JSON parser 之前挂载。
+  app.use(
+    '/api/collaboration/webhooks/gitlab',
+    express.raw({ type: 'application/json', limit: '2mb' }),
+    collaborationWebhookRoutes
+  );
   app.use(cors());
   app.use(express.json());
   
@@ -58,9 +70,16 @@ async function startServer() {
   app.use('/api/auth', authRoutes);
   app.use('/api/groups', groupRoutes);
   app.use('/api/prototypes', prototypeRoutes);
+  app.use('/api/prototypes', prototypeDirectChangeRoutes);
+  app.use('/api/projects', projectRoutes);
+  app.use('/api/integrations', integrationRoutes);
+  app.use('/api/announcements', announcementRoutes);
   
   // 静态文件服务 - 用于预览原型
   app.use('/preview', previewRoutes);
+
+  // 免登录分享短链重定向 - 访问 /api/s/:code 时种 Cookie 并跳转到预览页
+  app.use('/api/s', shareRoutes);
   
   // 健康检查
   app.get('/api/health', (req, res) => {

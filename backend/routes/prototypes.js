@@ -4,15 +4,19 @@ const AdmZip = require('adm-zip');
 const path = require('path');
 const fs = require('fs');
 const router = express.Router();
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, generateShareToken } = require('../middleware/auth');
+const { findUserByUsername, initGuestUser } = require('../services/db-users');
+const crypto = require('crypto');
 const {
   getPrototypes, getPrototypeById, createPrototype, updatePrototype, deletePrototype,
   softDeletePrototype, getRecycleBinPrototypes, restorePrototype, hardDeletePrototype,
   setPrototypeTags, getCategories, getCategoryById, createCategory, updateCategory, deleteCategory,
   getReadme, migrateFromJson, transferPrototype,
   getVersions, createVersion, deleteVersion, updateVersionNote, getLatestVersionNumber,
-  getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare
+  getPrototypeShares, getSharedUserIds, addPrototypeShare, removePrototypeShare,
+  createShareLink, getShareLinkByCode, findShareLink
 } = require('../services/db-prototypes');
+const { getPrototypeProjectBinding } = require('../services/db-projects');
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
 } = require('../services/storage');
@@ -73,19 +77,19 @@ const commentImageUpload = multer({
 // 获取原型列表
 // scope: my（我创建的，默认）| shared（分享给我的）| all（全部可访问的原型：管理员为全部，普通用户为自己的+分享给我的）
 router.get('/', requireAuth, (req, res) => {
-  const { keyword, category_id, scope } = req.query;
+  const { keyword, category_id, scope, sort } = req.query;
   const page = parseInt(req.query.page, 10) || 1;
   const pageSize = parseInt(req.query.pageSize, 10) || 12;
   const admin = isAdmin(req);
   let result;
 
   if (scope === 'shared') {
-    result = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id, page, pageSize });
+    result = getPrototypes({ keyword, categoryId: category_id, sharedTo: req.user.id, page, pageSize, sort });
   } else if (scope === 'all' && admin) {
-    result = getPrototypes({ keyword, categoryId: category_id, page, pageSize });
+    result = getPrototypes({ keyword, categoryId: category_id, page, pageSize, sort });
   } else if (scope === 'all') {
     // 普通用户查看全部：自己创建的 + 分享给我的
-    result = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id, page, pageSize });
+    result = getPrototypes({ keyword, categoryId: category_id, accessibleBy: req.user.id, page, pageSize, sort });
   } else {
     // 默认返回自己创建的
     result = getPrototypes({ keyword, categoryId: category_id, createdBy: req.user.id, page, pageSize });
@@ -145,9 +149,10 @@ router.get('/:id', requireAuth, (req, res) => {
   }
 
   const sharedUserIds = getSharedUserIds(prototype.id);
+  const projectBinding = getPrototypeProjectBinding(prototype.id);
   res.json({
     success: true,
-    data: { ...prototype, files, shared_user_ids: sharedUserIds }
+    data: { ...prototype, files, shared_user_ids: sharedUserIds, project_binding: projectBinding }
   });
 });
 
@@ -660,6 +665,49 @@ router.put('/:id/transfer', requireAuth, requireRole(['admin']), (req, res) => {
   }
   const updated = transferPrototype(prototype.id, new_owner_id);
   res.json({ success: true, data: updated });
+});
+
+// 生成免登录查看链接（仅原型归属者/管理员/协作者可生成）
+// 返回短码链接 /s/:code，访问短码时后端自动种 Cookie 并重定向到预览页
+router.get('/:id/public-link', requireAuth, (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!canEditPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权操作该原型' });
+  }
+  if (!prototype.entry_file) {
+    return res.status(400).json({ success: false, message: '原型尚未上传入口文件，无法生成查看链接' });
+  }
+
+  // 复用已有的短码（同一原型 + 同一入口文件），避免每次生成都创建新记录
+  const existing = findShareLink(prototype.id, prototype.entry_file);
+  if (existing) {
+    return res.json({ success: true, data: { url: `/api/s/${existing.code}`, code: existing.code } });
+  }
+
+  // 确保默认访客账号存在
+  initGuestUser();
+  const guest = findUserByUsername('user');
+  if (!guest) {
+    return res.status(500).json({ success: false, message: '系统未配置默认访客账号' });
+  }
+
+  // 默认访客需要被分享才能访问，若未分享则自动添加
+  if (!isAdmin({ user: guest }) && prototype.created_by !== guest.id && !getSharedUserIds(prototype.id).includes(guest.id)) {
+    addPrototypeShare(prototype.id, guest.id);
+  }
+
+  // 生唯一短码（8 字符 base64url）
+  let code;
+  for (let i = 0; i < 5; i++) {
+    code = crypto.randomBytes(6).toString('base64url').slice(0, 8);
+    if (!getShareLinkByCode(code)) break;
+  }
+  createShareLink({ code, prototypeId: prototype.id, entryFile: prototype.entry_file, createdBy: req.user.id });
+
+  res.json({ success: true, data: { url: `/api/s/${code}`, code } });
 });
 
 // ========== 评论反馈 ==========

@@ -2,7 +2,7 @@
   <div class="app">
     <div class="app-bg"></div>
     <el-container>
-      <el-header v-if="!isLoginPage" class="app-header">
+      <el-header v-if="!isLoginPage && !isProjectPreview" class="app-header">
         <div class="header-content">
           <div class="logo">
             <img src="/favicon.svg" class="logo-img" alt="logo" />
@@ -15,9 +15,13 @@
             </div>
           </div>
           <div class="nav" v-if="authStore.isLoggedIn">
-            <router-link to="/" :class="{ active: !isAdminPage }">
+            <router-link to="/" :class="{ active: isHomePage }">
               <el-icon><Files /></el-icon>
               原型列表
+            </router-link>
+            <router-link to="/projects" :class="{ active: isProjectPage }">
+              <el-icon><FolderOpened /></el-icon>
+              项目
             </router-link>
             <router-link v-if="authStore.isAdmin" to="/admin/users" :class="{ active: isAdminPage }">
               <el-icon><Setting /></el-icon>
@@ -25,18 +29,12 @@
             </router-link>
           </div>
           <div class="user-info" v-if="authStore.isLoggedIn && authStore.user">
-            <el-tag v-for="r in userRoles" :key="r" size="small" :type="getRoleTagType(r)" effect="dark">
-              {{ getRoleLabel(r) }}
-            </el-tag>
-            <span class="nickname">{{ authStore.user.nickname || authStore.user.username }}</span>
-            <el-button text size="small" @click="authStore.logout" class="logout-btn">
-              <el-icon><SwitchButton /></el-icon>
-              退出
-            </el-button>
+            <AnnouncementCenter />
+            <AccountMenu />
           </div>
         </div>
       </el-header>
-      <el-main :class="['app-main', { 'app-main--login': isLoginPage }]">
+      <el-main :class="['app-main', { 'app-main--login': isLoginPage || isProjectPreview }]">
         <!-- 登录页 -->
         <router-view v-if="isLoginPage" />
         <!-- 系统管理页 -->
@@ -62,30 +60,18 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import AdminLayout from './components/AdminLayout.vue'
 import PrototypeLayout from './components/PrototypeLayout.vue'
-import { Files, Setting, SwitchButton } from '@element-plus/icons-vue'
+import AnnouncementCenter from './components/AnnouncementCenter.vue'
+import AccountMenu from './components/AccountMenu.vue'
+import { Files, FolderOpened, Setting } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 const route = useRoute()
 const isLoginPage = computed(() => route.path === '/login')
 const isAdminPage = computed(() => route.path.startsWith('/admin'))
 const isHomePage = computed(() => route.path === '/')
+const isProjectPage = computed(() => route.path.startsWith('/projects') || route.path.startsWith('/project/'))
+const isProjectPreview = computed(() => /^\/project\/[^/]+\/preview$/.test(route.path))
 
-const userRoles = computed(() => {
-  const roles = authStore.user?.role
-  if (!roles) return []
-  return Array.isArray(roles) ? roles : [roles]
-})
-
-const roleLabelMap = { admin: '管理员', uploader: '上传者', viewer: '查看者' }
-const roleTagTypeMap = { admin: 'primary', uploader: 'success', viewer: 'info' }
-
-function getRoleLabel(role) {
-  return roleLabelMap[role] || role
-}
-
-function getRoleTagType(role) {
-  return roleTagTypeMap[role] || 'info'
-}
 </script>
 
 <style>
@@ -229,32 +215,11 @@ body {
   font-size: 16px;
 }
 
-/* 用户信息 - 简约胶囊 */
+/* 用户操作区 */
 .user-info {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(0, 0, 0, 0.06);
-  border-radius: 20px;
-}
-
-.user-info .nickname {
-  font-size: 14px;
-  color: #1a202c;
-  font-weight: 600;
-}
-
-.logout-btn {
-  color: #718096 !important;
-  transition: color 0.2s ease;
-}
-
-.logout-btn:hover {
-  color: #1a202c !important;
+  gap: 6px;
 }
 
 /* ========================================
@@ -290,12 +255,7 @@ body {
   }
   
   .user-info {
-    gap: 8px;
-    padding: 4px 10px;
-  }
-  
-  .user-info .nickname {
-    display: none;
+    gap: 4px;
   }
 }
 </style>

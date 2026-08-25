@@ -51,6 +51,360 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
+/* ========================================
+   管理类页面统一骨架
+   ======================================== */
+.management-page {
+  max-width: 1370px;
+  margin: 0 auto;
+  animation: managementEnter 0.18s ease-out;
+}
+
+.management-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 64px;
+  margin-bottom: 18px;
+}
+
+.management-page-title {
+  min-width: 0;
+}
+
+.management-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.management-title-line h1 {
+  margin: 0;
+  color: #172033;
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.management-count {
+  display: inline-flex;
+  align-items: center;
+  min-width: 28px;
+  height: 24px;
+  padding: 0 8px;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.management-description {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.management-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-height: 38px;
+}
+
+.management-search {
+  width: 240px;
+}
+
+.management-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.management-page .el-input__wrapper,
+.management-page .el-select__wrapper,
+.management-dialog .el-input__wrapper,
+.management-dialog .el-select__wrapper {
+  min-height: 38px;
+  border-radius: 8px;
+}
+
+.management-page .el-button,
+.management-dialog .el-button,
+.management-confirm .el-button {
+  min-height: 38px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.management-page .el-button.el-button--small,
+.management-dialog .el-button.el-button--small {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 13px;
+}
+
+.management-panel .el-table {
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-row-hover-bg-color: #fafcff;
+  --el-table-border-color: #edf2f7;
+  color: #334155;
+  table-layout: fixed;
+}
+
+.management-panel .el-table th.el-table__cell {
+  height: 42px;
+  padding: 0;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.management-panel .el-table td.el-table__cell {
+  padding: 12px 0;
+}
+
+.management-panel .el-table th.el-table__cell .cell,
+.management-panel .el-table td.el-table__cell .cell {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 14px;
+  line-height: 1.45;
+}
+
+.management-panel .el-table tbody tr {
+  transition: background-color 0.16s ease;
+}
+
+.management-panel .el-table tbody tr:hover > td.el-table__cell {
+  background: #f8fbff;
+}
+
+.management-panel .el-table__inner-wrapper::before {
+  display: none;
+}
+
+.management-panel .el-empty {
+  min-height: 184px;
+  padding: 22px 0;
+}
+
+.management-panel .el-empty__image {
+  margin-bottom: 8px;
+}
+
+.management-panel .el-empty__description {
+  color: #64748b;
+  font-size: 14px;
+}
+
+.management-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.management-table-actions--center {
+  justify-content: center;
+}
+
+.management-table-actions .el-button {
+  min-width: 0;
+}
+
+.management-primary-cell {
+  min-width: 0;
+}
+
+.management-primary-text {
+  display: block;
+  overflow: hidden;
+  color: #172033;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.management-secondary-text,
+.management-time {
+  display: block;
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.management-secondary-text {
+  margin-top: 3px;
+}
+
+.management-tag-list {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.management-tag-list .el-tag {
+  flex: 0 0 auto;
+}
+
+.member-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.member-cell .management-tag-list {
+  flex: 1 1 auto;
+}
+
+.member-cell .el-button.view-members-link {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.management-empty-support {
+  display: block;
+  margin-top: 5px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.management-page .el-tag {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.management-page .el-button,
+.management-dialog .el-button {
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.management-muted {
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.management-dialog.el-dialog {
+  padding: 0;
+  border-radius: 15px;
+  overflow: hidden;
+}
+
+.management-dialog .el-dialog__header {
+  margin: 0;
+  padding: 19px 22px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.management-dialog .el-dialog__title {
+  color: #172033;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.management-dialog .el-dialog__headerbtn {
+  top: 13px;
+  right: 16px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+}
+
+.management-dialog .el-dialog__headerbtn:hover {
+  background: #f1f5f9;
+}
+
+.management-dialog .el-dialog__body {
+  padding: 20px 22px;
+  color: #475569;
+}
+
+.management-dialog .el-dialog__footer {
+  padding: 14px 22px;
+  border-top: 1px solid #e2e8f0;
+  background: #fafcff;
+}
+
+.management-dialog .el-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.management-confirm.el-message-box {
+  padding: 0;
+  border: 0;
+  border-radius: 15px;
+  overflow: hidden;
+}
+
+.management-confirm .el-message-box__header {
+  padding: 19px 22px 12px;
+}
+
+.management-confirm .el-message-box__title {
+  color: #172033;
+  font-size: 19px;
+  font-weight: 700;
+}
+
+.management-confirm .el-message-box__content {
+  padding: 4px 22px 20px;
+  color: #475569;
+  line-height: 1.65;
+}
+
+.management-confirm .el-message-box__btns {
+  padding: 14px 22px;
+  border-top: 1px solid #e2e8f0;
+  background: #fafcff;
+}
+
+@keyframes managementEnter {
+  from {
+    opacity: 0.35;
+    transform: translateY(4px);
+  }
+}
+
+@media (max-width: 760px) {
+  .management-page-head {
+    display: block;
+  }
+
+  .management-toolbar {
+    justify-content: flex-start;
+    margin-top: 14px;
+  }
+
+  .management-search {
+    width: min(100%, 280px);
+  }
+
+  .management-dialog.el-dialog {
+    width: calc(100% - 28px) !important;
+  }
+}
+
 /* 动画 */
 @keyframes fadeIn {
   from {

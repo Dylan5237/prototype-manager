@@ -1,60 +1,56 @@
 <template>
-  <div class="admin-users">
-    <div class="page-toolbar">
-      <el-input
-        v-model="searchKeyword"
-        placeholder="搜索账号或昵称"
-        clearable
-        class="search-input"
-        @keyup.enter="handleSearch"
-      >
-        <template #suffix>
-          <el-icon @click="handleSearch" style="cursor:pointer"><Search /></el-icon>
-        </template>
+  <div class="management-page admin-users">
+    <ManagementPageHeader title="用户列表" :count="filteredUsers.length" description="管理账号、显示名称、固定角色与所属用户组。">
+      <el-input v-model="searchKeyword" placeholder="搜索账号或昵称" clearable class="management-search" @keyup.enter="handleSearch">
+        <template #suffix><el-icon class="search-action" @click="handleSearch"><Search /></el-icon></template>
       </el-input>
-      <el-button type="primary" @click="openCreateDialog">
-        <el-icon><Plus /></el-icon>
-        新建用户
-      </el-button>
+      <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>新建用户</el-button>
+    </ManagementPageHeader>
+
+    <div class="management-panel">
+      <el-table class="management-table" :data="filteredUsers" v-loading="loading" table-layout="fixed">
+        <el-table-column prop="id" label="ID" width="64" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-muted">{{ row.id ?? '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="username" label="账号" width="190" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-primary-text">{{ row.username || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="nickname" label="昵称" width="190" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-primary-text">{{ row.nickname || row.username || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column label="角色" width="200" align="left" header-align="left">
+          <template #default="{ row }">
+            <div class="management-tag-list">
+              <el-tag v-for="r in getRolesArray(row.role)" :key="r" :type="getRoleType(r)" effect="light">{{ getRoleLabel(r) }}</el-tag>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="所属组" min-width="220" align="left" header-align="left">
+          <template #default="{ row }">
+            <div v-if="row.groups && row.groups.length" class="management-tag-list">
+              <el-tag v-for="g in getVisibleGroups(row)" :key="g.id" type="info" effect="plain">{{ g.name }}</el-tag>
+              <el-tag v-if="row.groups.length > 3" type="info" effect="plain">+{{ row.groups.length - 3 }}</el-tag>
+            </div>
+            <span v-else class="management-muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="210" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-time">{{ formatDate(row.created_at) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" align="center" header-align="center">
+          <template #default="{ row }">
+            <div class="management-table-actions management-table-actions--center">
+              <el-button size="small" @click="openEditDialog(row)"><el-icon><Edit /></el-icon>编辑</el-button>
+              <el-button size="small" type="danger" plain @click="handleDelete(row)"><el-icon><Delete /></el-icon>删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无符合条件的用户" :image-size="72" /></template>
+      </el-table>
     </div>
 
-    <el-table :data="filteredUsers" v-loading="loading" stripe class="data-table">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="username" label="账号" width="150" />
-      <el-table-column prop="nickname" label="昵称" width="150" />
-      <el-table-column label="角色" width="260">
-        <template #default="{ row }">
-          <el-tag
-            v-for="r in getRolesArray(row.role)"
-            :key="r"
-            :type="getRoleType(r)"
-            size="small"
-            effect="light"
-            class="role-tag"
-          >{{ getRoleLabel(r) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
-        <template #default="{ row }">
-          <div class="table-actions">
-            <el-button size="small" @click="openEditDialog(row)">
-              <el-icon><Edit /></el-icon>编辑
-            </el-button>
-            <el-button size="small" type="danger" plain @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>删除
-            </el-button>
-          </div>
-        </template>
-      </el-table-column>
-    </el-table>
-
     <!-- 新建用户弹窗 -->
-    <el-dialog v-model="showCreateDialog" title="新建用户" width="420px" destroy-on-close>
+    <el-dialog v-model="showCreateDialog" title="新建用户" width="460px" class="management-dialog" destroy-on-close>
       <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="80px">
         <el-form-item label="账号" prop="username">
           <el-input v-model="createForm.username" placeholder="登录账号" />
@@ -68,8 +64,18 @@
         <el-form-item label="角色" prop="roles">
           <el-select v-model="createForm.roles" multiple placeholder="选择角色（可多选）" style="width:100%">
             <el-option label="管理员" value="admin" />
-            <el-option label="上传者" value="uploader" />
+            <el-option label="编辑者" value="uploader" />
             <el-option label="查看者" value="viewer" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属组">
+          <el-select v-model="createForm.groupIds" multiple placeholder="选择所属用户组（可多选）" style="width:100%">
+            <el-option
+              v-for="g in groups"
+              :key="g.id"
+              :label="g.name"
+              :value="g.id"
+            />
           </el-select>
         </el-form-item>
       </el-form>
@@ -80,7 +86,7 @@
     </el-dialog>
 
     <!-- 编辑用户弹窗 -->
-    <el-dialog v-model="showEditDialog" title="编辑用户" width="420px" destroy-on-close>
+    <el-dialog v-model="showEditDialog" title="编辑用户" width="460px" class="management-dialog" destroy-on-close>
       <el-form :model="editForm" :rules="editRules" ref="editFormRef" label-width="80px">
         <el-form-item label="账号">
           <el-input v-model="editForm.username" disabled />
@@ -91,8 +97,18 @@
         <el-form-item label="角色" prop="roles">
           <el-select v-model="editForm.roles" multiple placeholder="选择角色（可多选）" style="width:100%">
             <el-option label="管理员" value="admin" />
-            <el-option label="上传者" value="uploader" />
+            <el-option label="编辑者" value="uploader" />
             <el-option label="查看者" value="viewer" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="所属组">
+          <el-select v-model="editForm.groupIds" multiple placeholder="选择所属用户组（可多选）" style="width:100%">
+            <el-option
+              v-for="g in groups"
+              :key="g.id"
+              :label="g.name"
+              :value="g.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="重置密码">
@@ -108,20 +124,28 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUsers, registerUser, updateUser, deleteUser } from '../api/auth'
+import { getGroups } from '../api/groups'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
+import ManagementPageHeader from '../components/ManagementPageHeader.vue'
 
 const users = ref([])
+const groups = ref([])
 const loading = ref(false)
+const groupsLoading = ref(false)
 const searchKeyword = ref('')
 
-// 将 role 统一转为数组
+// 将 role 统一转为数组，并把 editor 映射为 uploader
 function getRolesArray(role) {
   if (!role) return ['viewer']
-  if (Array.isArray(role)) return role
-  return [role]
+  const arr = Array.isArray(role) ? role : [role]
+  return arr.map(r => r === 'editor' ? 'uploader' : r)
+}
+
+function getVisibleGroups(row) {
+  return (row.groups || []).slice(0, 3)
 }
 
 /* ========== 新建 ========== */
@@ -130,9 +154,10 @@ const creating = ref(false)
 const createFormRef = ref(null)
 const createForm = ref({
   username: '',
-  password: '',
+  password: '111111',
   nickname: '',
-  roles: ['viewer']
+  roles: ['viewer', 'uploader'],
+  groupIds: []
 })
 const createRules = {
   username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
@@ -141,9 +166,15 @@ const createRules = {
 }
 
 function openCreateDialog() {
-  createForm.value = { username: '', password: '', nickname: '', roles: ['viewer'] }
+  createForm.value = { username: '', password: '111111', nickname: '', roles: ['viewer', 'uploader'], groupIds: [] }
   showCreateDialog.value = true
 }
+
+watch(() => createForm.value.username, (username, previousUsername) => {
+  if (!createForm.value.nickname || createForm.value.nickname === previousUsername) {
+    createForm.value.nickname = username
+  }
+})
 
 async function handleCreate() {
   const valid = await createFormRef.value.validate().catch(() => false)
@@ -154,9 +185,10 @@ async function handleCreate() {
       username: createForm.value.username,
       password: createForm.value.password,
       nickname: createForm.value.nickname,
-      role: createForm.value.roles
+      role: createForm.value.roles,
+      groupIds: createForm.value.groupIds
     })
-    ElMessage.success('创建成功')
+    ElMessage.success(`已创建用户「${createForm.value.nickname || createForm.value.username}」`)
     showCreateDialog.value = false
     loadData()
   } catch (err) {
@@ -175,6 +207,7 @@ const editForm = ref({
   username: '',
   nickname: '',
   roles: ['viewer'],
+  groupIds: [],
   password: ''
 })
 const editRules = {
@@ -188,6 +221,7 @@ function openEditDialog(row) {
     username: row.username,
     nickname: row.nickname || '',
     roles: getRolesArray(row.role),
+    groupIds: (row.groups || []).map(g => g.id),
     password: ''
   }
   showEditDialog.value = true
@@ -200,13 +234,14 @@ async function handleEdit() {
   try {
     const payload = {
       nickname: editForm.value.nickname,
-      role: editForm.value.roles
+      role: editForm.value.roles,
+      groupIds: editForm.value.groupIds
     }
     if (editForm.value.password) {
       payload.password = editForm.value.password
     }
     await updateUser(editForm.value.id, payload)
-    ElMessage.success('更新成功')
+    ElMessage.success(`已更新用户「${editForm.value.nickname || editForm.value.username}」`)
     showEditDialog.value = false
     loadData()
   } catch (err) {
@@ -222,13 +257,13 @@ async function handleDelete(row) {
     await ElMessageBox.confirm(
       `确定删除用户 "${row.nickname || row.username}" 吗？删除后无法恢复。`,
       '确认删除',
-      { type: 'warning' }
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning', customClass: 'management-confirm' }
     )
     await deleteUser(row.id)
-    ElMessage.success('删除成功')
-    loadData()
+    ElMessage.success(`已删除用户「${row.nickname || row.username}」`)
+    await loadData()
   } catch (err) {
-    if (err !== 'cancel') {
+    if (err !== 'cancel' && err !== 'close') {
       ElMessage.error(err.response?.data?.message || err.message || '删除失败')
     }
   }
@@ -261,65 +296,58 @@ async function loadData() {
   }
 }
 
+async function loadGroups() {
+  groupsLoading.value = true
+  try {
+    const res = await getGroups()
+    groups.value = res.data.data || []
+  } catch (err) {
+    console.error('加载用户组失败', err)
+  } finally {
+    groupsLoading.value = false
+  }
+}
+
 function getRoleLabel(role) {
-  const map = { admin: '管理员', uploader: '上传者', viewer: '查看者' }
+  const map = { admin: '管理员', uploader: '编辑者', editor: '编辑者', viewer: '查看者' }
   return map[role] || role
 }
 
 function getRoleType(role) {
-  const map = { admin: 'danger', uploader: 'success', viewer: 'info' }
+  const map = { admin: 'danger', uploader: 'success', editor: 'success', viewer: 'info' }
   return map[role] || 'info'
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return ''
+  if (!dateStr) return '—'
   const d = new Date(dateStr)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadData()
+  loadGroups()
+})
 </script>
 
 <style scoped>
-.admin-users {
-  animation: fadeIn 0.25s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.page-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  gap: 16px;
-}
-
-.search-input {
-  width: 260px;
-}
-
-.data-table {
-  border-radius: 8px;
-  overflow: hidden;
+.search-action {
+  cursor: pointer;
 }
 
 .role-tag {
   margin-right: 4px;
 }
 
-.table-actions {
+.group-tags {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 4px;
 }
+
+.group-tag {
+  margin-right: 0;
+}
+
 </style>

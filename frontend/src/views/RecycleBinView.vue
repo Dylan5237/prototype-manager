@@ -1,59 +1,60 @@
 <template>
   <PrototypeLayout>
-    <div class="recycle-bin-container">
-      <div class="page-header">
-        <h2>回收站</h2>
-        <el-button type="primary" @click="fetchRecycleBin" :loading="loading">
-          <el-icon><Refresh /></el-icon>刷新
-        </el-button>
-      </div>
+    <div class="management-page recycle-bin-container">
+      <ManagementPageHeader title="回收站" :count="recycleBinList.length" description="可恢复已删除原型；彻底删除后无法恢复。">
+        <el-button @click="fetchRecycleBin" :loading="loading"><el-icon><Refresh /></el-icon>刷新</el-button>
+      </ManagementPageHeader>
 
-      <el-table :data="recycleBinList" v-loading="loading" style="width: 100%" stripe>
-        <el-table-column prop="name" label="名称" min-width="200">
-          <template #default="{ row }">
-            <div class="proto-name">{{ row.name }}</div>
-            <div class="proto-desc">{{ row.description || '暂无描述' }}</div>
-          </template>
-        </el-table-column>
-        <el-table-column prop="version" label="版本" width="100" align="center">
-          <template #default="{ row }">
-            <el-tag size="small">v{{ row.version }}</el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="created_by" label="创建者" width="120" align="center">
-          <template #default="{ row }">
-            {{ getAuthorName(row.created_by) }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="deleted_at" label="删除时间" width="180" align="center">
-          <template #default="{ row }">
-            {{ formatDate(row.deleted_at) }}
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="200" align="center" fixed="right">
-          <template #default="{ row }">
-            <el-button
-              type="primary"
-              size="small"
-              @click="handleRestore(row)"
-              v-if="authStore.isAdmin || row.created_by === authStore.user.id"
-            >
-              <el-icon><RefreshLeft /></el-icon>恢复
-            </el-button>
-            <el-button
-              type="danger"
-              size="small"
-              @click="handleHardDelete(row)"
-              v-if="authStore.isAdmin"
-            >
-              <el-icon><Delete /></el-icon>彻底删除
-            </el-button>
-          </template>
-        </el-table-column>
+      <div class="management-panel">
+        <el-table class="recycle-table" :data="recycleBinList" v-loading="loading" style="width: 100%" table-layout="fixed">
+          <el-table-column prop="name" label="名称" min-width="420" align="left" header-align="left">
+            <template #default="{ row }">
+              <div class="proto-name">{{ row.name || '—' }}</div>
+              <div class="proto-desc">{{ row.description || '暂无描述' }}</div>
+            </template>
+          </el-table-column>
+          <el-table-column prop="version" label="版本" width="110" align="left" header-align="left">
+            <template #default="{ row }">
+              <el-tag size="small">v{{ row.version ?? 0 }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_by" label="创建者" width="150" align="left" header-align="left">
+            <template #default="{ row }">
+              {{ row.creator_name || getAuthorName(row.created_by) }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="deleted_at" label="删除时间" width="210" align="left" header-align="left">
+            <template #default="{ row }">
+              {{ formatDate(row.deleted_at) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="200" align="center" header-align="center">
+            <template #default="{ row }">
+              <div class="recycle-actions recycle-actions--center">
+                <el-button
+                  size="small"
+                  @click="handleRestore(row)"
+                  v-if="authStore.isAdmin || row.created_by === authStore.user.id"
+                >
+                  <el-icon><RefreshLeft /></el-icon>恢复
+                </el-button>
+                <el-button
+                  type="danger"
+                  plain
+                  size="small"
+                  @click="handleHardDelete(row)"
+                  v-if="authStore.isAdmin"
+                >
+                  <el-icon><Delete /></el-icon>彻底删除
+                </el-button>
+              </div>
+            </template>
+          </el-table-column>
         <template #empty>
-          <el-empty description="回收站为空" />
+          <el-empty description="回收站为空" :image-size="96" />
         </template>
-      </el-table>
+        </el-table>
+      </div>
     </div>
   </PrototypeLayout>
 </template>
@@ -66,6 +67,7 @@ import PrototypeLayout from '@/components/PrototypeLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getRecycleBin, restorePrototype, hardDeletePrototype } from '@/api/prototypes'
 import { getUsers } from '@/api/auth'
+import ManagementPageHeader from '@/components/ManagementPageHeader.vue'
 
 const authStore = useAuthStore()
 const recycleBinList = ref([])
@@ -91,19 +93,21 @@ const fetchRecycleBin = async () => {
 const fetchUsers = async () => {
   try {
     const res = await getUsers()
-    users.value = res.data
+    const list = res.data?.data ?? res.data
+    users.value = Array.isArray(list) ? list : []
   } catch (e) {
     console.error('获取用户列表失败', e)
   }
 }
 
 const getAuthorName = (userId) => {
+  if (userId === null || userId === undefined || userId === '') return '—'
   const user = users.value.find(u => u.id === userId)
-  return user ? user.username : '未知'
+  return user ? (user.nickname || user.username) : '—'
 }
 
 const formatDate = (dateStr) => {
-  if (!dateStr) return ''
+  if (!dateStr) return '—'
   const d = new Date(dateStr)
   return d.toLocaleString('zh-CN', {
     year: 'numeric',
@@ -118,14 +122,14 @@ const handleRestore = async (row) => {
   try {
     await ElMessageBox.confirm(
       `确定要恢复原型「${row.name}」吗？`,
-      '确认恢复',
-      { confirmButtonText: '恢复', cancelButtonText: '取消', type: 'info' }
+      '恢复原型',
+      { confirmButtonText: '恢复', cancelButtonText: '取消', type: 'info', customClass: 'management-confirm' }
     )
     await restorePrototype(row.id)
-    ElMessage.success('恢复成功')
-    fetchRecycleBin()
+    ElMessage.success(`已恢复「${row.name}」`)
+    await fetchRecycleBin()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('恢复失败')
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.response?.data?.message || '恢复失败')
   }
 }
 
@@ -133,14 +137,14 @@ const handleHardDelete = async (row) => {
   try {
     await ElMessageBox.confirm(
       `确定要彻底删除原型「${row.name}」吗？此操作不可恢复！`,
-      '确认彻底删除',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      '彻底删除原型',
+      { confirmButtonText: '彻底删除', cancelButtonText: '取消', type: 'warning', customClass: 'management-confirm' }
     )
     await hardDeletePrototype(row.id)
-    ElMessage.success('彻底删除成功')
-    fetchRecycleBin()
+    ElMessage.success(`已彻底删除「${row.name}」`)
+    await fetchRecycleBin()
   } catch (e) {
-    if (e !== 'cancel') ElMessage.error('删除失败')
+    if (e !== 'cancel' && e !== 'close') ElMessage.error(e.response?.data?.message || '删除失败')
   }
 }
 
@@ -151,27 +155,9 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.recycle-bin-container {
-  padding: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: #303133;
-}
-
 .proto-name {
-  font-weight: 500;
-  color: #303133;
+  font-weight: 600;
+  color: #172033;
   margin-bottom: 4px;
 }
 
@@ -181,5 +167,16 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recycle-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 7px;
+}
+
+.recycle-actions--center {
+  justify-content: center;
 }
 </style>

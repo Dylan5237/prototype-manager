@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>伏羲轻协作 MVP</title>
+  <style>
+    :root { color-scheme: light; --blue:#2563eb; --ink:#172033; --muted:#667085; --line:#d9deea; --bg:#f4f6fa; --ok:#087f5b; --warn:#b54708; }
+    * { box-sizing:border-box; }
+    [hidden] { display:none !important; }
+    body { margin:0; font:14px/1.5 Inter,"Microsoft YaHei",sans-serif; color:var(--ink); background:var(--bg); }
+    button,textarea { font:inherit; }
+    button { border:1px solid var(--line); border-radius:8px; background:#fff; padding:9px 14px; cursor:pointer; }
+    button:focus-visible,textarea:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
+    .primary { color:#fff; background:var(--blue); border-color:var(--blue); font-weight:650; }
+    .danger { color:#b42318; border-color:#f0b4ad; }
+    .app { min-height:100vh; display:grid; grid-template-rows:58px 1fr; }
+    header { background:#152238; color:#fff; display:flex; align-items:center; justify-content:space-between; padding:0 24px; }
+    header strong { font-size:17px; }
+    header span { color:#c6d0e1; }
+    main { display:grid; grid-template-columns:230px 1fr; min-height:0; }
+    nav { background:#fff; border-right:1px solid var(--line); padding:18px 14px; }
+    nav h2 { margin:0 8px 14px; font-size:12px; color:var(--muted); text-transform:uppercase; }
+    .nav-item { width:100%; text-align:left; border:0; padding:10px 12px; margin:2px 0; }
+    .nav-item.active { color:var(--blue); background:#eff6ff; font-weight:650; }
+    .workspace { padding:24px; overflow:auto; }
+    .page { display:none; max-width:1180px; margin:auto; }
+    .page.active { display:block; }
+    .page-head { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; margin-bottom:18px; }
+    h1 { margin:0 0 5px; font-size:24px; }
+    h3 { margin:0 0 5px; }
+    .muted { color:var(--muted); }
+    .card { background:#fff; border:1px solid var(--line); border-radius:12px; box-shadow:0 3px 10px #1720330b; }
+    .prototype { display:grid; grid-template-columns:1fr 330px; min-height:560px; overflow:hidden; }
+    .preview { background:#e8edf5; padding:24px; }
+    .screen { height:100%; min-height:500px; background:#fff; border-radius:10px; display:grid; place-items:center; color:#8390a5; border:1px solid #cbd3df; }
+    .side { padding:22px; border-left:1px solid var(--line); }
+    .status { display:inline-flex; border-radius:999px; padding:3px 9px; font-size:12px; background:#e9f8f1; color:var(--ok); }
+    .stack { display:grid; gap:12px; }
+    .field label { display:block; font-weight:650; margin-bottom:6px; }
+    textarea { width:100%; min-height:120px; resize:vertical; padding:10px; border:1px solid var(--line); border-radius:8px; }
+    .hint { padding:10px 12px; background:#f7f9fc; border-radius:8px; color:var(--muted); }
+    .code { padding:13px; background:#111827; color:#e5e7eb; border-radius:8px; word-break:break-all; }
+    .row { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+    .candidate-list { display:grid; gap:10px; }
+    .candidate { display:grid; grid-template-columns:1fr auto; gap:16px; padding:16px; }
+    .candidate.ready { border-left:4px solid var(--blue); }
+    .candidate.stale { border-left:4px solid #f79009; }
+    .review { display:grid; grid-template-columns:380px 1fr; min-height:590px; overflow:hidden; }
+    .review-info { padding:22px; border-right:1px solid var(--line); }
+    .review-preview { padding:22px; background:#e8edf5; }
+    dl { display:grid; grid-template-columns:90px 1fr; gap:8px; }
+    dt { color:var(--muted); } dd { margin:0; }
+    .alert { padding:13px; border-radius:9px; background:#fff4e5; color:var(--warn); border:1px solid #fed7aa; }
+    .success { padding:13px; border-radius:9px; background:#e9f8f1; color:var(--ok); border:1px solid #a7e2cb; }
+    .footer-action { margin-top:20px; display:flex; justify-content:flex-end; gap:9px; }
+    @media (max-width:850px){ main{grid-template-columns:1fr} nav{display:none}.prototype,.review{grid-template-columns:1fr}.side,.review-info{border:0}.workspace{padding:14px} }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header><strong>伏羲 · 客户服务工作台</strong><span>项目成员 · wushengzhi</span></header>
+    <main>
+      <nav aria-label="原型导航">
+        <h2>项目原型</h2>
+        <button class="nav-item active">客户列表</button>
+        <button class="nav-item">客户详情</button>
+        <button class="nav-item">服务工单</button>
+      </nav>
+      <section class="workspace">
+        <section class="page active" id="project" data-view="project" aria-labelledby="project-title">
+          <div class="page-head">
+            <div><h1 id="project-title">客户列表</h1><div class="muted">当前正式版本 v12 · 状态稳定</div></div>
+            <button class="primary" data-go="request">让 AI 修改</button>
+          </div>
+          <div class="card prototype">
+            <div class="preview"><div class="screen">当前原型预览 · 客户列表 v12</div></div>
+            <aside class="side stack">
+              <div><span class="status">正式版本</span><h3 style="margin-top:10px">当前没有待处理风险</h3><p class="muted">AI 修改会先成为独立候选，不会直接覆盖这里。</p></div>
+              <hr style="border:0;border-top:1px solid var(--line);width:100%">
+              <div><strong>待我确认</strong><p class="muted">1 个候选已准备好</p><button data-go="queue">查看候选</button></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="page" id="request" data-view="request" aria-labelledby="request-title">
+          <div class="page-head"><div><h1 id="request-title">让 AI 修改“客户列表”</h1><div class="muted">描述想看到的结果，不需要填写仓库、分支或技术参数。</div></div></div>
+          <div class="card" style="max-width:720px;padding:24px">
+            <div id="request-form" class="stack">
+              <div class="field"><label for="requirement">修改目标</label><textarea id="requirement">在客户列表增加“最近跟进时间”列，并支持按跟进状态筛选。</textarea></div>
+              <div class="hint">Agent 将从当前正式版本 v12 开始。候选完成后仍需负责人采用。</div>
+              <div class="footer-action"><button data-go="project">取消</button><button class="primary" id="create-task">生成 AI 任务</button></div>
+            </div>
+            <div id="task-result" class="stack" hidden>
+              <div class="success"><strong>任务已生成</strong><br>把下面内容发送给已经接入伏羲的 AI 助手。</div>
+              <div class="code" id="prompt">请在伏羲领取并完成修改任务。任务码：FX-7K3M-2P9Q。完成后上传为候选版本，不要直接采用。</div>
+              <div class="hint">任务码 10 分钟内有效且只能使用一次。当前正式版本不会因此改变。</div>
+              <div class="footer-action"><button data-go="project">返回项目</button><button id="copy-task">复制任务</button></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="page" id="queue" data-view="queue" aria-labelledby="queue-title">
+          <div class="page-head"><div><h1 id="queue-title">待我确认</h1><div class="muted">先看结果，再决定是否成为正式版本。</div></div><button data-go="project">返回项目</button></div>
+          <div class="candidate-list">
+            <article class="card candidate ready"><div><span class="status">待确认</span><h3>增加最近跟进时间与状态筛选</h3><div class="muted">张晓 · 基于 v12 · 候选已通过入口校验</div></div><button class="primary" data-go="review">查看效果</button></article>
+            <article class="card candidate stale"><div><span class="status" style="background:#fff4e5;color:var(--warn)">已过期</span><h3>调整客户等级标签颜色</h3><div class="muted">基于 v11；当前已经是 v12，不能直接采用</div></div><button data-go="stale">查看处理方式</button></article>
+          </div>
+        </section>
+
+        <section class="page" id="review" data-view="review" aria-labelledby="review-title">
+          <div class="page-head"><div><h1 id="review-title">候选：增加最近跟进时间</h1><div class="muted">当前正式版本仍为 v12</div></div><button data-go="queue">返回列表</button></div>
+          <div class="card review">
+            <div class="review-info stack"><span class="status">可以采用</span><h3>修改目标</h3><p>增加“最近跟进时间”列，并支持按跟进状态筛选。</p><dl><dt>发起人</dt><dd>张晓</dd><dt>基础版本</dt><dd>v12</dd><dt>候选检查</dt><dd>入口与静态资源通过</dd></dl><div class="hint">采用后生成正式版本 v13；其他仍基于 v12 的候选会变为已过期。</div><div class="footer-action"><button class="danger" id="reject">退回</button><button class="primary" id="adopt">采用候选</button></div></div>
+            <div class="review-preview"><div class="screen">候选预览 · 已增加跟进时间列和筛选器</div></div>
+          </div>
+        </section>
+
+        <section class="page" id="done" data-view="done" aria-labelledby="done-title">
+          <div class="page-head"><div><h1 id="done-title">候选已采用</h1><div class="muted">客户列表现在使用正式版本 v13</div></div></div>
+          <div class="card" style="max-width:720px;padding:28px"><div class="success"><strong>更新完成</strong><br>新的正式版本已可预览，原 v12 仍保留在版本历史中。</div><div class="footer-action"><button class="primary" data-go="project">查看正式版本</button></div></div>
+        </section>
+
+        <section class="page" id="stale" data-view="stale" aria-labelledby="stale-title">
+          <div class="page-head"><div><h1 id="stale-title">这个候选已经过期</h1><div class="muted">它基于 v11，而当前正式版本是 v12。</div></div></div>
+          <div class="card" style="max-width:720px;padding:28px"><div class="alert"><strong>当前版本没有受到影响</strong><br>为避免覆盖其他人的更新，这个候选不能采用。</div><p>请基于最新版重新发起修改。原候选会保留为记录，但不会进入正式版本。</p><div class="footer-action"><button data-go="queue">返回列表</button><button class="primary" data-go="request">基于最新版重新发起</button></div></div>
+        </section>
+      </section>
+    </main>
+  </div>
+  <script>
+    const pages = [...document.querySelectorAll('.page')];
+    function show(id){ pages.forEach(p => p.classList.toggle('active', p.id === id)); document.getElementById(id)?.querySelector('h1')?.focus?.(); }
+    document.addEventListener('click', e => { const target=e.target.closest('[data-go]'); if(target) show(target.dataset.go); });
+    document.getElementById('create-task').addEventListener('click', () => { document.getElementById('request-form').hidden=true; document.getElementById('task-result').hidden=false; });
+    document.getElementById('copy-task').addEventListener('click', async e => { try { await navigator.clipboard.writeText(document.getElementById('prompt').textContent); e.target.textContent='已复制'; } catch { e.target.textContent='请手工复制'; } });
+    document.getElementById('adopt').addEventListener('click', () => show('done'));
+    document.getElementById('reject').addEventListener('click', () => { alert('候选已退回，当前正式版本保持 v12。'); show('queue'); });
+  </script>
+</body>
+</html>

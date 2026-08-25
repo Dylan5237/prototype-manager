@@ -17,22 +17,34 @@
         </el-button>
       </div>
       <div class="header-actions">
-        <el-button v-if="canEdit" text @click="openEditDialog">
-          <el-icon><Edit /></el-icon>
-          编辑
+        <el-button v-if="!prototype.project_binding && canEdit" text type="primary" @click="openDirectChangeDialog(directChange?.status === 'editing' ? directChange : null)">
+          <el-icon><MagicStick /></el-icon>
+          让 AI 修改
         </el-button>
         <el-button v-if="canEdit" text @click="openShareDialog">
           <el-icon><Share /></el-icon>
           协作
         </el-button>
-        <el-button text @click="copyShareLink">
+        <el-button text :disabled="!previewUrl" @click="copyShareLink">
           <el-icon><Link /></el-icon>
-          分享链接
+          免登录链接
         </el-button>
-        <el-button text @click="handleDownload">
-          <el-icon><Download /></el-icon>
-          下载ZIP
-        </el-button>
+        <el-dropdown v-if="canEdit" trigger="click" @command="handleHeaderCommand">
+          <el-button text class="header-more-button" aria-label="更多操作">
+            <el-icon><MoreFilled /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit">
+                <el-icon><Edit /></el-icon>编辑
+              </el-dropdown-item>
+              <el-dropdown-item command="download">
+                <el-icon><Download /></el-icon>下载 ZIP
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <!-- 让 AI 修改、协作和常用分享操作集中在同一工具区；低频信息编辑与下载收进更多菜单。 -->
       </div>
     </div>
 
@@ -60,6 +72,54 @@
         同步错误：{{ prototype.sync_error }}
       </div>
     </div>
+
+    <el-alert
+      v-if="prototype.project_binding"
+      class="project-binding-alert"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <template #title>
+        已归属项目「{{ prototype.project_binding.project_name }}」
+      </template>
+      <div class="project-binding-content">
+        <span>
+          当前原型在项目菜单中有 {{ prototype.project_binding.menu_positions?.length || 0 }} 个展示位置；归属后请在项目内发起修改。
+        </span>
+        <el-button link type="primary" @click="goToBoundProject">
+          前往项目修改
+        </el-button>
+      </div>
+    </el-alert>
+
+    <section v-if="!prototype.project_binding && canEdit && directChange && directChange.status !== 'cancelled'" class="direct-change-card" v-loading="directChangeLoading">
+      <div class="direct-change-head">
+        <div>
+          <h3><el-icon><MagicStick /></el-icon> 让 AI 修改</h3>
+          <p>独立原型修改会先完成静态交付检查，通过后直接生成正式版本。</p>
+        </div>
+      </div>
+      <template v-if="directChange && directChange.status !== 'cancelled'">
+        <div class="direct-change-meta">
+          <span>基线 v{{ directChange.base_version_number }}</span>
+          <span>版本策略：{{ directChange.version_strategy_type === 'custom' ? `自定义 v${directChange.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</span>
+          <span v-if="directChange.status === 'editing'">修改码：{{ directChange.handoff_status === 'redeemed' ? '已领取' : directCountdownLabel }}</span>
+        </div>
+        <el-alert v-if="directChange.status === 'editing' && directChange.handoff_status === 'redeemed'" title="AI 已领取修改码，任务内容和基线已锁定，等待候选上传。" type="info" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'preview_pending'" title="候选已上传，正在整理交付状态；如预览无法加载，请让 AI 排查后重新上传。" type="info" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'invalid'" title="候选静态校验失败，正式版本未改变。请让 AI 修正后重新上传。" type="error" :closable="false" show-icon>
+          <ul class="validation-errors"><li v-for="error in directChange.validation_errors" :key="error.message || error">{{ error.message || error }}</li></ul>
+        </el-alert>
+        <el-alert v-else-if="directChange.status === 'stale'" title="基线版本已变化，当前修改未写入正式版本，请重新发起。" type="warning" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'completed'" :title="`修改已完成，正式版本已更新为 v${directChange.current_version_label || directChange.version_label || ''}`" type="success" :closable="false" show-icon />
+        <div class="direct-change-actions">
+          <el-button v-if="directChangeResult?.prompt" size="small" @click="copyDirectPrompt"><el-icon><DocumentCopy /></el-icon>复制完整提示词</el-button>
+          <el-button v-if="directChange.status === 'editing' && directChange.handoff_status !== 'redeemed'" size="small" @click="openDirectChangeDialog(directChange)">编辑并重新生成</el-button>
+          <el-button v-if="directChange.status === 'editing' && directChange.handoff_status !== 'redeemed'" size="small" type="danger" plain @click="cancelCurrentDirectChange">取消修改</el-button>
+        </div>
+      </template>
+    </section>
 
     <!-- 左右布局：左侧 Tab 导航 + 右侧内容 -->
     <div class="detail-content">
@@ -230,6 +290,41 @@
       </template>
     </el-dialog>
 
+    <el-dialog v-model="directChangeDialogVisible" :title="directChangeEditingId ? '编辑并重新生成提示词' : '让 AI 修改'" width="720px" destroy-on-close>
+      <template v-if="!directChangeResult">
+        <el-alert title="任务码有效期 10 分钟只用于首次领取；AI 领取后修改时间不受此限制。" type="info" :closable="false" show-icon />
+        <el-form label-position="top" class="direct-change-form">
+          <el-form-item label="修改要求" required>
+            <el-input v-model="directRequirement" type="textarea" :rows="7" maxlength="4000" show-word-limit placeholder="描述要修改的页面、交互、数据和验收结果。" />
+          </el-form-item>
+          <el-form-item label="版本号策略" required>
+            <el-radio-group v-model="directVersionStrategyType">
+              <el-radio label="auto">让 AI 决定版本号</el-radio>
+              <el-radio label="custom">自定义版本号</el-radio>
+            </el-radio-group>
+            <p class="form-help">AI 只能选择 major、minor 或 patch，平台负责计算准确版本号。</p>
+          </el-form-item>
+          <el-form-item v-if="directVersionStrategyType === 'custom'" label="自定义 SemVer" required>
+            <el-input v-model="directVersionStrategyValue" placeholder="例如 1.2.0" />
+            <p class="form-help">必须高于当前版本，且不能与历史版本重复。</p>
+          </el-form-item>
+        </el-form>
+      </template>
+      <template v-else>
+        <el-alert title="修改提示词已生成" type="success" :closable="false" show-icon>
+          <p>请复制完整提示词发送给已经接入伏羲的 AI 助手。领取后平台会锁定基线和版本策略。</p>
+        </el-alert>
+        <div class="task-code-row"><span>修改码</span><code>{{ directChangeResult.handoffCode }}</code></div>
+        <pre class="task-prompt">{{ directChangeResult.prompt }}</pre>
+      </template>
+      <template #footer>
+        <el-button @click="directChangeDialogVisible = false">{{ directChangeResult ? '关闭' : '取消' }}</el-button>
+        <el-button v-if="directChangeResult" @click="returnDirectChangeEdit">返回编辑</el-button>
+        <el-button v-if="directChangeResult" type="primary" @click="copyDirectPrompt">复制完整提示词</el-button>
+        <el-button v-else type="primary" :loading="directChangeSubmitting" @click="submitDirectChange">生成修改提示词</el-button>
+      </template>
+    </el-dialog>
+
     <!-- 编辑版本描述对话框 -->
     <el-dialog v-model="showVersionNoteDialog" title="编辑版本描述" width="500px">
       <el-form label-width="80px">
@@ -313,22 +408,24 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, computed, markRaw } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, onBeforeUnmount, computed, markRaw } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download } from '@element-plus/icons-vue'
+import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download, MagicStick, DocumentCopy, Edit, Share, MoreFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
 import { getGroups } from '../api/groups'
 import {
   getPrototype, downloadPrototype, getReadme, updatePrototype, getCategories,
   getVersions, rollbackVersion, deleteVersion, updateVersionNote,
-  getPrototypeShares, sharePrototype, unsharePrototype,
+  getPrototypeShares, sharePrototype, unsharePrototype, getPublicShareLink,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
+  , getCurrentDirectChange, createDirectChange, updateDirectChange, cancelDirectChange
 } from '../api/prototypes'
 
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const prototype = ref(null)
 const loading = ref(false)
@@ -378,6 +475,20 @@ const commentContent = ref('')
 const commentImages = ref([])
 const submittingComment = ref(false)
 
+// 独立原型 AI 修改
+const directChange = ref(null)
+const directChangeLoading = ref(false)
+const directChangeDialogVisible = ref(false)
+const directChangeEditingId = ref(null)
+const directChangeResult = ref(null)
+const directRequirement = ref('')
+const directVersionStrategyType = ref('auto')
+const directVersionStrategyValue = ref('')
+const directChangeSubmitting = ref(false)
+const directCountdownNow = ref(Date.now())
+let directCountdownTimer = null
+let directChangePollTimer = null
+
 const canEdit = computed(() => {
   if (!prototype.value || !authStore.user) return false
   if (authStore.isAdmin || prototype.value.created_by === authStore.user.id) return true
@@ -391,6 +502,29 @@ const previewUrl = computed(() => {
   return `/preview/${prototype.value.id}/${prototype.value.entry_file}?token=${token}`
 })
 
+const directCountdownLabel = computed(() => {
+  if (!directChange.value?.handoff_expires_at) return '已过期'
+  const remaining = Math.max(0, new Date(directChange.value.handoff_expires_at).getTime() - directCountdownNow.value)
+  if (!remaining) return '已过期，请重新生成'
+  const seconds = Math.ceil(remaining / 1000)
+  return `${Math.floor(seconds / 60)}分${String(seconds % 60).padStart(2, '0')}秒`
+})
+
+function goToBoundProject() {
+  const binding = prototype.value?.project_binding
+  if (!binding?.project_id) return
+
+  const firstMenuPosition = binding.menu_positions?.[0]
+  router.push({
+    name: 'project',
+    params: { id: binding.project_id },
+    query: {
+      prototypeId: prototype.value.id,
+      ...(firstMenuPosition?.menu_path ? { menuPath: firstMenuPosition.menu_path } : {})
+    }
+  })
+}
+
 async function loadData() {
   loading.value = true
   try {
@@ -398,11 +532,128 @@ async function loadData() {
     prototype.value = res.data.data
     loadReadme()
     loadVersions()
+    await loadDirectChange()
   } catch (err) {
     ElMessage.error('加载失败')
   } finally {
     loading.value = false
   }
+}
+
+async function loadDirectChange() {
+  clearDirectChangePollTimer()
+  if (!prototype.value || prototype.value.project_binding || !canEdit.value) {
+    directChange.value = null
+    return
+  }
+  directChangeLoading.value = true
+  try {
+    const res = await getCurrentDirectChange(prototype.value.id)
+    directChange.value = res.data.data || null
+    scheduleDirectChangePoll()
+  } catch (err) {
+    if (err.response?.status !== 409) directChange.value = null
+  } finally {
+    directChangeLoading.value = false
+  }
+}
+
+function openDirectChangeDialog(existing = null) {
+  if (prototype.value?.project_binding) return
+  directChangeEditingId.value = existing?.id || null
+  directRequirement.value = existing?.requirement || ''
+  directVersionStrategyType.value = existing?.version_strategy_type || 'auto'
+  directVersionStrategyValue.value = existing?.version_strategy_value || ''
+  directChangeResult.value = null
+  directChangeDialogVisible.value = true
+}
+
+function returnDirectChangeEdit() {
+  const result = directChangeResult.value
+  directRequirement.value = result?.change?.requirement || directRequirement.value
+  directVersionStrategyType.value = result?.change?.version_strategy_type || directVersionStrategyType.value
+  directVersionStrategyValue.value = result?.change?.version_strategy_value || directVersionStrategyValue.value
+  directChangeResult.value = null
+}
+
+async function submitDirectChange() {
+  if (!directRequirement.value.trim()) {
+    ElMessage.warning('请描述修改要求')
+    return
+  }
+  if (directVersionStrategyType.value === 'custom' && !directVersionStrategyValue.value.trim()) {
+    ElMessage.warning('请输入自定义版本号')
+    return
+  }
+  directChangeSubmitting.value = true
+  try {
+    const payload = {
+      requirement: directRequirement.value.trim(),
+      versionStrategy: {
+        type: directVersionStrategyType.value,
+        value: directVersionStrategyType.value === 'custom' ? directVersionStrategyValue.value.trim() : null
+      }
+    }
+    const res = directChangeEditingId.value
+      ? await updateDirectChange(prototype.value.id, directChangeEditingId.value, payload)
+      : await createDirectChange(prototype.value.id, payload)
+    directChangeResult.value = res.data.data
+    directChange.value = res.data.data.change
+    ElMessage.success(directChangeEditingId.value ? '提示词已重新生成' : '修改提示词已生成')
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '生成修改提示词失败')
+  } finally {
+    directChangeSubmitting.value = false
+  }
+}
+
+async function cancelCurrentDirectChange() {
+  if (!directChange.value) return
+  try {
+    await ElMessageBox.confirm('确定取消这次独立修改吗？未领取的修改码将立即失效。', '取消修改', { type: 'warning' })
+    await cancelDirectChange(prototype.value.id, directChange.value.id)
+    directChange.value = null
+    directChangeResult.value = null
+    ElMessage.success('已取消修改')
+  } catch (err) {
+    if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '取消失败')
+  }
+}
+
+function copyDirectPrompt() {
+  if (!directChangeResult.value?.prompt) return
+  fallbackCopy(directChangeResult.value.prompt, '完整提示词已复制')
+}
+
+function clearDirectChangePollTimer() {
+  if (directChangePollTimer) {
+    window.clearTimeout(directChangePollTimer)
+    directChangePollTimer = null
+  }
+}
+
+function scheduleDirectChangePoll() {
+  clearDirectChangePollTimer()
+  const current = directChange.value
+  const waitingForUpload = current?.status === 'editing' && current.handoff_status === 'redeemed'
+  if (!current || (!waitingForUpload && current.status !== 'preview_pending')) return
+  directChangePollTimer = window.setTimeout(async () => {
+    directChangePollTimer = null
+    if (!prototype.value) return
+    try {
+      const res = await getCurrentDirectChange(prototype.value.id)
+      const next = res.data.data || null
+      const previousStatus = directChange.value?.status
+      directChange.value = next
+      if (previousStatus !== 'completed' && next?.status === 'completed') {
+        await loadData()
+        return
+      }
+    } catch (err) {
+      // 状态刷新是辅助能力，失败时保留当前内容，下一轮继续尝试。
+    }
+    scheduleDirectChangePoll()
+  }, 3000)
 }
 
 async function loadReadme() {
@@ -456,6 +707,11 @@ async function handleDownload() {
   } catch (err) {
     ElMessage.error(err.response?.data?.message || '下载失败')
   }
+}
+
+function handleHeaderCommand(command) {
+  if (command === 'edit') openEditDialog()
+  if (command === 'download') handleDownload()
 }
 
 async function handleEditSubmit() {
@@ -681,16 +937,27 @@ function getStatusText(status) {
   return map[status] || status
 }
 
-function copyShareLink() {
-  const url = `${window.location.origin}/prototype/${prototype.value.id}`
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(url).then(() => {
-      ElMessage.success('分享链接已复制')
-    }).catch(() => {
-      fallbackCopy(url, '分享链接已复制')
-    })
-  } else {
-    fallbackCopy(url, '分享链接已复制')
+async function copyShareLink() {
+  if (!prototype.value) return
+  try {
+    const res = await getPublicShareLink(prototype.value.id)
+    const link = res.data.data?.url
+    if (!link) {
+      ElMessage.error('生成链接失败')
+      return
+    }
+    const fullUrl = `${window.location.origin}${link}`
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(fullUrl).then(() => {
+        ElMessage.success('免登录查看链接已复制')
+      }).catch(() => {
+        fallbackCopy(fullUrl, '免登录查看链接已复制')
+      })
+    } else {
+      fallbackCopy(fullUrl, '免登录查看链接已复制')
+    }
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '生成链接失败')
   }
 }
 
@@ -829,10 +1096,16 @@ async function handleUnshare(userId) {
 }
 
 onMounted(async () => {
+  directCountdownTimer = window.setInterval(() => { directCountdownNow.value = Date.now() }, 1000)
   await loadData()
   await loadStats()
   await loadComments()
   try { await recordVisit(route.params.id) } catch (e) {}
+})
+
+onBeforeUnmount(() => {
+  if (directCountdownTimer) window.clearInterval(directCountdownTimer)
+  clearDirectChangePollTimer()
 })
 </script><style scoped>
 .detail-view {
@@ -980,6 +1253,117 @@ onMounted(async () => {
   border-radius: 6px;
   color: #c53030;
   font-size: 13px;
+}
+
+.project-binding-alert {
+  margin-bottom: 16px;
+}
+
+.project-binding-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.direct-change-card {
+  margin-bottom: 16px;
+  padding: 18px 22px;
+  border: 1px solid #dbe5f1;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .04);
+}
+
+.direct-change-head,
+.direct-change-meta,
+.direct-change-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.direct-change-head h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 16px;
+  color: #1f2937;
+}
+
+.direct-change-head p {
+  margin: 5px 0 0;
+  color: #718096;
+  font-size: 13px;
+}
+
+.direct-change-meta {
+  justify-content: flex-start;
+  margin: 14px 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.direct-change-meta span {
+  padding-right: 12px;
+  border-right: 1px solid #e2e8f0;
+}
+
+.direct-change-meta span:last-child {
+  border-right: 0;
+}
+
+.direct-candidate-preview {
+  margin-top: 14px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+
+.direct-candidate-preview .candidate-preview {
+  width: 100%;
+  min-height: 460px;
+  display: block;
+  border: 0;
+}
+
+.direct-change-actions {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.direct-change-form {
+  margin-top: 18px;
+}
+
+.direct-change-form .form-help {
+  margin: 6px 0 0;
+  color: #718096;
+  font-size: 12px;
+}
+
+/* 长提示词必须在弹窗内换行滚动，不能把正文撑出对话框边界。 */
+.task-prompt {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(52vh, 560px);
+  margin: 16px 0 0;
+  padding: 14px;
+  overflow: auto;
+  color: #e2e8f0;
+  background: #172033;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 /* ========================================

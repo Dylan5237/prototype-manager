@@ -89,6 +89,11 @@ export function transferPrototype(id, newOwnerId) {
   return api.put(`/prototypes/${id}/transfer`, { new_owner_id: newOwnerId })
 }
 
+// 生成免登录查看链接
+export function getPublicShareLink(id) {
+  return api.get(`/prototypes/${id}/public-link`)
+}
+
 // 版本管理API
 export function getVersions(id) {
   return api.get(`/prototypes/${id}/versions`)
@@ -151,4 +156,29 @@ export function getStats(id) {
 
 export function recordVisit(id) {
   return api.post(`/prototypes/${id}/visit`)
+}
+
+// 独立原型 AI 修改（归属项目后由项目任务入口处理）
+export function getCurrentDirectChange(id) {
+  return api.get(`/prototypes/${id}/direct-changes/current`)
+}
+
+export function getDirectChange(id, changeId) {
+  return api.get(`/prototypes/${id}/direct-changes/${changeId}`)
+}
+
+export function createDirectChange(id, data) {
+  return api.post(`/prototypes/${id}/direct-changes`, data)
+}
+
+export function updateDirectChange(id, changeId, data) {
+  return api.patch(`/prototypes/${id}/direct-changes/${changeId}`, data)
+}
+
+export function cancelDirectChange(id, changeId) {
+  return api.delete(`/prototypes/${id}/direct-changes/${changeId}`)
+}
+
+export function recordDirectChangePreviewValidation(id, changeId, data) {
+  return api.post(`/prototypes/${id}/direct-changes/${changeId}/preview-validation`, data)
 }

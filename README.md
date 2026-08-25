@@ -1,174 +1,160 @@
-# 伏羲平台 — AI 原型管理平台
+# 伏羲平台 — AI 原型管理与协作平台
 
-> **AI 原型管理平台**：专门管理AI以前端项目形式生成的原型，支持产品经理上传原型项目并开放给公司团队查看、协作。
+伏羲是 AI 生成前端原型的托管、预览、版本和协作控制面，提供 Web 管理界面、后端 API 和面向 Agent 的 MCP Server。它不提供网页代码编辑器；修改由本地 IDE 或已接入的 AI Agent 完成，平台负责交付校验、候选预览、人工采用和版本保护。
+
+## 当前状态（2026-08-25）
+
+- 当前工作区为 `main`，平台代码 `1070a79` 与内网 GitLab `main` 对齐；生产发布只能从 GitLab `main` 走受控流程，GitHub `origin` 不作为生产来源。
+- 最新完整 release manifest 仍为 `20260825-162339-d4816ce4`，早于当前源码提交；本次文档收口未重新打包或部署。
+- 16077 测试入口和 16088 生产入口的 `/api/health` 均已通过本次只读探针；这只证明服务健康，不等于本次完成生产发布或完整用户验收。
+- 当前主流程是“创建/修改原型 → 校验并交付 → 预览/回读”；项目协作使用“任务码 → 候选 ZIP → 独立预览 → 负责人采用/退回 → 基础版本 CAS”闭环。
+- Git/GitLab 分支、MR 和源码自动合并方案保留为历史设计；Git provider 的真实外部环境验收仍待配置，不是轻协作 MVP 的默认路径。
 
 ## 快速访问
 
-| 服务 | 地址 | 说明 |
+| 服务 | 地址 / 入口 | 说明 |
 |---|---|---|
-| 管理平台 | http://localhost:3000 | 前端界面 |
-| 后端API | http://localhost:3001 | API服务 |
-| 默认账号 | `admin / admin123` | 首次登录使用 |
-| 访客账号 | `user / 111111` | 免登录分享链接自动使用 |
-
-## 手动重启服务
-
-```bash
-# 后端（端口3001）
-cd prototype-manager/backend
-node server.js
-
-# 前端（端口3000）
-cd prototype-manager/frontend
-npm run dev
-```
-
-## 核心功能
-
-### P0 — 基础能力（已实现）
-
-| 功能 | 说明 |
-|---|---|
-| **用户认证** | JWT + bcrypt 账号密码登录，支持管理员/上传者/查看者三种角色 |
-| **权限控制** | 细粒度权限：查看者只能浏览，上传者可管理自己的原型，管理员拥有全部权限 |
-| **SQLite持久化** | 纯JavaScript实现（sql.js），零配置、单文件数据库，自动迁移旧JSON数据 |
-
-### P1 — 管理增强（已实现）
-
-| 功能 | 说明 |
-|---|---|
-| **原型管理** | 创建原型、删除；原型文件统一由 `.agents/skills/fuxi-packager` Skill 打包上传 |
-| **ZIP 下载** | 原型详情页一键下载当前版本源码 ZIP |
-| **分类系统** | 支持按业务线/产品线分类，首页可筛选 |
-| **搜索功能** | 按原型名称、描述实时搜索 |
-| **网页预览** | 自动注入`<base>`标签+路径转换，在新页签中完整预览可交互网页 |
-| **源码查看** | 项目文件树浏览，点击文件查看源码 |
-| **设计文档** | 自动提取项目中的README.md，在"设计文档"Tab中渲染展示 |
-| **用户管理** | 管理员可创建用户、分配角色；支持用户组批量管理 |
-
-### P2 — 协作深化（已实现）
-
-| 功能 | 说明 |
-|---|---|
-| **协作成员** | "协作"取代"分享"，被加入协作者的用户对该原型拥有读写权限 |
-| **用户组批量协作** | 管理员可创建用户组，将原型批量协作给整组 |
-| **评论反馈** | 已登录用户可在原型下留言，支持 Ctrl+V 粘贴图片，支持删除自己的评论 |
-| **版本历史** | 每次 Skill 上传自动生成新版本，支持回滚和删除，保留最近10个版本 |
-| **访问统计** | 记录浏览次数，展示总次数/近7天/近30天趋势 |
-| **免登录分享链接** | `/prototype/:id` 链接复制给他人，未登录自动以 `user / 111111` 访客身份进入并查看原型 |
-
-### P3 — 进阶优化（规划中）
-
-| 功能 | 说明 |
-|---|---|
-| **自动构建** | 上传源码ZIP后自动执行`npm install && npm run build` |
-| **收藏关注** | 用户标记常用原型，个人工作台快捷入口 |
-| **批量操作** | 批量上传、批量分类、批量删除 |
-
-## 技术架构
-
-```
-伏羲平台/
-├── backend/              # Node.js + Express 后端
-│   ├── database/         # SQLite 数据库层（sql.js）
-│   ├── middleware/       # JWT认证 + 权限中间件
-│   ├── routes/           # API路由（认证/原型/预览/评论/统计）
-│   ├── services/         # 业务逻辑层（数据库操作/GitHub同步/README提取/评论/统计）
-│   └── server.js         # 服务入口
-│
-├── frontend/             # Vue 3 + Vite + Element Plus
-│   ├── src/views/        # 页面（登录/首页/详情/用户管理）
-│   ├── src/stores/       # Pinia 全局状态（认证）
-│   ├── src/api/          # API封装（自动携带Token）
-│   └── public/           # 静态资源（favicon.svg）
-│
-└── .agents/skills/fuxi-packager/  # 打包上传技能
-    ├── SKILL.md          # 技能说明
-    └── pack-and-upload.js # 一键打包上传脚本
-```
-
-## 权限矩阵
-
-| 操作 | 管理员 | 上传者 | 协作者 | 查看者 |
-|---|---|---|---|---|
-| 查看原型/预览/源码/README/下载 ZIP | ✅ | ✅ | ✅ | ✅ |
-| 创建原型 | ✅ | ✅ | ❌ | ❌ |
-| 修改/删除自己的原型 | ✅ | ✅ | ❌ | ❌ |
-| 修改/删除他人的原型 | ✅ | ❌ | ❌ | ❌ |
-| 管理被协作的原型（编辑/上传/版本） | ✅ | ✅（仅限创建者） | ✅ | ❌ |
-| 管理协作者/用户组 | ✅ | ✅（仅限创建者） | ❌ | ❌ |
-| 管理分类/用户/用户组 | ✅ | ❌ | ❌ | ❌ |
-
-> 注："协作者"不是全局角色，而是由原型创建者或管理员通过"协作成员"添加到单个原型的用户。
+| 本地前端 | <http://localhost:3000> | Vite 开发服务 |
+| 本地后端 | <http://localhost:3001> | Express API；健康检查 `/api/health` |
+| 测试环境 | <http://192.168.2.145:16077> | 隔离测试环境，发布前先验证 |
+| 生产环境 | <http://192.168.2.145:16088> | 内网 Nginx 入口；发布需单独确认 |
+| MCP Server | [`mcp-server/`](mcp-server/) | Agent 的 stdio 结构化操作入口 |
 
 ## 快速开始
 
-### 1. 启动后端
+要求 Node.js `>=18`。
+
+### 启动后端
 
 ```bash
-cd prototype-manager/backend
+cd backend
 npm install
 npm start
-# 默认端口 3001
 ```
 
-首次启动会自动：
-- 创建SQLite数据库（`data/app.db`）
-- 创建默认管理员账号：`admin / admin123`
-- 迁移旧JSON数据（如有）
+首次启动会创建 SQLite 数据库和运行目录：`backend/data/app.db`、`backend/repos/`、`backend/uploads/`。开发数据库会按代码初始化本地账号；生产环境不要依赖内置凭证，首次登录后立即通过用户管理修改账号信息。密码、token 和密钥不写入 README、脚本或 Git。
 
-### 2. 启动前端
+### 启动前端
 
 ```bash
-cd prototype-manager/frontend
+cd frontend
 npm install
 npm run dev
-# 默认端口 3000
 ```
 
-### 3. 访问系统
+打开 <http://localhost:3000>。前端开发服务默认将 API 请求发往 `http://localhost:3001`。
 
-打开 http://localhost:3000，使用默认账号登录。
+### 接入 MCP
 
+本地直接启动：
 
+```bash
+cd mcp-server
+npm start
+```
 
-## 数据库Schema
+推荐在平台登录后点击“接入平台 MCP”，把生成的提示词交给 AI 客户端。客户端按自身原生机制安装 Skill、配置 MCP，并使用一次性连接码完成首次接入；后续通过本地凭据文件刷新会话。
 
-### 核心表
+MCP 连接变量：
 
-- `users` — 用户（id, username, password_hash, nickname, role）
-- `categories` — 分类（id, name, description）
-- `prototypes` — 原型（id, name, description, github_url, entry_file, category_id, created_by, sync_status, visit_count）
-- `prototype_tags` — 标签关联（prototype_id, tag_name）
-- `prototype_versions` — 版本历史（id, prototype_id, version_number, version_label, file_path, entry_file, note, created_at）
-- `prototype_shares` — 协作者关联（prototype_id, user_id, created_at）
-- `user_groups` — 用户组（id, name, description, created_at）
-- `user_group_members` — 用户组成员（group_id, user_id, created_at）
-- `readme_cache` — README缓存（prototype_id, content, file_path）
-- `comments` — 评论反馈（id, prototype_id, user_id, content, images, parent_id, created_at）
-- `comment_images` — 评论图片（id, comment_id, filename, original_name, created_at）
-- `prototype_visits` — 访问记录（id, prototype_id, visitor_ip, user_id, visited_at）
-
-## 配置说明
-
-| 环境变量 | 说明 | 默认值 |
+| 变量 | 用途 | 默认 / 说明 |
 |---|---|---|
-| `PORT` | 后端服务端口 | `3001` |
-| `JWT_SECRET` | JWT密钥（生产环境必须修改） | `fuxi-secret-key-change-in-production` |
+| `FUXI_API_URL` | 伏羲后端地址 | `http://localhost:3001` |
+| `FUXI_CONNECT_CODE` | 首次接入的一次性连接码 | 推荐方式，不写入仓库 |
+| `FUXI_CREDENTIALS_FILE` | 本地 refresh token 文件 | `~/.fuxi/mcp-credentials.json` |
+| `FUXI_TOKEN` | 兼容旧流程的短期 token | 不自动刷新 |
+| `FUXI_USERNAME` / `FUXI_PASSWORD` | 无连接码或 refresh token 时的兼容登录 | 仅放在当前进程环境 |
+| `FUXI_INSTALL_ROOT` | MCP/Skill 本地运行时根目录 | `~/.fuxi/agent-runtime` |
 
-## 注意事项
+完整工具清单、结果字段、错误码和接入方式见 [`mcp-server/README.md`](mcp-server/README.md)。当前源码提供 30 个 MCP 工具。
 
-1. **JWT Secret**：生产部署时务必通过环境变量设置强密钥
-2. **密码安全**：首次部署后建议立即修改默认管理员密码
-3. **README提取**：Skill 上传后自动扫描 `README.md` / `readme.md` / `docs/README.md`
-4. **后端重启生效**：涉及数据库表结构、权限判断的修改（如协作者、用户组、分享链接访问）需要重启后端服务才能生效
-5. **SQLite限制**：单进程安全，未来如需多进程部署建议迁移至PostgreSQL/MySQL
+## 当前能力
 
-## 更新日志
+### 原型管理
 
-| 版本 | 内容 |
+- 用户认证、平台管理员/编辑者/查看者权限、用户组和分类管理。
+- 原型创建、ZIP 校验/上传/下载、版本历史、版本备注、回滚、回收站和归属转移。
+- 原型预览、源码文件查看、README 提取与渲染、评论、图片附件、访问统计和免登录分享链接。
+- `deliver_project` 是推荐的 Agent 交付入口：支持创建、更新和项目绑定更新，并带幂等键、版本/入口文件保护和强制回读。
+
+### 项目与轻协作
+
+- 项目门户、菜单配置、原型绑定、项目成员、签出/签入、快照和恢复。
+- 项目成员可以发起一次性 AI 修改任务；Agent 下载当前源码并上传候选 ZIP。
+- 候选先独立校验和预览，不改变当前原型；项目负责人或平台管理员显式采用后才生成正式版本。
+- 采用时比较基础版本与当前版本；版本变化会拒绝旧候选并标记为过期，不自动合并。
+
+### MCP / Skill 分发与更新
+
+- 首页接入提示词包含 Skill 与 MCP 的受控下载地址，使用短期 token 和一次性连接码。
+- MCP 会话支持 refresh token 轮换、撤销和版本心跳。
+- 管理员可发布不可变 MCP/Skill release；稳定 launcher 在 AI 客户端下次启动前执行下载、摘要校验、Smoke、原子切换和失败回滚。
+- 更新闭环的代码和本地集成测试已具备；真实设备/16077 重启验收仍按发布技能单独核对。
+
+## 明确不属于当前默认合同
+
+- 不提供网页代码编辑器、实时共同编辑、CRDT 或通用任务看板。
+- 轻协作 MVP 不依赖外部 Git 仓库、分支、MR、服务账号或源码自动合并。
+- 自动构建、收藏、批量操作、Fork、文件级 Diff 和模板市场仍未实现；不要把旧规划文档中的目标当成已提供能力。
+
+## 仓库结构
+
+```text
+FuxiPlatform/
+├── backend/                         # Node.js + Express + sql.js
+│   ├── database/                    # SQLite schema、迁移与串行写入
+│   ├── routes/                      # auth/prototypes/projects/integrations 等 API
+│   ├── services/                    # 权限、协作、交付、版本和发布服务
+│   └── server.js                    # 后端入口
+├── frontend/                        # Vue 3 + Vite + Element Plus + Pinia
+├── mcp-server/                      # stdio MCP 源码、校验/打包和 launcher
+├── docs/                            # 技术设计、迭代证据和当前 MVP 设计
+└── ops/skills/fuxi-platform-release/ # 只读预检、构建、测试发布和回滚技能
+```
+
+运行数据、上传原型、备份和 release 产物默认不纳入 Git：`backend/data/`、`backend/repos/`、`backend/uploads/`、`.backup/`、`.release/`。
+
+## 本地验证
+
+```bash
+cd backend
+npm test
+
+cd ../frontend
+npm run build
+
+cd ../mcp-server
+npm run check
+npm run test:integration
+npm run test:remote-update
+```
+
+后端测试串行执行协作、项目绑定、直接修改、Agent 更新和公告回归；MCP 集成测试使用隔离临时后端，当前会核对 30 个工具及安全交付、连接码/刷新会话和项目协作路径。测试通过只代表本地代码证据，不替代真实 16077、16088 或 GitLab 验收。
+
+## 配置与发布
+
+后端常用变量：
+
+| 变量 | 用途 |
 |---|---|
-| v1.0 | MVP：原型上传、GitHub同步、网页预览、源码查看 |
-| v1.1 | P0+P1：用户认证、权限控制、SQLite持久化、分类/搜索、README设计文档、用户管理、品牌升级（伏羲平台） |
-| v1.2 | P2：评论反馈（支持图片）、版本历史（自动备份/回滚）、访问统计 |
-| v1.3 | 协作权限重构：前端上传入口统一为 Skill、新增 ZIP 下载、"分享"改为"协作"（协作者可读写）、用户组批量协作、免登录分享链接 |
+| `PORT` | 后端端口，默认 `3001` |
+| `FUXI_DB_PATH` | 可选 SQLite 文件路径，默认 `backend/data/app.db` |
+| `JWT_SECRET` | JWT 签名密钥；生产必须通过安全环境注入强随机值 |
+| `FUXI_SKILL_DIR` | 可分发的 `fuxi-prototype` Skill 目录，必须包含 `SKILL.md` |
+| `FUXI_MCP_DIR` | 可分发的 MCP 目录，默认仓库内 `mcp-server/` |
+
+发布规则：
+
+1. 测试环境使用 `ops/skills/fuxi-platform-release/quick-deploy-test.ps1`，走 `-Lightweight` 并部署到隔离的 16077。
+2. 生产环境只使用 `deploy-production-from-gitlab.ps1`，从两个仓库的 `main` 新鲜构建，完成完整 build/check/integration 门禁后才可切换 16088。
+3. 生产上传、切换、回滚和备份清理都需要当前会话的明确确认；不要运行旧的 `update-intranet.sh`。
+
+详见 [`ops/skills/fuxi-platform-release/SKILL.md`](ops/skills/fuxi-platform-release/SKILL.md)、[`OPERATION_MANUAL.md`](OPERATION_MANUAL.md) 和 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)。
+
+## 权威文档
+
+- [`mcp-server/README.md`](mcp-server/README.md)：MCP 配置、30 个工具、统一结果和本地验证。
+- [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)：平台边界、数据模型、交付与运行约束。
+- [`docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md`](docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md)：当前轻协作 MVP 的产品决策和验收边界。
+- [`docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`](docs/MCP_SKILLS_EVOLUTION_JOURNEY.md)：带日期的阶段历史和证据；历史数字不自动代表当前运行态。
+- [`ops/skills/fuxi-platform-release/PRODUCTION_RELEASE.md`](ops/skills/fuxi-platform-release/PRODUCTION_RELEASE.md)：测试/生产发布入口和确认门禁。

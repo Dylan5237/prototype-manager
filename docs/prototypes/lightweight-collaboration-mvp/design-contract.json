@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "project_name": "伏羲轻协作 MVP",
+  "artifact_files": {
+    "summary": "DESIGN_SUMMARY.md",
+    "detail": "FULL_DESIGN.md",
+    "prototype": "index.html"
+  },
+  "required_terms": [
+    "伏羲轻协作 MVP",
+    "候选版本",
+    "基础版本",
+    "采用",
+    "过期"
+  ],
+  "prohibited_visible_terms": [
+    "GitLab",
+    "Merge Request",
+    "Webhook"
+  ],
+  "not_applicable_diagrams": {},
+  "thresholds": {
+    "summary_units_min": 500,
+    "summary_units_max": 1800,
+    "detail_units_min": 5000,
+    "detail_units_max": 30000,
+    "detail_h2_min": 20,
+    "detail_h2_max": 36,
+    "tables_min": 5,
+    "mermaid_min": 6,
+    "mermaid_max": 10,
+    "prototype_views_min": 3,
+    "prototype_views_max": 9,
+    "primary_actions_per_view_max": 1
+  }
+}

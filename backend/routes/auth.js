@@ -1,26 +1,37 @@
 const express = require('express');
 const router = express.Router();
 const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
-const { createUser, findUserByUsername, findUserById, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
+const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
+const { setGroupMembers } = require('../services/db-groups');
+const { CONNECT_CODE_TTL_MS, createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
+const { AgentUpdateError, reportSessionRuntime } = require('../services/db-agent-updates');
 
+// uploader 与 editor 等价，数据库统一保存为 uploader，显示层统一展示为「编辑者」
 const VALID_ROLES = ['admin', 'uploader', 'viewer'];
+const MCP_ACCESS_TTL_SECONDS = 60 * 60;
+
+function normalizeRoles(role) {
+  const arr = Array.isArray(role) ? role : [role];
+  return arr.map(r => r === 'editor' ? 'uploader' : r);
+}
 
 // 登录
 router.post('/login', (req, res) => {
-  const { username, password } = req.body;
+  const { password } = req.body;
+  const username = String(req.body.username || '').trim().toLowerCase();
   if (!username || !password) {
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
   }
-  
+
   const user = findUserByUsername(username);
   if (!user) {
     return res.status(401).json({ success: false, message: '账号或密码错误' });
   }
-  
+
   if (!verifyPassword(user, password)) {
     return res.status(401).json({ success: false, message: '账号或密码错误' });
   }
-  
+
   const token = generateToken(user);
   res.json({
     success: true,
@@ -36,27 +47,59 @@ router.post('/login', (req, res) => {
   });
 });
 
-// 注册（仅admin）
-router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
+function createManagedUser(req, res) {
   const { username, password, nickname, role } = req.body;
   if (!username || !password) {
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
   }
-  
+
   if (password.length < 4) {
     return res.status(400).json({ success: false, message: '密码至少4位' });
   }
-  
+
+  const { groupIds } = req.body;
+
   // role 支持数组和单值
-  const roleArray = Array.isArray(role) ? role : [role || 'viewer'];
+  const roleArray = normalizeRoles(Array.isArray(role) ? role : [role || 'viewer']);
   const invalidRole = roleArray.find(r => !VALID_ROLES.includes(r));
   if (invalidRole) {
     return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
   }
-  
+
   try {
     const user = createUser({ username, password, nickname, role: roleArray });
-    res.json({ success: true, data: user });
+    if (groupIds !== undefined) {
+      setGroupMembers(user.id, Array.isArray(groupIds) ? groupIds : []);
+    }
+    res.json({ success: true, data: findUserByIdWithGroups(user.id) });
+  } catch (err) {
+    if (err.message && err.message.includes('UNIQUE constraint failed')) {
+      return res.status(400).json({ success: false, message: '账号已存在' });
+    }
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+// 自助注册：账号保存为小写，默认获得普通编辑权限，不接受客户端传入角色。
+router.post('/register', (req, res) => {
+  const username = String(req.body.username || '').trim().toLowerCase();
+  const { password, passwordConfirmation, nickname } = req.body;
+  if (!/^[a-z][a-z0-9]*$/.test(username)) {
+    return res.status(400).json({ success: false, message: '账号必须以字母开头，只含英文字母和数字' });
+  }
+  if (!password || password !== passwordConfirmation) {
+    return res.status(400).json({ success: false, message: '密码不能为空，且两次输入必须一致' });
+  }
+  try {
+    const user = createUser({ username, password, nickname: String(nickname || '').trim() || username, role: ['uploader'] });
+    const token = generateToken(user);
+    res.status(201).json({
+      success: true,
+      data: {
+        token,
+        user: { id: user.id, username: user.username, nickname: user.nickname, role: user.role }
+      }
+    });
   } catch (err) {
     if (err.message && err.message.includes('UNIQUE constraint failed')) {
       return res.status(400).json({ success: false, message: '账号已存在' });
@@ -65,13 +108,159 @@ router.post('/register', requireAuth, requireRole(['admin']), (req, res) => {
   }
 });
 
+// 管理员代建用户，保留原有角色和用户组配置能力。
+router.post('/users', requireAuth, requireRole(['admin']), createManagedUser);
+
 // 获取当前用户
 router.get('/me', requireAuth, (req, res) => {
-  const user = findUserById(req.user.id);
+  const user = findUserByIdWithGroups(req.user.id);
   if (!user) {
     return res.status(401).json({ success: false, message: '用户不存在' });
   }
   res.json({ success: true, data: user });
+});
+
+// 生成短期 MCP 接入 token，避免用户向 AI 助手提供长期 JWT 或账号密码
+router.get('/mcp-token', requireAuth, (req, res) => {
+  const user = findUserById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, message: '用户不存在' });
+  }
+  const expiresInSeconds = 60 * 60; // 1 小时
+  const token = generateToken(user, { expiresIn: `${expiresInSeconds}s` });
+  res.json({
+    success: true,
+    data: {
+      token,
+      expiresIn: expiresInSeconds,
+      expiresAt: new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+    }
+  });
+});
+
+// 生成一次性 MCP 连接码。用户在平台发起接入时调用，返回短命单次使用的连接码。
+router.post('/mcp/connect-code', requireAuth, (req, res) => {
+  const user = findUserById(req.user.id);
+  if (!user) {
+    return res.status(401).json({ success: false, message: '用户不存在' });
+  }
+  const { code, expiresAt } = createConnectCode(user.id);
+  res.json({
+    success: true,
+    data: { code, expiresAt, expiresIn: CONNECT_CODE_TTL_MS / 1000 }
+  });
+});
+
+// 用一次性连接码兑换 access token + refresh token，并登记设备会话。
+router.post('/mcp/connect', (req, res) => {
+  const { code, deviceLabel } = req.body || {};
+  const consumed = consumeConnectCode(code);
+  if (!consumed.ok) {
+    const statusByReason = {
+      MISSING_CODE: 400,
+      INVALID_CODE: 401,
+      CODE_ALREADY_USED: 409,
+      CODE_EXPIRED: 401
+    };
+    return res.status(statusByReason[consumed.reason] || 401).json({
+      success: false,
+      code: consumed.reason,
+      message: consumed.reason === 'INVALID_CODE' || consumed.reason === 'MISSING_CODE' ? '连接码无效' :
+        consumed.reason === 'CODE_ALREADY_USED' ? '连接码已被使用' : '连接码已过期'
+    });
+  }
+  const user = findUserById(consumed.userId);
+  if (!user) {
+    return res.status(401).json({ success: false, code: 'INVALID_CODE', message: '用户不存在' });
+  }
+  const session = createSession(user.id, deviceLabel);
+  const accessToken = generateToken(user, { expiresIn: `${MCP_ACCESS_TTL_SECONDS}s` });
+  res.json({
+    success: true,
+    data: {
+      accessToken,
+      refreshToken: session.refreshToken,
+      sessionId: session.id,
+      expiresIn: MCP_ACCESS_TTL_SECONDS,
+      expiresAt: new Date(Date.now() + MCP_ACCESS_TTL_SECONDS * 1000).toISOString(),
+      sessionExpiresAt: session.expiresAt
+    }
+  });
+});
+
+// 用 refresh token 换新 access token，refresh token 轮换并滑动延长会话有效期。
+router.post('/mcp/refresh', (req, res) => {
+  const { refreshToken, deviceLabel } = req.body || {};
+  const rotated = rotateSession(refreshToken, deviceLabel);
+  if (!rotated.ok) {
+    return res.status(401).json({
+      success: false,
+      code: rotated.reason,
+      message: rotated.reason === 'SESSION_REVOKED' ? '会话已撤销' :
+        rotated.reason === 'SESSION_EXPIRED' ? '会话已过期，请重新接入' :
+        'refresh token 无效'
+    });
+  }
+  const user = findUserById(rotated.userId);
+  if (!user) {
+    return res.status(401).json({ success: false, code: 'INVALID_REFRESH_TOKEN', message: '用户不存在' });
+  }
+  const accessToken = generateToken(user, { expiresIn: `${MCP_ACCESS_TTL_SECONDS}s` });
+  res.json({
+    success: true,
+    data: {
+      accessToken,
+      refreshToken: rotated.refreshToken,
+      sessionId: rotated.sessionId,
+      expiresIn: MCP_ACCESS_TTL_SECONDS,
+      expiresAt: new Date(Date.now() + MCP_ACCESS_TTL_SECONDS * 1000).toISOString(),
+      sessionExpiresAt: rotated.expiresAt
+    }
+  });
+});
+
+// MCP 启动/刷新后回报本地组件版本；服务端只返回可用更新摘要，不返回任何凭据。
+router.post('/mcp/heartbeat', requireAuth, (req, res) => {
+  try {
+    const { sessionId, mcpVersion, skillVersion, runtimeVersion, platform } = req.body || {};
+    const data = reportSessionRuntime({
+      userId: req.user.id,
+      sessionId,
+      mcpVersion,
+      skillVersion,
+      runtimeVersion,
+      platform
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    const status = error instanceof AgentUpdateError ? error.status : 500;
+    res.status(status).json({
+      success: false,
+      code: error.code || 'MCP_HEARTBEAT_FAILED',
+      message: error.message || 'MCP 版本回报失败'
+    });
+  }
+});
+
+// 查看 MCP 连接情况：admin 看全部，普通用户只看自己的。
+router.get('/mcp/sessions', requireAuth, (req, res) => {
+  const isAdmin = (req.user.roles || []).includes('admin');
+  const sessions = listSessions(isAdmin ? null : req.user.id);
+  res.json({ success: true, data: sessions });
+});
+
+// 撤销一条 MCP 会话：admin 可撤销任意，普通用户只能撤销自己的。
+router.delete('/mcp/sessions/:id', requireAuth, (req, res) => {
+  const isAdmin = (req.user.roles || []).includes('admin');
+  const result = revokeSession(req.params.id, isAdmin ? null : req.user.id);
+  if (!result.ok) {
+    return res.status(result.reason === 'SESSION_NOT_FOUND' ? 404 : 403).json({
+      success: false,
+      code: result.reason,
+      message: result.reason === 'SESSION_NOT_FOUND' ? '会话不存在' : '无权撤销该会话'
+    });
+  }
+  res.json({ success: true, message: '会话已撤销' });
 });
 
 // 用户列表（仅admin）
@@ -91,7 +280,7 @@ router.get('/users/search', requireAuth, (req, res) => {
 // 更新用户（仅admin）
 router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
   console.log('[PUT /users/:id] params:', req.params, 'body:', req.body);
-  const { nickname, role, password } = req.body;
+  const { nickname, role, password, groupIds } = req.body;
   const userId = parseInt(req.params.id);
 
   const user = findUserById(userId);
@@ -101,7 +290,7 @@ router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
 
   // role 支持数组和单值
   if (role !== undefined) {
-    const roleArray = Array.isArray(role) ? role : [role];
+    const roleArray = normalizeRoles(Array.isArray(role) ? role : [role]);
     const invalidRole = roleArray.find(r => !VALID_ROLES.includes(r));
     if (invalidRole) {
       return res.status(400).json({ success: false, message: `无效的角色: ${invalidRole}` });
@@ -113,8 +302,11 @@ router.put('/users/:id', requireAuth, requireRole(['admin']), (req, res) => {
   }
 
   try {
-    const updated = updateUser(userId, { nickname, role: role || user.role, password });
-    res.json({ success: true, data: updated });
+    const updated = updateUser(userId, { nickname, role: role !== undefined ? role : user.role, password });
+    if (groupIds !== undefined) {
+      setGroupMembers(userId, Array.isArray(groupIds) ? groupIds : []);
+    }
+    res.json({ success: true, data: findUserByIdWithGroups(userId) });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

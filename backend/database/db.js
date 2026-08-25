@@ -1,17 +1,28 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
+const { applyCollaborationSchema } = require('./collaboration-schema');
 
-const DB_PATH = path.join(__dirname, '../data/app.db');
+const DEFAULT_DB_PATH = path.join(__dirname, '../data/app.db');
 
 let db = null;
 let SQL = null;
+let activeDbPath = DEFAULT_DB_PATH;
+let persistDatabase = true;
+let transactionDepth = 0;
+let writeQueue = Promise.resolve();
 
-async function initDatabase() {
+async function initDatabase(options = {}) {
   SQL = await initSqlJs();
+  if (db) {
+    db.close();
+    db = null;
+  }
+  activeDbPath = path.resolve(options.path || process.env.FUXI_DB_PATH || DEFAULT_DB_PATH);
+  persistDatabase = options.persist !== false;
   
-  if (fs.existsSync(DB_PATH)) {
-    const filebuffer = fs.readFileSync(DB_PATH);
+  if (fs.existsSync(activeDbPath)) {
+    const filebuffer = fs.readFileSync(activeDbPath);
     db = new SQL.Database(filebuffer);
   } else {
     db = new SQL.Database();
@@ -206,6 +217,221 @@ function createTables() {
       UNIQUE(group_id, user_id)
     )
   `);
+
+  // 项目表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS projects (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      menu_config TEXT,
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT DEFAULT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
+  // 项目-原型关联表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_prototypes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      prototype_id TEXT NOT NULL,
+      menu_path TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE,
+      UNIQUE(project_id, prototype_id, menu_path)
+    )
+  `);
+
+  // 项目成员表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      role TEXT NOT NULL DEFAULT 'editor',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(project_id, user_id)
+    )
+  `);
+
+  // 项目签出表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_checkouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      project_prototype_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      checked_out_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      note TEXT,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (project_prototype_id) REFERENCES project_prototypes(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // 项目快照表
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      version_label TEXT,
+      snapshot_data TEXT NOT NULL,
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
+  // 原型分享短链表（免登录查看链接）
+  db.run(`
+    CREATE TABLE IF NOT EXISTS share_links (
+      code TEXT PRIMARY KEY,
+      prototype_id TEXT NOT NULL,
+      entry_file TEXT NOT NULL,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id) ON DELETE CASCADE
+    )
+  `);
+  // 为已存在的旧库补建索引（若表已存在则跳过）
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_share_links_prototype ON share_links(prototype_id)`); } catch (e) {}
+
+  // MCP 设备会话表：记录一次已授权的 MCP 接入，refresh token 只存哈希
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mcp_sessions (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      refresh_token_hash TEXT NOT NULL,
+      device_label TEXT,
+      created_at TEXT NOT NULL,
+      last_used_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      mcp_version TEXT,
+      skill_version TEXT,
+      runtime_version TEXT,
+      platform TEXT,
+      last_reported_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
+  // 迁移：为旧 MCP 会话补上本地组件版本回报字段。
+  for (const [column, type] of [
+    ['mcp_version', 'TEXT'],
+    ['skill_version', 'TEXT'],
+    ['runtime_version', 'TEXT'],
+    ['platform', 'TEXT'],
+    ['last_reported_at', 'TEXT']
+  ]) {
+    try { db.run(`ALTER TABLE mcp_sessions ADD COLUMN ${column} ${type}`); } catch (e) { /* 字段已存在 */ }
+  }
+
+  // MCP 一次性连接码表：用户在平台发起接入时生成，短命且单次使用
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mcp_connect_codes (
+      code_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
+  // MCP/Skill 发布清单：release_id 不复用，制品摘要和兼容条件随 manifest 固定。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS agent_releases (
+      release_id TEXT PRIMARY KEY,
+      channel TEXT NOT NULL DEFAULT 'stable',
+      mcp_version TEXT NOT NULL,
+      skill_version TEXT NOT NULL,
+      api_schema_version TEXT,
+      min_node_version TEXT,
+      manifest_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'published',
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      published_at TEXT NOT NULL,
+      withdrawn_at TEXT,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+
+  // 用户确认的延后更新意图：浏览器只写 scheduled，launcher 启动时 claim。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS agent_update_intents (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      session_id TEXT NOT NULL,
+      release_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'scheduled',
+      requested_at TEXT NOT NULL,
+      started_at TEXT,
+      finished_at TEXT,
+      local_mcp_version TEXT,
+      local_skill_version TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (session_id) REFERENCES mcp_sessions(id),
+      FOREIGN KEY (release_id) REFERENCES agent_releases(release_id)
+    )
+  `);
+
+  // 平台更新公告：公告内容与 MCP/Skill 更新意图分离，用户已读状态按账号记录。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS platform_announcements (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      summary TEXT,
+      body TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'feature',
+      version TEXT,
+      status TEXT NOT NULL DEFAULT 'published',
+      auto_popup INTEGER NOT NULL DEFAULT 1,
+      published_at TEXT,
+      created_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `);
+  try { db.run(`ALTER TABLE platform_announcements ADD COLUMN auto_popup INTEGER NOT NULL DEFAULT 1`); } catch (e) {}
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS platform_announcement_reads (
+      announcement_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      read_at TEXT NOT NULL,
+      PRIMARY KEY (announcement_id, user_id),
+      FOREIGN KEY (announcement_id) REFERENCES platform_announcements(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_session ON agent_update_intents(session_id, status, requested_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_user ON agent_update_intents(user_id, updated_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcements_status ON platform_announcements(status, published_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcement_reads_user ON platform_announcement_reads(user_id, read_at)`); } catch (e) {}
+
+  // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
+  applyCollaborationSchema(db);
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式
@@ -241,9 +467,10 @@ function migrateRoleToArray() {
 }
 
 function saveDatabase() {
-  if (!db) return;
+  if (!db || !persistDatabase) return;
+  fs.mkdirSync(path.dirname(activeDbPath), { recursive: true });
   const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
+  fs.writeFileSync(activeDbPath, Buffer.from(data));
 }
 
 function getDb() {
@@ -254,8 +481,52 @@ function getDb() {
 // 执行SQL（INSERT/UPDATE/DELETE）
 function run(sql, params = []) {
   const result = db.run(sql, params);
-  saveDatabase();
+  if (transactionDepth === 0) saveDatabase();
   return result;
+}
+
+function runInTransaction(work) {
+  if (typeof work !== 'function') throw new TypeError('work 必须是函数');
+  if (transactionDepth > 0) return work(db);
+
+  db.run('BEGIN IMMEDIATE TRANSACTION');
+  transactionDepth += 1;
+  try {
+    const result = work(db);
+    if (result && typeof result.then === 'function') {
+      throw new TypeError('runInTransaction 只接受同步函数；异步写请使用 enqueueWrite');
+    }
+    db.run('COMMIT');
+    transactionDepth -= 1;
+    saveDatabase();
+    return result;
+  } catch (error) {
+    try { db.run('ROLLBACK'); } catch (rollbackError) { /* 保留原始错误 */ }
+    transactionDepth = Math.max(0, transactionDepth - 1);
+    throw error;
+  }
+}
+
+function enqueueWrite(work) {
+  if (typeof work !== 'function') return Promise.reject(new TypeError('work 必须是函数'));
+  const execute = async () => {
+    db.run('BEGIN IMMEDIATE TRANSACTION');
+    transactionDepth += 1;
+    try {
+      const result = await work(db);
+      db.run('COMMIT');
+      transactionDepth -= 1;
+      saveDatabase();
+      return result;
+    } catch (error) {
+      try { db.run('ROLLBACK'); } catch (rollbackError) { /* 保留原始错误 */ }
+      transactionDepth = Math.max(0, transactionDepth - 1);
+      throw error;
+    }
+  };
+  const queued = writeQueue.then(execute, execute);
+  writeQueue = queued.catch(() => undefined);
+  return queued;
 }
 
 // 查询多条
@@ -307,11 +578,27 @@ function migrateVersionLabels() {
   }
 }
 
+function closeDatabase() {
+  if (db) db.close();
+  db = null;
+  SQL = null;
+  transactionDepth = 0;
+  writeQueue = Promise.resolve();
+}
+
+function getDatabasePath() {
+  return activeDbPath;
+}
+
 module.exports = {
   initDatabase,
   getDb,
   run,
   query,
   queryOne,
-  saveDatabase
+  saveDatabase,
+  runInTransaction,
+  enqueueWrite,
+  closeDatabase,
+  getDatabasePath
 };

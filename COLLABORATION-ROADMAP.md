@@ -1,7 +1,7 @@
-# 伏羲平台 — 产品团队多人协作迭代计划
+# 伏羲平台 - 产品团队多人协作迭代计划
 
 > 创建时间: 2026-06-12
-> 状态: 待评审
+> 状态: 已归档（规划阶段文档，实现状态见下方注释）
 
 ---
 
@@ -191,3 +191,19 @@ P1-状态流转 ──→ P2-模板库
 - 本计划为初版方案，待团队评审确认后开始实施
 - P0 项可立即启动，预计 1-2 天完成
 - 后续迭代根据团队实际使用情况调整优先级
+
+---
+
+## 六、实现状态注释（2026-08-12 更新）
+
+本文档为 2026-06-12 规划阶段产物。实际实现路径与本文档有差异：
+
+- **Skill 打包增强**：未采用 `.fuxi-meta.json` 方案。`fuxi-packager` 和 `deployment-validator` 已废弃，原型打包规则统一由 `fuxi-adapter` 固定契约定义。
+- **原型下载 / 拉取**：未实现独立 pull 模式。原型管理统一走伏羲 MCP 的 `deliver_project` 安全交付。
+- **原型状态流转**：未实现 `pending -> wip -> review -> approved` 状态机。
+- **原型 Fork**：未实现。
+- **版本 Diff**：未实现。
+- **模板库**：未实现。
+- **项目化协作（历史方案）**：曾在 `ITERATION_PLAN.md` 中设计并在 `feature/project-collaboration` 分支实现；当前实施入口已切换为无 Git 轻协作 MVP，详见 `docs/TECHNICAL_DESIGN.md`。
+
+权威文档为 `docs/TECHNICAL_DESIGN.md` 和 `docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`。本文档保留为规划历史记录。

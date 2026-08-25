@@ -1,6 +1,6 @@
 const { query, queryOne, run } = require('../database/db');
 
-function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy, page, pageSize } = {}) {
+function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy, page, pageSize, sort = 'updated_desc' } = {}) {
   const selectFields = `
     p.*, c.name as category_name, u.nickname as creator_name,
     (SELECT COUNT(*) FROM prototype_visits v WHERE v.prototype_id = p.id) as visit_count,
@@ -38,7 +38,13 @@ function getPrototypes({ keyword, categoryId, createdBy, sharedTo, accessibleBy,
   }
 
   whereSql += ` AND p.deleted_at IS NULL`;
-  const orderSql = ` ORDER BY p.updated_at DESC`;
+  const orderBy = {
+    updated_desc: 'p.updated_at DESC',
+    updated_asc: 'p.updated_at ASC',
+    created_desc: 'p.created_at DESC',
+    created_asc: 'p.created_at ASC'
+  }[sort] || 'p.updated_at DESC';
+  const orderSql = ` ORDER BY ${orderBy}`;
 
   // 总数统计
   const countSql = `SELECT COUNT(*) as total` + fromSql + whereSql;
@@ -216,7 +222,7 @@ function bumpVersion(currentLabel, bumpType) {
   }
 }
 
-function createVersion({ prototypeId, versionNumber, entryFile, syncSource, createdBy, sizeKb, note, versionType }) {
+function createVersion({ prototypeId, versionNumber, entryFile, syncSource, createdBy, sizeKb, note, versionType, versionLabel: requestedVersionLabel }) {
   const now = new Date().toISOString();
   // 计算 SemVer 标签
   const prev = queryOne(
@@ -224,7 +230,19 @@ function createVersion({ prototypeId, versionNumber, entryFile, syncSource, crea
     [prototypeId]
   );
   const currentLabel = prev ? prev.version_label || '' : '';
-  const versionLabel = versionNumber === 1 ? '1.0.0' : bumpVersion(currentLabel, versionType);
+  const versionLabel = requestedVersionLabel
+    ? String(requestedVersionLabel).replace(/^v/, '')
+    : versionNumber === 1 ? '1.0.0' : bumpVersion(currentLabel, versionType);
+  const duplicate = queryOne(
+    `SELECT id FROM prototype_versions WHERE prototype_id = ? AND version_label = ? LIMIT 1`,
+    [prototypeId, versionLabel]
+  );
+  if (duplicate) {
+    const error = new Error(`版本号 v${versionLabel} 已存在`);
+    error.code = 'VERSION_LABEL_CONFLICT';
+    error.status = 409;
+    throw error;
+  }
   run(`
     INSERT INTO prototype_versions (prototype_id, version_number, entry_file, sync_source, created_by, size_kb, note, version_label, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -273,9 +291,38 @@ function removePrototypeShare(prototypeId, userId) {
   return getPrototypeShares(prototypeId);
 }
 
+// ===== 免登录分享短链 =====
+function createShareLink({ code, prototypeId, entryFile, createdBy }) {
+  const now = new Date().toISOString();
+  run(`
+    INSERT INTO share_links (code, prototype_id, entry_file, created_by, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `, [code, prototypeId, entryFile, createdBy || null, now]);
+  return queryOne(`SELECT * FROM share_links WHERE code = ?`, [code]);
+}
+
+function getShareLinkByCode(code) {
+  return queryOne(`SELECT * FROM share_links WHERE code = ?`, [code]);
+}
+
+function findShareLink(prototypeId, entryFile) {
+  return queryOne(
+    `SELECT * FROM share_links WHERE prototype_id = ? AND entry_file = ? ORDER BY created_at DESC LIMIT 1`,
+    [prototypeId, entryFile]
+  );
+}
+
 function getLatestVersionNumber(prototypeId) {
   const result = queryOne(`SELECT MAX(version_number) as max_version FROM prototype_versions WHERE prototype_id = ?`, [prototypeId]);
   return result && result.max_version ? result.max_version : 0;
+}
+
+function getLatestVersionLabel(prototypeId) {
+  const result = queryOne(
+    `SELECT version_label FROM prototype_versions WHERE prototype_id = ? ORDER BY version_number DESC LIMIT 1`,
+    [prototypeId]
+  );
+  return result && result.version_label ? result.version_label : '0.0.0';
 }
 
 // README缓存
@@ -345,9 +392,13 @@ module.exports = {
   deleteVersion,
   updateVersionNote,
   getLatestVersionNumber,
+  getLatestVersionLabel,
   bumpVersion,
   getPrototypeShares,
   getSharedUserIds,
   addPrototypeShare,
-  removePrototypeShare
+  removePrototypeShare,
+  createShareLink,
+  getShareLinkByCode,
+  findShareLink
 };
