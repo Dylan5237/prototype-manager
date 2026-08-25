@@ -154,10 +154,10 @@ function buildPrompt(change, handoffCode, expiresAt) {
     '3. 在源码基础上实现修改要求，先执行项目自己的构建或静态检查。',
     '4. 调用 validate_project 检查交付目录，再调用 pack_project 生成完整 ZIP。',
     '5. 调用 submit_prototype_change 上传 ZIP；参数必须使用本任务的 prototypeId、changeId，versionType 只能是 major、minor、patch。',
-    '6. 上传后等待伏羲页面完成候选预览校验；调用 get_prototype_change_status 确认最终状态为 completed，再报告正式版本。',
+    '6. 上传后调用 get_prototype_change_status 确认最终状态为 completed；平台已完成 ZIP、入口和资源引用静态校验并直接形成正式版本。',
     '',
     '【交付约束】',
-    '- 这是独立原型修改，平台会在静态校验、浏览器预览和基线版本 CAS 全部通过后自动形成正式版本。',
+    '- 这是独立原型修改，平台会在静态校验和基线版本 CAS 通过后直接形成正式版本；如果正式预览打不开，请回到伏羲平台让 AI 排查并重新上传。',
     '- ZIP 必须包含可预览入口 index.html 或系统识别的 HTML 入口，所有引用必须使用相对路径。',
     '- ZIP 不得包含 .git、versions、node_modules、绝对路径、凭证、密码或长期 token。',
     '- 保持未涉及页面和交互不变；遇到歧义先保留现有行为并在完成说明中指出。',
@@ -393,7 +393,13 @@ class PrototypeDirectChangeService {
         `, [versionType || null, changeId, entryFile, digest, sizeKb, now(), errorsJson, warningsJson, now(), now(), changeId]);
       });
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
-      return getDirectChangeById(changeId);
+      const result = this.finalizeChange({
+        actor,
+        changeId,
+        cleanWarnings: validation.warnings || [],
+        validationMode: 'static'
+      });
+      return result;
     } catch (error) {
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       if (movedToFinal && fs.existsSync(finalDir)) fs.rmSync(finalDir, { recursive: true, force: true });
@@ -421,7 +427,7 @@ class PrototypeDirectChangeService {
     return this.finalizeChange({ actor, changeId, cleanWarnings, durationMs });
   }
 
-  finalizeChange({ actor, changeId, cleanWarnings = [], durationMs = null }) {
+  finalizeChange({ actor, changeId, cleanWarnings = [], durationMs = null, validationMode = 'browser' }) {
     const initial = this.getChangeForActor(actor, changeId);
     const candidatePath = String(initial.candidate_path || '');
     const candidateDir = path.isAbsolute(candidatePath) ? path.resolve(candidatePath) : path.resolve(this.candidatesRoot, candidatePath);
@@ -478,11 +484,11 @@ class PrototypeDirectChangeService {
         updatePrototype(current.prototype_id, { entryFile: current.candidate_entry_file, syncStatus: 'uploaded' });
         db.run(`
           UPDATE prototype_direct_changes
-          SET status = 'completed', validation_status = 'passed', validation_mode = 'browser',
+          SET status = 'completed', validation_status = 'passed', validation_mode = ?,
               validation_errors_json = '[]', validation_warnings_json = ?, preview_validated_at = ?,
               completed_at = ?, version_id = ?, updated_at = ?
           WHERE id = ?
-        `, [JSON.stringify(cleanWarnings), now(), now(), version.id, now(), changeId]);
+        `, [validationMode, JSON.stringify(cleanWarnings), validationMode === 'browser' ? now() : null, now(), version.id, now(), changeId]);
         db.run(`UPDATE prototype_direct_handoffs SET status = 'completed', updated_at = ? WHERE id = ?`, [now(), current.handoff_id]);
         return { version };
       });

@@ -158,7 +158,7 @@ function applyCollaborationSchema(db) {
     )
   `);
 
-  // 独立原型修改：不依赖项目任务表，完成浏览器预览校验后直接形成正式版本。
+  // 独立原型修改：不依赖项目任务表，完成静态交付检查后直接形成正式版本。
   db.run(`
     CREATE TABLE IF NOT EXISTS prototype_direct_handoffs (
       id TEXT PRIMARY KEY,

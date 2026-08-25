@@ -66,13 +66,7 @@ function createReadyChange(actor = editor, title = '增加筛选') {
     changeId: redeemed.change.id,
     zipPath: candidateZip(`${redeemed.change.id}.zip`, `<!doctype html><title>${title}</title><p>${title}</p>`)
   });
-  const ready = service.recordPreviewValidation({
-    actor,
-    projectId: 'project-1',
-    changeId: redeemed.change.id,
-    status: 'passed',
-    durationMs: 1200
-  });
+  const ready = pending;
   return { created, redeemed, pending, ready };
 }
 
@@ -90,7 +84,7 @@ test.afterEach(() => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('one-time handoff creates a preview-pending candidate until browser smoke passes', () => {
+test('one-time handoff creates a ready candidate after static delivery checks', () => {
   const created = service.createChange({
     actor: editor,
     projectId: 'project-1',
@@ -107,29 +101,22 @@ test('one-time handoff creates a preview-pending candidate until browser smoke p
     error => error.code === 'HANDOFF_ALREADY_REDEEMED'
   );
 
-  const pending = service.submitCandidate({
+  const ready = service.submitCandidate({
     actor: editor,
     projectId: 'project-1',
     changeId: created.change.id,
     zipPath: candidateZip('candidate.zip')
   });
-  assert.equal(pending.status, 'preview_pending');
-  assert.equal(pending.validation_status, 'pending');
-  const ready = service.recordPreviewValidation({
-    actor: editor,
-    projectId: 'project-1',
-    changeId: created.change.id,
-    status: 'passed',
-    durationMs: 1200
-  });
   assert.equal(ready.status, 'ready');
+  assert.equal(ready.validation_status, 'passed');
+  assert.equal(ready.validation_mode, 'static');
   assert.equal(ready.candidate_entry_file, 'index.html');
   assert.equal(ready.candidate_path, ready.id);
   assert.match(ready.preview_path, /^\/preview\/changes\//);
   assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /base/);
   assert.deepEqual(
     database.query(`SELECT action FROM audit_events ORDER BY created_at, rowid`).map(row => row.action),
-    ['change.created', 'handoff.redeemed', 'candidate.preview_pending', 'candidate.preview_passed']
+    ['change.created', 'handoff.redeemed', 'candidate.ready']
   );
 });
 
@@ -236,7 +223,6 @@ test('project change locks custom SemVer and uses the AI-selected bump type', ()
     changeId: redeemed.change.id,
     zipPath: candidateZip('custom-version.zip')
   });
-  service.recordPreviewValidation({ actor: editor, projectId: 'project-1', changeId: redeemed.change.id, status: 'passed' });
   const adopted = service.adoptChange({ actor: owner, projectId: 'project-1', changeId: redeemed.change.id });
   assert.equal(adopted.version.version_label, '2.0.0');
 });

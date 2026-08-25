@@ -17,9 +17,9 @@
         </el-button>
       </div>
       <div class="header-actions">
-        <el-button v-if="canEdit" text @click="openEditDialog">
-          <el-icon><Edit /></el-icon>
-          编辑
+        <el-button v-if="!prototype.project_binding && canEdit" text type="primary" @click="openDirectChangeDialog(directChange?.status === 'editing' ? directChange : null)">
+          <el-icon><MagicStick /></el-icon>
+          让 AI 修改
         </el-button>
         <el-button v-if="canEdit" text @click="openShareDialog">
           <el-icon><Share /></el-icon>
@@ -29,10 +29,22 @@
           <el-icon><Link /></el-icon>
           免登录链接
         </el-button>
-        <el-button text @click="handleDownload">
-          <el-icon><Download /></el-icon>
-          下载ZIP
-        </el-button>
+        <el-dropdown v-if="canEdit" trigger="click" @command="handleHeaderCommand">
+          <el-button text class="header-more-button" aria-label="更多操作">
+            <el-icon><MoreFilled /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="edit">
+                <el-icon><Edit /></el-icon>编辑
+              </el-dropdown-item>
+              <el-dropdown-item command="download">
+                <el-icon><Download /></el-icon>下载 ZIP
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <!-- 让 AI 修改、协作和常用分享操作集中在同一工具区；低频信息编辑与下载收进更多菜单。 -->
       </div>
     </div>
 
@@ -85,11 +97,8 @@
       <div class="direct-change-head">
         <div>
           <h3><el-icon><MagicStick /></el-icon> 让 AI 修改</h3>
-          <p>独立原型修改会先预览校验，通过后自动生成正式版本。</p>
+          <p>独立原型修改会先完成静态交付检查，通过后直接生成正式版本。</p>
         </div>
-        <el-button v-if="!directChange || ['completed', 'cancelled', 'stale'].includes(directChange.status)" type="primary" size="small" @click="openDirectChangeDialog()">
-          <el-icon><MagicStick /></el-icon>发起修改
-        </el-button>
       </div>
       <template v-if="directChange && !['cancelled'].includes(directChange.status)">
         <div class="direct-change-meta">
@@ -98,16 +107,12 @@
           <span v-if="directChange.status === 'editing'">修改码：{{ directChange.handoff_status === 'redeemed' ? '已领取' : directCountdownLabel }}</span>
         </div>
         <el-alert v-if="directChange.status === 'editing' && directChange.handoff_status === 'redeemed'" title="AI 已领取修改码，任务内容和基线已锁定，等待候选上传。" type="info" :closable="false" show-icon />
-        <el-alert v-else-if="directChange.status === 'preview_pending'" title="候选已上传，正在进行浏览器预览校验。校验通过后会自动形成正式版本。" type="info" :closable="false" show-icon />
-        <el-alert v-else-if="directChange.status === 'invalid'" title="候选校验失败，正式版本未改变。请让 AI 修正后重新上传。" type="error" :closable="false" show-icon>
+        <el-alert v-else-if="directChange.status === 'preview_pending'" title="候选已上传，正在整理交付状态；如预览无法加载，请让 AI 排查后重新上传。" type="info" :closable="false" show-icon />
+        <el-alert v-else-if="directChange.status === 'invalid'" title="候选静态校验失败，正式版本未改变。请让 AI 修正后重新上传。" type="error" :closable="false" show-icon>
           <ul class="validation-errors"><li v-for="error in directChange.validation_errors" :key="error.message || error">{{ error.message || error }}</li></ul>
         </el-alert>
         <el-alert v-else-if="directChange.status === 'stale'" title="基线版本已变化，当前修改未写入正式版本，请重新发起。" type="warning" :closable="false" show-icon />
         <el-alert v-else-if="directChange.status === 'completed'" :title="`修改已完成，正式版本已更新为 v${directChange.current_version_label || directChange.version_label || ''}`" type="success" :closable="false" show-icon />
-        <div v-if="directChange.preview_path && ['preview_pending', 'invalid'].includes(directChange.status)" class="direct-candidate-preview">
-          <div class="candidate-boundary-bar"><span class="candidate-chip">候选预览</span><span>仅供本次校验 · 不会绕过版本冲突检查</span></div>
-          <iframe :key="directPreviewUrl" :src="directPreviewUrl" class="candidate-preview" frameborder="0" @load="handleDirectPreviewLoad" />
-        </div>
         <div class="direct-change-actions">
           <el-button v-if="directChangeResult?.prompt" size="small" @click="copyDirectPrompt"><el-icon><DocumentCopy /></el-icon>复制完整提示词</el-button>
           <el-button v-if="directChange.status === 'editing' && directChange.handoff_status !== 'redeemed'" size="small" @click="openDirectChangeDialog(directChange)">编辑并重新生成</el-button>
@@ -407,7 +412,7 @@
 import { ref, onMounted, onBeforeUnmount, computed, markRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download, MagicStick, DocumentCopy } from '@element-plus/icons-vue'
+import { Document, Clock, ChatDotSquare, ArrowDown, Link, Download, MagicStick, DocumentCopy, Edit, Share, MoreFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { searchUsers } from '../api/auth'
 import { getGroups } from '../api/groups'
@@ -417,8 +422,7 @@ import {
   getPrototypeShares, sharePrototype, unsharePrototype, getPublicShareLink,
   getComments, createComment, deleteComment, uploadCommentImage,
   getStats, recordVisit
-  , getCurrentDirectChange, createDirectChange, updateDirectChange, cancelDirectChange,
-  recordDirectChangePreviewValidation
+  , getCurrentDirectChange, createDirectChange, updateDirectChange, cancelDirectChange
 } from '../api/prototypes'
 
 const route = useRoute()
@@ -483,12 +487,8 @@ const directVersionStrategyType = ref('auto')
 const directVersionStrategyValue = ref('')
 const directChangeSubmitting = ref(false)
 const directCountdownNow = ref(Date.now())
-const directPreviewSmokePending = ref(false)
 let directCountdownTimer = null
-let directPreviewFrameElement = null
-let directPreviewSmokeTimer = null
 let directChangePollTimer = null
-let directPreviewValidationInFlight = false
 
 const canEdit = computed(() => {
   if (!prototype.value || !authStore.user) return false
@@ -501,12 +501,6 @@ const previewUrl = computed(() => {
   if (!prototype.value || !prototype.value.entry_file) return null
   const token = authStore.token || ''
   return `/preview/${prototype.value.id}/${prototype.value.entry_file}?token=${token}`
-})
-
-const directPreviewUrl = computed(() => {
-  if (!directChange.value?.preview_path) return ''
-  const token = authStore.token || ''
-  return `${directChange.value.preview_path}?token=${encodeURIComponent(token)}`
 })
 
 const directCountdownLabel = computed(() => {
@@ -548,7 +542,6 @@ async function loadData() {
 }
 
 async function loadDirectChange() {
-  clearDirectPreviewSmokeTimer()
   clearDirectChangePollTimer()
   if (!prototype.value || prototype.value.project_binding || !canEdit.value) {
     directChange.value = null
@@ -558,8 +551,6 @@ async function loadDirectChange() {
   try {
     const res = await getCurrentDirectChange(prototype.value.id)
     directChange.value = res.data.data || null
-    directPreviewFrameElement = null
-    directPreviewSmokePending.value = directChange.value?.status === 'preview_pending'
     scheduleDirectChangePoll()
   } catch (err) {
     if (err.response?.status !== 409) directChange.value = null
@@ -635,13 +626,6 @@ function copyDirectPrompt() {
   fallbackCopy(directChangeResult.value.prompt, '完整提示词已复制')
 }
 
-function clearDirectPreviewSmokeTimer() {
-  if (directPreviewSmokeTimer) {
-    window.clearTimeout(directPreviewSmokeTimer)
-    directPreviewSmokeTimer = null
-  }
-}
-
 function clearDirectChangePollTimer() {
   if (directChangePollTimer) {
     window.clearTimeout(directChangePollTimer)
@@ -651,89 +635,26 @@ function clearDirectChangePollTimer() {
 
 function scheduleDirectChangePoll() {
   clearDirectChangePollTimer()
-  if (!directChange.value || directChange.value.status !== 'preview_pending') return
+  const current = directChange.value
+  const waitingForUpload = current?.status === 'editing' && current.handoff_status === 'redeemed'
+  if (!current || (!waitingForUpload && current.status !== 'preview_pending')) return
   directChangePollTimer = window.setTimeout(async () => {
     directChangePollTimer = null
-    if (!directChange.value || directChange.value.status !== 'preview_pending') return
+    if (!prototype.value) return
     try {
       const res = await getCurrentDirectChange(prototype.value.id)
       const next = res.data.data || null
-      const wasPending = directChange.value?.status === 'preview_pending'
+      const previousStatus = directChange.value?.status
       directChange.value = next
-      if (wasPending && next?.status === 'completed') {
-        clearDirectPreviewSmokeTimer()
+      if (previousStatus !== 'completed' && next?.status === 'completed') {
         await loadData()
         return
       }
     } catch (err) {
-      // 预览轮询是辅助刷新，失败时保留当前页面状态，下一轮继续尝试。
+      // 状态刷新是辅助能力，失败时保留当前内容，下一轮继续尝试。
     }
     scheduleDirectChangePoll()
-  }, 2000)
-}
-
-function hasDirectPreviewContent() {
-  const doc = directPreviewFrameElement?.contentDocument
-  if (!doc || !String(doc.contentType || '').toLowerCase().includes('text/html')) return false
-  const app = doc.querySelector('#app')
-  if (app) return Boolean(app.children.length || (app.textContent || '').trim() || (app.innerHTML || '').trim().length > 20)
-  return Array.from(doc.body?.children || []).some(element => {
-    if (/^(SCRIPT|STYLE|LINK|META|NOSCRIPT)$/i.test(element.tagName)) return false
-    return Boolean(element.offsetWidth || element.offsetHeight || (element.textContent || '').trim())
-  })
-}
-
-async function submitDirectPreviewValidation(payload) {
-  if (!directChange.value || directChange.value.status !== 'preview_pending' || directPreviewValidationInFlight) return
-  directPreviewValidationInFlight = true
-  clearDirectPreviewSmokeTimer()
-  directPreviewSmokePending.value = false
-  try {
-    const res = await recordDirectChangePreviewValidation(prototype.value.id, directChange.value.id, payload)
-    const result = res.data.data
-    if (result?.change?.status === 'completed') {
-      ElMessage.success(`修改已完成，正式版本更新为 v${result.version?.version_label || ''}`)
-      await loadData()
-    } else {
-      directChange.value = result
-      ElMessage.error('候选预览校验失败，正式版本未改变')
-    }
-  } catch (err) {
-    ElMessage.error(err.response?.data?.message || '预览校验回报失败，请刷新后重试')
-  } finally {
-    directPreviewValidationInFlight = false
-  }
-}
-
-async function handleDirectPreviewLoad(event) {
-  directPreviewFrameElement = event?.target || null
-  if (!directChange.value || directChange.value.status !== 'preview_pending') return
-  directPreviewSmokePending.value = true
-  clearDirectPreviewSmokeTimer()
-  // 某些原型会通过 CSP 或自身错误阻止注入的 smoke 脚本；8 秒后用同源宿主页面兜底，避免永久卡在 pending。
-  directPreviewSmokeTimer = window.setTimeout(() => {
-    if (!directChange.value || directChange.value.status !== 'preview_pending') return
-    const passed = hasDirectPreviewContent()
-    submitDirectPreviewValidation({
-      status: passed ? 'passed' : 'failed',
-      errors: passed ? [] : ['预览未在规定时间内回报校验结果，且页面没有可确认的内容'],
-      warnings: passed ? ['内嵌预览未回传 Smoke 结果，已使用宿主页面兜底校验'] : [],
-      durationMs: 8000
-    })
-  }, 8000)
-}
-
-async function handleDirectPreviewSmokeMessage(event) {
-  if (event.origin !== window.location.origin || event.data?.source !== 'fuxi-preview-smoke') return
-  if (!directChange.value || directChange.value.status !== 'preview_pending') return
-  if (event.source !== directPreviewFrameElement?.contentWindow) return
-  if (!['passed', 'failed'].includes(event.data.status)) return
-  await submitDirectPreviewValidation({
-    status: event.data.status,
-    errors: event.data.errors || [],
-    warnings: event.data.warnings || [],
-    durationMs: event.data.durationMs
-  })
+  }, 3000)
 }
 
 async function loadReadme() {
@@ -787,6 +708,11 @@ async function handleDownload() {
   } catch (err) {
     ElMessage.error(err.response?.data?.message || '下载失败')
   }
+}
+
+function handleHeaderCommand(command) {
+  if (command === 'edit') openEditDialog()
+  if (command === 'download') handleDownload()
 }
 
 async function handleEditSubmit() {
@@ -1172,7 +1098,6 @@ async function handleUnshare(userId) {
 
 onMounted(async () => {
   directCountdownTimer = window.setInterval(() => { directCountdownNow.value = Date.now() }, 1000)
-  window.addEventListener('message', handleDirectPreviewSmokeMessage)
   await loadData()
   await loadStats()
   await loadComments()
@@ -1181,9 +1106,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (directCountdownTimer) window.clearInterval(directCountdownTimer)
-  clearDirectPreviewSmokeTimer()
   clearDirectChangePollTimer()
-  window.removeEventListener('message', handleDirectPreviewSmokeMessage)
 })
 </script><style scoped>
 .detail-view {

@@ -48,7 +48,7 @@ test.afterEach(() => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('direct change is redeemed once and becomes a formal version after preview smoke', () => {
+test('direct change is redeemed once and becomes a formal version after static checks', () => {
   const created = service.createChange({
     actor: owner,
     prototypeId: 'prototype-1',
@@ -63,21 +63,14 @@ test('direct change is redeemed once and becomes a formal version after preview 
     error => error instanceof PrototypeDirectChangeError && error.code === 'HANDOFF_NOT_ACTIVE'
   );
 
-  const pending = service.submitCandidate({
+  const completed = service.submitCandidate({
     actor: owner,
     changeId: created.change.id,
     zipPath: candidateZip('candidate.zip'),
     versionType: 'minor'
   });
-  assert.equal(pending.status, 'preview_pending');
-  const completed = service.recordPreviewValidation({
-    actor: owner,
-    changeId: created.change.id,
-    status: 'passed',
-    warnings: [],
-    durationMs: 1200
-  });
   assert.equal(completed.change.status, 'completed');
+  assert.equal(completed.change.validation_mode, 'static');
   assert.equal(completed.version.version_label, '1.1.0');
   assert.equal(database.queryOne(`SELECT MAX(version_number) AS number FROM prototype_versions WHERE prototype_id = ?`, ['prototype-1']).number, 2);
   assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /candidate/);
@@ -95,11 +88,10 @@ test('custom version must be a higher unique SemVer and stale base cannot be del
     versionStrategy: { type: 'custom', value: '2.0.0' }
   });
   service.redeemHandoff({ actor: owner, handoffCode: created.handoffCode });
-  service.submitCandidate({ actor: owner, changeId: created.change.id, zipPath: candidateZip('stale.zip') });
   database.run(`INSERT INTO prototype_versions (prototype_id, version_number, entry_file, sync_source, created_by, size_kb, note, version_label, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ['prototype-1', 2, 'index.html', 'upload', 1, 1, '并行更新', '1.1.0', '2026-08-24T00:01:00.000Z']);
   assert.throws(
-    () => service.recordPreviewValidation({ actor: owner, changeId: created.change.id, status: 'passed' }),
+    () => service.submitCandidate({ actor: owner, changeId: created.change.id, zipPath: candidateZip('stale.zip') }),
     error => error.code === 'STALE_BASE_VERSION'
   );
 });

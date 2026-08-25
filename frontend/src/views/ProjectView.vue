@@ -218,14 +218,14 @@
             />
             <el-alert
               v-else-if="selectedChange.status === 'preview_pending'"
-              :title="candidateSmokePending ? '正在自动检查候选预览' : '预览校验尚未完成，请刷新后重试'"
+              title="候选已上传，正在整理交付状态；如预览无法加载，请让 AI 排查后重新上传。"
               type="info"
               :closable="false"
               show-icon
             />
             <el-alert
               v-else-if="selectedChange.status === 'invalid' && selectedChange.validation_errors?.length"
-              title="候选预览校验失败，不能采纳"
+              title="候选静态校验失败，不能采纳"
               type="error"
               :closable="false"
               show-icon
@@ -260,7 +260,6 @@
               :src="candidatePreviewUrl"
               class="candidate-preview"
               frameborder="0"
-              @load="handleCandidateFrameLoad"
             />
           </div>
           <el-empty v-else description="候选尚未准备好预览" />
@@ -334,7 +333,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
@@ -350,7 +349,7 @@ import {
   getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
   getProjectMembers, addProjectMember, removeProjectMember,
   createPrototypeChange, getProjectChanges, updateProjectChange, deleteProjectChange,
-  adoptProjectChange, rejectProjectChange, recordProjectChangePreviewValidation
+  adoptProjectChange, rejectProjectChange
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
 
@@ -401,17 +400,10 @@ const changesLoading = ref(false)
 const selectedChange = ref(null)
 const reviewingChange = ref(false)
 const previewNonce = ref(0)
-const candidateSmokePending = ref(false)
-let candidateFrameElement = null
 
 onMounted(() => {
   loadProject()
   loadPrototypes()
-  window.addEventListener('message', handlePreviewSmokeMessage)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('message', handlePreviewSmokeMessage)
 })
 
 async function loadProject() {
@@ -553,15 +545,11 @@ function selectMenu(group, item) {
   activeItem.value = item
   selectedPrototypeId.value = ''
   selectedChange.value = null
-  candidateFrameElement = null
-  candidateSmokePending.value = false
   loadChanges()
 }
 
 function selectChange(change) {
   selectedChange.value = change
-  candidateFrameElement = null
-  candidateSmokePending.value = change?.status === 'preview_pending'
 }
 
 function isActive(group, item) {
@@ -582,7 +570,7 @@ function getCheckoutStatus(group, item) {
 function changeStatusMeta(status) {
   const map = {
     editing: { label: '进行中', type: 'info' },
-    preview_pending: { label: '预览校验中', type: 'info' },
+    preview_pending: { label: '交付状态整理中', type: 'info' },
     ready: { label: '待确认', type: 'warning' },
     invalid: { label: '预览失败', type: 'danger' },
     adopted: { label: '已采用', type: 'success' },
@@ -691,40 +679,6 @@ async function openChangesDialog() {
   changesVisible.value = true
   await loadChanges()
   selectChange(changes.value.find(change => change.status === 'ready') || changes.value[0] || null)
-}
-
-function handleCandidateFrameLoad(event) {
-  candidateFrameElement = event.currentTarget
-  if (selectedChange.value?.status === 'preview_pending') {
-    candidateSmokePending.value = true
-  }
-}
-
-async function handlePreviewSmokeMessage(event) {
-  const data = event.data
-  if (!data || data.source !== 'fuxi-preview-smoke' || !candidateFrameElement) return
-  if (event.source !== candidateFrameElement.contentWindow) return
-  const change = selectedChange.value
-  if (!change || change.status !== 'preview_pending') return
-  if (!['passed', 'failed'].includes(data.status)) return
-
-  candidateSmokePending.value = false
-  try {
-    await recordProjectChangePreviewValidation(route.params.id, change.id, {
-      status: data.status,
-      errors: Array.isArray(data.errors) ? data.errors : [],
-      warnings: Array.isArray(data.warnings) ? data.warnings : [],
-      durationMs: data.durationMs
-    })
-    await loadChanges()
-    if (selectedChange.value?.id === change.id) {
-      selectedChange.value = changes.value.find(item => item.id === change.id) || selectedChange.value
-    }
-    if (data.status === 'passed') ElMessage.success('候选预览校验通过，可提交负责人审核')
-    else ElMessage.error('候选预览校验失败，不能采纳')
-  } catch (err) {
-    ElMessage.warning(err.response?.data?.message || '预览校验结果回写失败，请刷新重试')
-  }
 }
 
 async function adoptSelectedChange() {

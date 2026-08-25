@@ -23,66 +23,49 @@ function canAccessPrototype(prototype, user) {
   return getSharedUserIds(prototype.id).includes(user.id);
 }
 
-function previewSmokeScript() {
-  return `<script data-fuxi-preview-smoke>
+function previewRecoveryScript() {
+  return `<script data-fuxi-preview-recovery>
 (function () {
-  if (window.parent === window) return;
-  var startedAt = Date.now();
-  var finalStatus = null;
-  function clean(value) {
-    return String(value || '').replace(/\\s+/g, ' ').trim().slice(0, 500);
-  }
-  function report(status, errors, warnings) {
-    if (finalStatus) return;
-    finalStatus = status;
-    window.parent.postMessage({
-      source: 'fuxi-preview-smoke',
-      status: status,
-      errors: (errors || []).map(clean).filter(Boolean).slice(0, 20),
-      warnings: (warnings || []).map(clean).filter(Boolean).slice(0, 20),
-      durationMs: Date.now() - startedAt
-    }, window.location.origin);
+  var shown = false;
+  function show(message) {
+    if (shown) return;
+    shown = true;
+    var box = document.createElement('div');
+    box.setAttribute('role', 'alert');
+    box.style.cssText = 'position:fixed;z-index:2147483647;left:50%;top:50%;transform:translate(-50%,-50%);box-sizing:border-box;width:min(520px,calc(100vw - 40px));padding:24px 26px;border:1px solid #f3c7c7;border-radius:12px;background:#fff7f7;color:#303133;box-shadow:0 12px 32px rgba(0,0,0,.16);font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;';
+    box.innerHTML = '<strong style="display:block;margin-bottom:8px;font-size:16px;color:#c45656">原型暂时无法加载</strong>'
+      + '<div>' + (message || '页面运行时出现问题') + '</div>'
+      + '<div style="margin-top:10px;color:#909399">请返回伏羲平台，在原型详情页点击“让 AI 修改”，让 AI 排查页面加载问题后重新上传。</div>';
+    (document.body || document.documentElement).appendChild(box);
   }
   window.addEventListener('error', function (event) {
     var target = event && event.target;
-    if (target && target !== window) {
-      var resource = target.src || target.href || target.tagName || '资源';
-      report('failed', ['资源加载失败：' + resource], []);
-      return;
-    }
-    var message = event && event.error && event.error.message
-      ? event.error.message
-      : (event && event.message) || '页面运行时错误';
-    report('failed', ['页面运行时错误：' + message], []);
+    if (target && target !== window && !/^(SCRIPT|LINK)$/i.test(target.tagName || '')) return;
+    var message = event && event.error && event.error.message ? event.error.message : (event && event.message);
+    show(message ? '页面运行时出现问题：' + String(message).slice(0, 240) : '页面运行时出现问题');
   }, true);
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event && event.reason;
-    var message = reason && reason.message ? reason.message : reason;
-    report('failed', ['未处理的异步错误：' + (message || '未知错误')], []);
+    show('页面异步加载失败：' + String(reason && reason.message ? reason.message : (reason || '未知错误')).slice(0, 240));
   });
   window.addEventListener('load', function () {
     window.setTimeout(function () {
       var app = document.querySelector('#app');
-      var root = app || document.body;
       var hasContent = app
         ? Boolean(app.children.length || (app.textContent || '').trim() || (app.innerHTML || '').trim().length > 20)
         : Array.prototype.some.call(document.body.children, function (element) {
           return !/^(SCRIPT|STYLE|LINK|META|NOSCRIPT)$/i.test(element.tagName)
             && Boolean(element.offsetWidth || element.offsetHeight || (element.textContent || '').trim());
         });
-      if (!hasContent) {
-        report('failed', ['预览加载后页面为空'], []);
-      } else {
-        report('passed', [], []);
-      }
-    }, 1200);
+      if (!hasContent) show('页面加载后没有显示内容');
+    }, 2000);
   }, { once: true });
 }());
 </script>`;
 }
 
 // 通用的HTML处理函数：注入<base>标签并将绝对路径转为相对路径
-function processHtml(content, basePath, { smoke = false } = {}) {
+function processHtml(content, basePath) {
   // 将本地绝对路径转为相对路径，使<base>标签生效
   // 不碰 // 或 http:// https://
   content = content.replace(/(src|href|content)=(["'])\/([^\/][^"']*)\2/g, '$1=$2$3$2');
@@ -94,14 +77,14 @@ function processHtml(content, basePath, { smoke = false } = {}) {
     content = content.replace('<HEAD>', `<HEAD>\n  <base href="${basePath}">`);
   }
 
-  if (smoke) {
-    const smokeScript = previewSmokeScript();
+  {
+    const recoveryScript = previewRecoveryScript();
     if (content.includes('</head>')) {
-      content = content.replace('</head>', `${smokeScript}\n</head>`);
+      content = content.replace('</head>', `${recoveryScript}\n</head>`);
     } else if (content.includes('</HEAD>')) {
-      content = content.replace('</HEAD>', `${smokeScript}\n</HEAD>`);
+      content = content.replace('</HEAD>', `${recoveryScript}\n</HEAD>`);
     } else {
-      content = `${smokeScript}\n${content}`;
+      content = `${recoveryScript}\n${content}`;
     }
   }
 
@@ -142,7 +125,7 @@ router.get('/changes/:changeId/*.html', requireAuth, (req, res) => {
   let content = fs.readFileSync(fullPath, 'utf-8');
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? `${fileDir}/` : '';
-  content = processHtml(content, `/preview/changes/${encodeURIComponent(change.id)}/${dirPart}`, { smoke: true });
+  content = processHtml(content, `/preview/changes/${encodeURIComponent(change.id)}/${dirPart}`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);
 });
@@ -184,7 +167,7 @@ router.get('/direct-changes/:changeId/*.html', requireAuth, (req, res) => {
   let content = fs.readFileSync(fullPath, 'utf-8');
   const fileDir = path.dirname(filePath).replace(/\\/g, '/');
   const dirPart = fileDir && fileDir !== '.' ? `${fileDir}/` : '';
-  content = processHtml(content, `/preview/direct-changes/${encodeURIComponent(change.id)}/${dirPart}`, { smoke: true });
+  content = processHtml(content, `/preview/direct-changes/${encodeURIComponent(change.id)}/${dirPart}`);
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);
 });

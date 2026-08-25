@@ -202,7 +202,7 @@ async function main() {
     const initialized = await mcp.send('initialize', { protocolVersion: '2024-11-05' });
     assert.equal(initialized.result.serverInfo.name, 'fuxi-platform-mcp-server');
     const listedTools = await mcp.send('tools/list');
-    assert.equal(listedTools.result.tools.length, 26);
+    assert.equal(listedTools.result.tools.length, 30);
     for (const toolName of ['create_change_handoff', 'redeem_change_handoff', 'get_change_status', 'submit_change_candidate']) {
       assert(listedTools.result.tools.some(tool => tool.name === toolName), `missing ${toolName}`);
     }
@@ -321,7 +321,7 @@ async function main() {
     assert.equal(bootstrap.data.skillName, 'fuxi-skyui-prototype');
     assert(bootstrap.data.prompt.includes('check_connection'));
     assert(bootstrap.data.prompt.includes('deliver_project'));
-    assert(bootstrap.data.prompt.includes('AI 客户端原生'));
+    assert(bootstrap.data.prompt.includes('识别当前 AI 客户端'));
     assert(bootstrap.data.prompt.includes('AUTHORIZATION_REQUIRED'));
     assert(bootstrap.data.prompt.includes('AUTHENTICATION_FAILED'));
     assert(!bootstrap.data.prompt.includes('admin123'));
@@ -329,6 +329,7 @@ async function main() {
     assert(bootstrap.data.prompt.includes('修改独立原型'));
     assert(bootstrap.data.prompt.includes('修改项目中的原型'));
     assert(bootstrap.data.prompt.includes('候选上传后由项目负责人预览并采用'));
+    assert(bootstrap.data.prompt.includes('静态交付检查'));
     assert(bootstrap.data.prompt.includes('FUXI_MCP_TARGET'));
     assert(bootstrap.data.prompt.includes('重启或刷新 AI 客户端'));
     assert(!bootstrap.data.prompt.includes('.cursor/skills'));
@@ -338,7 +339,7 @@ async function main() {
     assert(connectCodeRemainingMs > 18 * 60 * 1000 && connectCodeRemainingMs <= 20 * 60 * 1000 + 5000);
     assert(bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
     assert(bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
-    assert(bootstrap.data.prompt.indexOf('优先调用 check_connection') < bootstrap.data.prompt.indexOf('使用安装 token 下载 Skill ZIP'));
+    assert(bootstrap.data.prompt.indexOf('使用安装 token 下载 Skill ZIP') < bootstrap.data.prompt.indexOf('优先调用 check_connection'));
 
     // 一次性连接码兑换 access + refresh token，并登记设备会话
     const connectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
@@ -564,13 +565,13 @@ async function main() {
       changeId: handoff.body.changeId,
       zipPath: secondZipPath
     });
-    assert.equal(submittedCandidate.body.status, 'preview_pending');
+    assert.equal(submittedCandidate.body.status, 'ready');
     assert.equal(submittedCandidate.body.candidateEntryFile, 'index.html');
     const pendingStatus = await callTool(mcp, 'get_change_status', {
       projectId: project.data.id,
       changeId: handoff.body.changeId
     });
-    assert.equal(pendingStatus.body.status, 'preview_pending');
+    assert.equal(pendingStatus.body.status, 'ready');
     assert.equal(pendingStatus.body.currentVersion, 0);
     const candidatePreviewResponse = await fetch(
       `${apiUrl}${pendingStatus.body.candidatePreviewPath}?token=${encodeURIComponent(login.data.token)}`
@@ -578,17 +579,6 @@ async function main() {
     assert.equal(candidatePreviewResponse.status, 200);
     assert.match(await candidatePreviewResponse.text(), /MCP integration v2/);
 
-    const previewValidationResponse = await fetch(`${apiUrl}/api/projects/${project.data.id}/changes/${handoff.body.changeId}/preview-validation`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${login.data.token}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({ status: 'passed', durationMs: 1200 })
-    });
-    const previewValidation = await previewValidationResponse.json();
-    assert.equal(previewValidationResponse.status, 200);
-    assert.equal(previewValidation.data.status, 'ready');
     const readyStatus = await callTool(mcp, 'get_change_status', {
       projectId: project.data.id,
       changeId: handoff.body.changeId

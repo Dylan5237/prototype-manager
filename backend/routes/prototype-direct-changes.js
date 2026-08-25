@@ -46,7 +46,17 @@ router.post('/direct-changes/handoffs/redeem', requireAuth, (req, res) => {
 
 router.get('/:prototypeId/direct-changes/current', requireAuth, (req, res) => {
   try {
-    const current = getCurrentChange(req.params.prototypeId, req.user);
+    const directService = service();
+    let current = getCurrentChange(req.params.prototypeId, req.user);
+    // 兼容取消浏览器校验前已经停在 pending 的历史任务：静态校验已通过即可完成交付。
+    if (current && current.status === 'preview_pending') {
+      current = directService.finalizeChange({
+        actor: req.user,
+        changeId: current.id,
+        cleanWarnings: current.validation_warnings || [],
+        validationMode: 'static'
+      }).change;
+    }
     res.json({ success: true, data: current });
   } catch (error) { sendError(res, error); }
 });

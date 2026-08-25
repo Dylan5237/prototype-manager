@@ -149,7 +149,7 @@ function buildPrompt({ change, handoffCode, expiresAt }) {
     '2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。',
     '3. 在源码基础上实现“修改要求”，先本地检查入口、相对路径和主要交互。',
     '4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。AI 决定版本策略时必须额外传入 versionType=major、minor 或 patch。',
-    '5. 上传成功后调用 get_change_status 确认状态为 preview_pending；负责人打开伏羲候选页面后会自动完成轻量预览校验，校验通过才会变为 ready 并进入采纳流程。',
+    '5. 上传成功后调用 get_change_status 确认状态为 ready；平台已完成 ZIP、入口和资源引用静态校验，负责人可在伏羲候选页面查看预览并决定是否采纳。',
     '',
     '【交付约束】',
     '- 这是候选版本，绝对不要直接覆盖正式版本，也不要调用正式版本上传接口。',
@@ -430,12 +430,34 @@ class LightweightCollaborationService {
     this.authorization.assertCan(actor, ACTIONS.VIEW_CHANGE, {
       type: 'change', projectId, prototypeId: change.prototype_id
     });
-    return change;
+    return this.promoteLegacyPreviewPending(change, actor);
+  }
+
+  promoteLegacyPreviewPending(change, actor) {
+    if (!change || change.status !== 'preview_pending') return change;
+    runInTransaction(db => {
+      const current = queryOne('SELECT status FROM prototype_changes WHERE id = ?', [change.id]);
+      if (!current || current.status !== 'preview_pending') return;
+      db.run(`
+        UPDATE prototype_changes
+        SET status = 'ready', validation_status = 'passed', validation_mode = 'static',
+            validated_at = COALESCE(validated_at, ?), preview_validated_at = NULL, updated_at = ?
+        WHERE id = ? AND status = 'preview_pending'
+      `, [now(), now(), change.id]);
+      insertAudit(db, {
+        actorUserId: actor && actor.id,
+        action: 'candidate.preview_skipped',
+        resourceId: change.id,
+        metadata: { projectId: change.project_id, prototypeId: change.prototype_id, reason: 'browser_validation_removed' }
+      });
+    });
+    return getChangeById(change.id);
   }
 
   listChanges({ actor, projectId, prototypeId, status }) {
     this.authorization.assertCan(actor, ACTIONS.VIEW_CHANGE, { type: 'change', projectId, prototypeId });
-    return listChanges(projectId, { prototypeId, status });
+    return listChanges(projectId, { prototypeId, status })
+      .map(change => this.promoteLegacyPreviewPending(change, actor));
   }
 
   submitCandidate({ actor, projectId, changeId, zipPath, versionType }) {
@@ -519,15 +541,15 @@ class LightweightCollaborationService {
         movedToFinal = true;
         db.run(`
           UPDATE prototype_changes
-          SET status = 'preview_pending', candidate_path = ?, candidate_entry_file = ?, candidate_digest = ?,
-              candidate_size_kb = ?, submitted_at = ?, validation_status = 'pending',
-            chosen_version_type = ?, validation_mode = 'static+browser', validation_errors_json = ?, validation_warnings_json = ?,
+          SET status = 'ready', candidate_path = ?, candidate_entry_file = ?, candidate_digest = ?,
+              candidate_size_kb = ?, submitted_at = ?, validation_status = 'passed',
+            chosen_version_type = ?, validation_mode = 'static', validation_errors_json = ?, validation_warnings_json = ?,
             validated_at = ?, preview_validated_at = NULL, updated_at = ?
           WHERE id = ?
         `, [changeId, entryFile, digest, sizeKb, now(), versionType || null, validationErrorsJson, validationWarningsJson, now(), now(), changeId]);
         insertAudit(db, {
           actorUserId: actor.id,
-          action: 'candidate.preview_pending',
+          action: 'candidate.ready',
           resourceId: changeId,
           metadata: {
             projectId,
