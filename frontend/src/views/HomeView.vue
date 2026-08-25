@@ -113,7 +113,13 @@
               <el-icon><User /></el-icon>
               {{ p.creator_name || getAuthorName(p.created_by) }}
             </span>
-            <span class="card-date">{{ formatDate(p.created_at) }}</span>
+            <span
+              class="card-dates"
+              :aria-label="`创建时间 ${formatDate(p.created_at)}，最后更新时间 ${formatDate(p.updated_at || p.created_at)}`"
+            >
+              <span class="card-created-date">{{ formatDate(p.created_at) }}</span>
+              <span class="card-updated-date">{{ formatDate(p.updated_at || p.created_at) }}</span>
+            </span>
           </div>
         </div>
         <el-dropdown v-if="authStore.isAdmin || p.created_by === authStore.user.id" trigger="click" @command="(cmd) => handleCardCommand(cmd, p)">
@@ -860,6 +866,25 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 4px;
+}
+
+.card-dates {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  color: #a0aec0;
+  text-align: right;
+  line-height: 1.25;
+}
+
+.card-updated-date {
+  font-size: 12px;
+}
+
+.card-created-date {
+  font-size: 10px;
+  opacity: .82;
 }
 
 .card-version {
