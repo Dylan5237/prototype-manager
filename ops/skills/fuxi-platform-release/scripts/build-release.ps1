@@ -11,6 +11,7 @@ param(
   [string]$PlatformRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path,
   [Parameter(Mandatory)][string]$SkillsRepositoryRoot,
   [string]$OutputDirectory = (Join-Path $PlatformRoot '.release'),
+  [string]$ResultPath,
   [switch]$Lightweight
 )
 $ErrorActionPreference = 'Stop'
@@ -79,7 +80,14 @@ try {
   $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
   [IO.File]::WriteAllText("$archive.sha256", "$hash  $([IO.Path]::GetFileName($archive))`n", [Text.UTF8Encoding]::new($false))
   Copy-Item -LiteralPath (Join-Path $stage 'manifest.json') -Destination "$archive.manifest.json" -Force
-  [pscustomobject]@{ releaseId=$releaseId; archive=$archive; sha256=$hash; platformCommit=$platformCommit; skillCommit=$skillCommit; verification=$manifest.verification } | ConvertTo-Json
+  $result = [ordered]@{ releaseId=$releaseId; archive=$archive; sha256=$hash; platformCommit=$platformCommit; skillCommit=$skillCommit; verification=$manifest.verification }
+  if ($ResultPath) {
+    $resultParent = Split-Path -Parent $ResultPath
+    if ($resultParent) { New-Item -ItemType Directory -Force -Path $resultParent | Out-Null }
+    $resultFile = if ([IO.Path]::IsPathRooted($ResultPath)) { $ResultPath } else { Join-Path (Get-Location) $ResultPath }
+    [IO.File]::WriteAllText($resultFile, ($result | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
+  }
+  $result | ConvertTo-Json
 } finally {
   if (Test-Path $tempRoot) { Remove-Item -LiteralPath $tempRoot -Recurse -Force }
 }

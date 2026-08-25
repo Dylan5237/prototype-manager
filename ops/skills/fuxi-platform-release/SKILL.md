@@ -23,12 +23,12 @@ Operate the maintainer-only release workflow for Fuxi Platform. Preserve every e
 
 1. Read [production-topology.md](references/production-topology.md) before any production operation.
 2. For inspection, run `scripts/probe-production.ps1`. It must remain read-only.
-3. For a candidate release, ensure both repositories are clean and all intended changes are committed. Run `scripts/build-release.ps1`.
-4. For the normal 16077 loop, use `scripts/build-release.ps1 -Lightweight`: it still builds the frontend, creates an immutable archive/checksum, and preserves remote backup/health gates, but leaves full MCP integration verification to the user's manual test. Use the full command when preparing a production candidate.
-5. Deploy the candidate to the isolated `16077` test environment with `scripts/deploy-test.ps1` (use `-InitData` on first install). Verify the new behavior there before touching production.
+3. For the normal 16077 loop, run `scripts/quick-deploy-test.ps1 -ConfirmTestDeploy DEPLOY_FUXI_TEST`: it packages the current clean worktrees with `-Lightweight` and immediately deploys the immutable archive to test. Use `scripts/build-release.ps1 -Lightweight` plus `scripts/deploy-test.ps1` separately when you need to inspect or promote a specific archive.
+4. Verify the new behavior on `16077` before touching production. The test loop skips full MCP integration verification and leaves that acceptance to manual testing.
+5. For production, use only `scripts/deploy-production-from-gitlab.ps1`. It clones both configured GitLab repositories at `main` into a temporary workspace, installs dependencies, runs the full build/check/integration gates, and passes the resulting archive to `deploy-release.ps1`.
 6. After test verification, run `scripts/capture-production-baseline.ps1` with authenticated platform credentials. Baselines older than one hour are rejected.
-7. Review the manifest, checksums, commits, baseline, and verification evidence with the user.
-8. After explicit production approval, run `scripts/deploy-release.ps1`. It uploads the immutable archive and baseline, then invokes the bundled guarded server deploy script.
+7. Review the GitLab `main` source commits, manifest, checksums, and baseline before explicit production approval.
+8. Run `scripts/deploy-production-from-gitlab.ps1 -BaselinePath <baseline> -ConfirmProductionDeploy DEPLOY_FUXI_PRODUCTION`. It retains the production manual gate and never packages the local feature branch.
 9. Run `scripts/verify-production-release.ps1`, then complete the new-only checks from [acceptance-contract.md](references/acceptance-contract.md). Keep the release pending if any evidence is missing.
 10. If a deployment or acceptance step fails, run `scripts/rollback-release.ps1` only after explicit rollback approval. Restore data when the new backend may have written or migrated it.
 
@@ -36,10 +36,12 @@ Operate the maintainer-only release workflow for Fuxi Platform. Preserve every e
 
 All PowerShell scripts expose help with `Get-Help <script> -Detailed` and fail closed.
 
-- `build-release.ps1`: by default run full local verification; with `-Lightweight`, build the frontend only, archive committed platform and Skill sources, and emit a manifest that records manual test as the remaining acceptance gate.
+- `build-release.ps1`: build a release from two supplied clean repositories; by default run full local verification, with `-Lightweight` build the frontend only, and optionally write machine-readable output with `-ResultPath`.
+- `quick-deploy-test.ps1`: build the current local worktrees with the lightweight profile and immediately delegate deployment to isolated `16077`.
+- `deploy-production-from-gitlab.ps1`: fresh-clone the platform and Skill GitLab repositories at `main`, install dependencies, run the full build, and delegate the guarded production switch.
 - `probe-production.ps1`: execute bundled read-only Bash probe over pinned PuTTY SSH.
 - `capture-production-baseline.ps1`: save authenticated prototype metadata and project bindings without production writes.
-- `deploy-release.ps1`: require `-ConfirmProductionDeploy DEPLOY_FUXI_PRODUCTION`, upload archive/scripts, and execute backup/install/switch/health checks.
+- `deploy-release.ps1`: low-level production switch; require `-ConfirmProductionDeploy DEPLOY_FUXI_PRODUCTION`, upload archive/scripts, and execute backup/install/switch/health checks. Do not use it to build from a developer worktree.
 - `deploy-test.ps1`: require `-ConfirmTestDeploy DEPLOY_FUXI_TEST`, upload the same archive plus the data filter, and deploy to the isolated `16077` environment. Use `-InitData` only for first install to seed isolated data from the production snapshot.
 - `verify-production-release.ps1`: prove old metadata zero drift and verify production bootstrap/package endpoints.
 - `rollback-release.ps1`: require `-ConfirmProductionRollback ROLLBACK_FUXI_PRODUCTION`, select an existing server backup/release, and invoke guarded rollback.
