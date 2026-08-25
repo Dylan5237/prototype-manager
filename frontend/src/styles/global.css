@@ -214,6 +214,10 @@
   white-space: nowrap;
 }
 
+.management-table-actions--center {
+  justify-content: center;
+}
+
 .management-table-actions .el-button {
   min-width: 0;
 }
