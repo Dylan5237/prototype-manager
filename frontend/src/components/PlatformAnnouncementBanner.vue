@@ -2,7 +2,7 @@
   <el-alert
     v-if="visible && current"
     class="platform-announcement-banner"
-    type="info"
+    type="warning"
     show-icon
     :closable="true"
     @close="visible = false"

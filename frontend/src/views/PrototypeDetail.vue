@@ -76,7 +76,7 @@
     <el-alert
       v-if="prototype.project_binding"
       class="project-binding-alert"
-      type="info"
+      type="warning"
       :closable="false"
       show-icon
     >
