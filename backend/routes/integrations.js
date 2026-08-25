@@ -123,9 +123,16 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
   const codeExpiresLocal = formatLocalTime(connect.expiresAt);
   const prompt = `请自动接入伏羲原型体系，不要让我手工编辑配置文件。
 
+本次接入只适用于同时满足以下条件的 AI 客户端：
+- 支持 MCP stdio；
+- 可以启动本地 Node.js 进程，且 Node.js >= 18；
+- 允许 AI 在用户目录读写配置文件；
+- 支持加载本地 Skill、Rules 或等价的 AI 指令目录。
+如果当前客户端不满足任一条件，立即停止并明确报告不满足的条件，不要声称接入成功。
+
 接入参数：
 - API: ${baseUrl}
-- 单一 Skill: ${SKILL_NAME}
+- Skill: ${SKILL_NAME}
 - Skill 安装包: ${skillUrl}
 - MCP 安装包: ${mcpUrl}
 - 安装 token: ${token}
@@ -134,28 +141,30 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 - 连接码过期时间: ${codeExpiresLocal}（Asia/Shanghai）
 
 请严格按以下顺序执行；任何一步失败立即停止，不要声称接入成功：
-1. 先识别当前 AI 客户端原生的 MCP 配置机制和本地工具目录，不假定固定 JSON 路径；创建临时安装目录，禁止把安装 token、连接码或 refresh token 写入业务仓库、Skill 文件或日志。
-2. 使用 Authorization: Bearer <安装 token> 只下载 MCP ZIP 到临时目录并解压；确认 Node.js >=18。先不要安装 Skill，也不要调用任何业务工具。
-3. 立即用下面的 stdio 配置启动稳定 launcher，并优先调用 check_connection；这一步会通过 launcher 启动 MCP、兑换一次性连接码、建立设备会话、把 refresh token 写入 FUXI_CREDENTIALS_FILE。只有 check_connection 成功后才能继续：
+1. 识别当前 AI 客户端名称、版本、操作系统、MCP stdio 配置机制和 Skill/Rules 目录，不假定 Cursor、Claude、Cline 或其他固定客户端，也不假定固定 JSON 路径。如果客户端没有可用的 Skill/Rules 机制，报告“当前客户端支持 MCP，但不具备可安装的 Skill 机制”。
+2. 为 MCP、Skill、凭据和运行时选择用户级、持久化、非业务仓库路径；下载和解压只使用临时 staging 目录。所有路径必须解析为当前机器上的绝对路径，禁止把 <用户主目录>、<MCP解压目录>、<Skill目录> 或 <临时目录> 原样写入配置。
+3. 备份现有 MCP 配置，只新增或更新伏羲条目，不删除其他 MCP，不覆盖其他客户端配置。使用 Authorization: Bearer <安装 token> 下载 MCP 和 Skill ZIP 到 staging；确认 HTTP 状态为 2xx、ZIP 有效且包含预期入口；如果响应提供 SHA-256、文件大小或版本信息，必须一并校验。禁止将安装 token、连接码或 refresh token 写入业务仓库、Skill 文件或日志。
+4. 将校验通过的 MCP 安装到持久化目录，确认 fuxi-platform-mcp/src/launcher.js、server.js 和 package.json 存在。使用以下 stdio 配置启动稳定 launcher；尖括号路径必须替换为实际绝对路径：
      command: node
-     args: [<MCP解压目录>/fuxi-platform-mcp/src/launcher.js]
+     args: [<持久化MCP目录>/fuxi-platform-mcp/src/launcher.js]
      env: {
-     FUXI_API_URL: "${baseUrl}",
-     FUXI_CONNECT_CODE: "${connect.code}",
-     FUXI_CREDENTIALS_FILE: "<用户主目录>/.fuxi/mcp-credentials.json",
-     FUXI_MCP_TARGET: "<MCP解压目录>/fuxi-platform-mcp/src/server.js",
-     FUXI_INSTALL_ROOT: "<用户主目录>/.fuxi/agent-runtime",
-     FUXI_SKILL_TARGET: "<用户主目录>/.cursor/skills/fuxi-skyui-prototype"
+       FUXI_API_URL: "${baseUrl}",
+       FUXI_CONNECT_CODE: "${connect.code}",
+       FUXI_CREDENTIALS_FILE: "<实际绝对路径>/.fuxi/mcp-credentials.json",
+       FUXI_MCP_TARGET: "<持久化MCP目录>/fuxi-platform-mcp/src/server.js",
+       FUXI_INSTALL_ROOT: "<实际绝对路径>/.fuxi/agent-runtime",
+       FUXI_SKILL_TARGET: "<当前客户端实际Skill目录>/fuxi-skyui-prototype"
      }
-4. 连接成功后，使用安装 token 下载 Skill ZIP；将其中的 ${SKILL_NAME}/ 安装到原生 Skill 目录，先备份已有版本，再以临时目录完成替换，验证 SKILL.md 可发现。
-5. 将稳定 launcher 接入 AI 客户端的 stdio 配置，保留 FUXI_API_URL、FUXI_CREDENTIALS_FILE、FUXI_INSTALL_ROOT 和 FUXI_SKILL_TARGET；连接码只用于本次首次兑换；兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
-6. 重启或刷新 AI 客户端，调用 check_connection，确认 tools/list 包含 deliver_project，再确认 ${SKILL_NAME} 可被发现和调用；不要用业务写入动作代替连接验证。
-7. 成功后先只报告安装位置、连接结果、Skill 状态和会话有效期，不回显完整安装 token、access token 或 refresh token；然后引导我使用伏羲平台完成下一步工作：
+5. 启动 launcher 后优先调用 check_connection。这一步会兑换一次性连接码、建立设备会话并将 refresh token 写入 FUXI_CREDENTIALS_FILE。在 check_connection 成功前，不要调用业务写入工具，不要上传项目或原型。连接码过期报告 AUTHENTICATION_FAILED，授权不足报告 AUTHORIZATION_REQUIRED。
+6. 连接成功后，将 Skill ZIP 安装到当前客户端实际使用的 Skill/Rules 目录：先备份旧版本，先在临时目录完成校验，再原子替换，验证 ${SKILL_NAME}/SKILL.md 存在且可被客户端发现。安装失败时恢复备份。
+7. 将稳定 launcher 保持在客户端的 stdio 配置中，并保留 FUXI_API_URL、FUXI_CREDENTIALS_FILE、FUXI_MCP_TARGET、FUXI_INSTALL_ROOT 和 FUXI_SKILL_TARGET。连接码兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
+8. 重启或刷新 AI 客户端，再次调用 check_connection；确认 tools/list 包含 deliver_project，确认 ${SKILL_NAME} 可被发现和调用，确认其他已有 MCP 仍然正常。不能用当前会话中的一次成功代替重启后的验证。
+9. 成功后先报告 AI 客户端、操作系统、MCP 实际安装路径、Skill 实际安装路径、MCP 连接结果、deliver_project 是否存在、Skill 是否发现成功以及后续是否由 launcher 接管更新。禁止回显安装 token、access token、refresh token、完整连接码、用户密码或凭据文件内容。然后引导我使用伏羲平台：
    【创建新原型】打开伏羲平台“原型列表”→点击“让AI创建原型”→在“新建原型”中输入需求或粘贴需求文件的完整本地路径→选择“快速验证”或“按SkyUI规范”→生成并复制完整提示词→将提示词发送给当前已接入的 AI 助手→回到伏羲查看原型预览、设计文档和版本历史。
    【修改独立原型】在“原型列表”打开未归属项目的原型详情→点击“让 AI 修改”→填写修改要求并选择版本策略→生成并复制完整提示词→发送给 AI→等待伏羲完成构建和预览校验→查看新的正式版本和预览。
    【修改项目中的原型】如果原型已经绑定项目，进入顶部“项目”→打开所属项目→在项目菜单中选择目标原型→点击“让 AI 修改”→生成并复制完整提示词→发送给 AI→候选上传后由项目负责人预览并采用；未采用前不会改变正式版本。
 
-恢复规则：需要客户端授权时只请求最小原生授权；权限拒绝报告 AUTHORIZATION_REQUIRED；连接码过期报告 AUTHENTICATION_FAILED 并让我回平台重新生成连接码；refresh token 失效时先保留旧安装并报告 AUTHENTICATION_FAILED；Skill 或 MCP 替换失败时恢复备份；任一步失败都不得声称接入成功。`;
+恢复规则：需要客户端授权时只请求最小原生授权；refresh token 失效时保留旧安装并报告 AUTHENTICATION_FAILED；Skill 或 MCP 替换失败时恢复备份；任一步失败都不得声称接入成功。首次接入完成后，后续 MCP 和 Skill 更新由稳定 launcher 在 AI 客户端下次启动时处理，不要让我重复执行完整接入流程。`;
 
   res.json({
     success: true,

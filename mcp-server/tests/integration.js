@@ -329,6 +329,9 @@ async function main() {
     assert(bootstrap.data.prompt.includes('修改独立原型'));
     assert(bootstrap.data.prompt.includes('修改项目中的原型'));
     assert(bootstrap.data.prompt.includes('候选上传后由项目负责人预览并采用'));
+    assert(bootstrap.data.prompt.includes('FUXI_MCP_TARGET'));
+    assert(bootstrap.data.prompt.includes('重启或刷新 AI 客户端'));
+    assert(!bootstrap.data.prompt.includes('.cursor/skills'));
     assert(bootstrap.data.connectCode);
     assert(bootstrap.data.connectCodeExpiresAt);
     const connectCodeRemainingMs = Date.parse(bootstrap.data.connectCodeExpiresAt) - Date.now();
