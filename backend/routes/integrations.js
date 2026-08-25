@@ -150,7 +150,10 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 4. 连接成功后，使用安装 token 下载 Skill ZIP；将其中的 ${SKILL_NAME}/ 安装到原生 Skill 目录，先备份已有版本，再以临时目录完成替换，验证 SKILL.md 可发现。
 5. 将稳定 launcher 接入 AI 客户端的 stdio 配置，保留 FUXI_API_URL、FUXI_CREDENTIALS_FILE、FUXI_INSTALL_ROOT 和 FUXI_SKILL_TARGET；连接码只用于本次首次兑换；兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
 6. 重启或刷新 AI 客户端，调用 check_connection，确认 tools/list 包含 deliver_project，再确认 ${SKILL_NAME} 可被发现和调用；不要用业务写入动作代替连接验证。
-7. 成功后只报告安装位置、连接结果、Skill 状态和会话有效期，不回显完整安装 token、access token 或 refresh token。
+7. 成功后先只报告安装位置、连接结果、Skill 状态和会话有效期，不回显完整安装 token、access token 或 refresh token；然后引导我使用伏羲平台完成下一步工作：
+   【创建新原型】打开伏羲平台“原型列表”→点击“让AI创建原型”→在“新建原型”中输入需求或粘贴需求文件的完整本地路径→选择“快速验证”或“按SkyUI规范”→生成并复制完整提示词→将提示词发送给当前已接入的 AI 助手→回到伏羲查看原型预览、设计文档和版本历史。
+   【修改独立原型】在“原型列表”打开未归属项目的原型详情→点击“让 AI 修改”→填写修改要求并选择版本策略→生成并复制完整提示词→发送给 AI→等待伏羲完成构建和预览校验→查看新的正式版本和预览。
+   【修改项目中的原型】如果原型已经绑定项目，进入顶部“项目”→打开所属项目→在项目菜单中选择目标原型→点击“让 AI 修改”→生成并复制完整提示词→发送给 AI→候选上传后由项目负责人预览并采用；未采用前不会改变正式版本。
 
 恢复规则：需要客户端授权时只请求最小原生授权；权限拒绝报告 AUTHORIZATION_REQUIRED；连接码过期报告 AUTHENTICATION_FAILED 并让我回平台重新生成连接码；refresh token 失效时先保留旧安装并报告 AUTHENTICATION_FAILED；Skill 或 MCP 替换失败时恢复备份；任一步失败都不得声称接入成功。`;
 
