@@ -27,7 +27,7 @@
           <el-option label="最早创建" value="created_asc" />
         </el-select>
         <el-button v-if="authStore.isAdmin || authStore.isEditor" type="primary" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>新建原型
+          <el-icon><Plus /></el-icon>让AI创建原型
         </el-button>
       </div>
     </div>
@@ -147,9 +147,9 @@
           <el-form-item label="创建模式">
             <el-radio-group v-model="prototypePromptMode">
               <el-radio-button label="alignment">快速验证</el-radio-button>
-              <el-radio-button label="implementation-proof">严格实现</el-radio-button>
+              <el-radio-button label="implementation-proof">按SkyUI规范</el-radio-button>
             </el-radio-group>
-            <span class="form-help">快速验证优先确认需求、布局和关键交互；严格实现增加构建、组件和交付校验。</span>
+            <span class="form-help">快速验证优先确认需求、布局和关键交互；按SkyUI规范会增加组件、构建和交付校验。</span>
           </el-form-item>
           <el-form-item label="需求描述" required>
             <el-input v-model="prototypeRequirement" type="textarea" :rows="8" placeholder="写清使用者、当前问题、期望结果、关键页面和验收方式。" />
@@ -158,11 +158,21 @@
           <el-form-item label="需求文档（可选）">
             <input ref="prototypeFileInput" class="file-input" type="file" accept=".doc,.docx,.pdf,.txt,.md" @change="handlePrototypeFile" />
             <div class="file-picker"><el-button @click="prototypeFileInput?.click()">选择文件</el-button><span>{{ prototypeFileName || '支持 DOCX、PDF、TXT、Markdown' }}</span><el-button v-if="prototypeFileName" text type="danger" @click="removePrototypeFile">移除</el-button></div>
+            <el-input
+              v-if="prototypeFileName"
+              v-model="prototypeFilePath"
+              class="file-path-input"
+              placeholder="正在读取本地路径；若浏览器隐藏路径，请手动粘贴完整路径"
+              clearable
+            >
+              <template #prepend>本地路径</template>
+            </el-input>
+            <span v-if="prototypeFileName" class="form-help">生成提示词时会把文件名和本地路径一并拼接到需求描述中。浏览器通常会隐藏真实路径，可在此补充。</span>
           </el-form-item>
         </el-form>
       </template>
       <template v-else>
-        <el-alert type="success" :closable="false" show-icon :title="'提示词已生成 · ' + (prototypePromptMode === 'alignment' ? '快速验证' : '严格实现')">
+        <el-alert type="success" :closable="false" show-icon :title="'提示词已生成 · ' + (prototypePromptMode === 'alignment' ? '快速验证' : '按SkyUI规范')">
           <p>复制完整提示词，发送给已经接入伏羲的 AI 助手。修改需求时可返回编辑，当前输入和附件会保留。</p>
         </el-alert>
         <el-input v-model="prototypePrompt" type="textarea" :rows="22" readonly class="prototype-prompt-output" />
@@ -247,6 +257,7 @@ const showCreateDialog = ref(false)
 const prototypePromptMode = ref('alignment')
 const prototypeRequirement = ref('')
 const prototypeFileName = ref('')
+const prototypeFilePath = ref('')
 const prototypeFileInput = ref(null)
 const prototypePrompt = ref('')
 const prototypePromptGenerated = ref(false)
@@ -420,18 +431,28 @@ function openCreateDialog() {
   prototypePromptMode.value = 'alignment'
   prototypeRequirement.value = ''
   prototypeFileName.value = ''
+  prototypeFilePath.value = ''
   prototypePrompt.value = ''
   prototypePromptGenerated.value = false
   showCreateDialog.value = true
 }
 
 function handlePrototypeFile(event) {
-  prototypeFileName.value = event.target.files?.[0]?.name || ''
+  const file = event.target.files?.[0]
+  prototypeFileName.value = file?.name || ''
+  prototypeFilePath.value = resolveClientFilePath(file, event.target.value)
 }
 
 function removePrototypeFile() {
   prototypeFileName.value = ''
+  prototypeFilePath.value = ''
   if (prototypeFileInput.value) prototypeFileInput.value.value = ''
+}
+
+function resolveClientFilePath(file, inputValue = '') {
+  const candidate = file?.path || file?.localPath || inputValue || ''
+  if (!candidate || candidate.toLowerCase().includes('fakepath')) return ''
+  return candidate
 }
 
 function generatePrototypePrompt() {
@@ -439,10 +460,15 @@ function generatePrototypePrompt() {
     ElMessage.warning('请输入需求或选择一份需求文档')
     return
   }
+  if (prototypeFileName.value && !prototypeFilePath.value.trim()) {
+    ElMessage.warning('浏览器未提供完整本地路径，请在“本地路径”中粘贴后再生成提示词')
+    return
+  }
   prototypePrompt.value = buildPrototypePrompt({
     requirement: prototypeRequirement.value.trim(),
     mode: prototypePromptMode.value,
-    attachmentName: prototypeFileName.value
+    attachmentName: prototypeFileName.value,
+    attachmentPath: prototypeFilePath.value.trim()
   })
   prototypePromptGenerated.value = true
 }
@@ -728,6 +754,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-path-input {
+  margin-top: 10px;
 }
 
 .sort-select {

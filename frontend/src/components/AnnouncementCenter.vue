@@ -8,7 +8,7 @@
 
     <el-drawer v-model="centerVisible" title="平台更新公告" size="420px" append-to-body>
       <template #header>
-        <div class="drawer-header"><div><strong>平台更新公告</strong><span>{{ store.unreadCount }} 条未读 · 可随时回看历史</span></div></div>
+        <div class="drawer-header"><div><strong>平台更新公告</strong><span>{{ store.unreadCount }} 条未读</span></div></div>
       </template>
       <el-tabs v-model="filter" @tab-change="loadFiltered">
         <el-tab-pane label="全部" name="all" />

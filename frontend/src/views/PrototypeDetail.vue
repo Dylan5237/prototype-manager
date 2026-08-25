@@ -1345,6 +1345,27 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+/* 长提示词必须在弹窗内换行滚动，不能把正文撑出对话框边界。 */
+.task-prompt {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(52vh, 560px);
+  margin: 16px 0 0;
+  padding: 14px;
+  overflow: auto;
+  color: #e2e8f0;
+  background: #172033;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* ========================================
    左右布局：Tab 侧边栏 + 内容区
    ======================================== */
