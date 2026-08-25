@@ -486,6 +486,9 @@ const directCountdownNow = ref(Date.now())
 const directPreviewSmokePending = ref(false)
 let directCountdownTimer = null
 let directPreviewFrameElement = null
+let directPreviewSmokeTimer = null
+let directChangePollTimer = null
+let directPreviewValidationInFlight = false
 
 const canEdit = computed(() => {
   if (!prototype.value || !authStore.user) return false
@@ -545,6 +548,8 @@ async function loadData() {
 }
 
 async function loadDirectChange() {
+  clearDirectPreviewSmokeTimer()
+  clearDirectChangePollTimer()
   if (!prototype.value || prototype.value.project_binding || !canEdit.value) {
     directChange.value = null
     return
@@ -555,6 +560,7 @@ async function loadDirectChange() {
     directChange.value = res.data.data || null
     directPreviewFrameElement = null
     directPreviewSmokePending.value = directChange.value?.status === 'preview_pending'
+    scheduleDirectChangePoll()
   } catch (err) {
     if (err.response?.status !== 409) directChange.value = null
   } finally {
@@ -629,24 +635,61 @@ function copyDirectPrompt() {
   fallbackCopy(directChangeResult.value.prompt, '完整提示词已复制')
 }
 
-async function handleDirectPreviewLoad(event) {
-  directPreviewFrameElement = event?.target || null
-  if (!directChange.value || directChange.value.status !== 'preview_pending') return
-  directPreviewSmokePending.value = true
+function clearDirectPreviewSmokeTimer() {
+  if (directPreviewSmokeTimer) {
+    window.clearTimeout(directPreviewSmokeTimer)
+    directPreviewSmokeTimer = null
+  }
 }
 
-async function handleDirectPreviewSmokeMessage(event) {
-  if (event.origin !== window.location.origin || event.data?.source !== 'fuxi-preview-smoke') return
+function clearDirectChangePollTimer() {
+  if (directChangePollTimer) {
+    window.clearTimeout(directChangePollTimer)
+    directChangePollTimer = null
+  }
+}
+
+function scheduleDirectChangePoll() {
+  clearDirectChangePollTimer()
   if (!directChange.value || directChange.value.status !== 'preview_pending') return
-  if (event.source !== directPreviewFrameElement?.contentWindow) return
+  directChangePollTimer = window.setTimeout(async () => {
+    directChangePollTimer = null
+    if (!directChange.value || directChange.value.status !== 'preview_pending') return
+    try {
+      const res = await getCurrentDirectChange(prototype.value.id)
+      const next = res.data.data || null
+      const wasPending = directChange.value?.status === 'preview_pending'
+      directChange.value = next
+      if (wasPending && next?.status === 'completed') {
+        clearDirectPreviewSmokeTimer()
+        await loadData()
+        return
+      }
+    } catch (err) {
+      // 预览轮询是辅助刷新，失败时保留当前页面状态，下一轮继续尝试。
+    }
+    scheduleDirectChangePoll()
+  }, 2000)
+}
+
+function hasDirectPreviewContent() {
+  const doc = directPreviewFrameElement?.contentDocument
+  if (!doc || !String(doc.contentType || '').toLowerCase().includes('text/html')) return false
+  const app = doc.querySelector('#app')
+  if (app) return Boolean(app.children.length || (app.textContent || '').trim() || (app.innerHTML || '').trim().length > 20)
+  return Array.from(doc.body?.children || []).some(element => {
+    if (/^(SCRIPT|STYLE|LINK|META|NOSCRIPT)$/i.test(element.tagName)) return false
+    return Boolean(element.offsetWidth || element.offsetHeight || (element.textContent || '').trim())
+  })
+}
+
+async function submitDirectPreviewValidation(payload) {
+  if (!directChange.value || directChange.value.status !== 'preview_pending' || directPreviewValidationInFlight) return
+  directPreviewValidationInFlight = true
+  clearDirectPreviewSmokeTimer()
   directPreviewSmokePending.value = false
   try {
-    const res = await recordDirectChangePreviewValidation(prototype.value.id, directChange.value.id, {
-      status: event.data.status,
-      errors: event.data.errors || [],
-      warnings: event.data.warnings || [],
-      durationMs: event.data.durationMs
-    })
+    const res = await recordDirectChangePreviewValidation(prototype.value.id, directChange.value.id, payload)
     const result = res.data.data
     if (result?.change?.status === 'completed') {
       ElMessage.success(`修改已完成，正式版本更新为 v${result.version?.version_label || ''}`)
@@ -656,8 +699,41 @@ async function handleDirectPreviewSmokeMessage(event) {
       ElMessage.error('候选预览校验失败，正式版本未改变')
     }
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '预览校验回报失败')
+    ElMessage.error(err.response?.data?.message || '预览校验回报失败，请刷新后重试')
+  } finally {
+    directPreviewValidationInFlight = false
   }
+}
+
+async function handleDirectPreviewLoad(event) {
+  directPreviewFrameElement = event?.target || null
+  if (!directChange.value || directChange.value.status !== 'preview_pending') return
+  directPreviewSmokePending.value = true
+  clearDirectPreviewSmokeTimer()
+  // 某些原型会通过 CSP 或自身错误阻止注入的 smoke 脚本；8 秒后用同源宿主页面兜底，避免永久卡在 pending。
+  directPreviewSmokeTimer = window.setTimeout(() => {
+    if (!directChange.value || directChange.value.status !== 'preview_pending') return
+    const passed = hasDirectPreviewContent()
+    submitDirectPreviewValidation({
+      status: passed ? 'passed' : 'failed',
+      errors: passed ? [] : ['预览未在规定时间内回报校验结果，且页面没有可确认的内容'],
+      warnings: passed ? ['内嵌预览未回传 Smoke 结果，已使用宿主页面兜底校验'] : [],
+      durationMs: 8000
+    })
+  }, 8000)
+}
+
+async function handleDirectPreviewSmokeMessage(event) {
+  if (event.origin !== window.location.origin || event.data?.source !== 'fuxi-preview-smoke') return
+  if (!directChange.value || directChange.value.status !== 'preview_pending') return
+  if (event.source !== directPreviewFrameElement?.contentWindow) return
+  if (!['passed', 'failed'].includes(event.data.status)) return
+  await submitDirectPreviewValidation({
+    status: event.data.status,
+    errors: event.data.errors || [],
+    warnings: event.data.warnings || [],
+    durationMs: event.data.durationMs
+  })
 }
 
 async function loadReadme() {
@@ -1105,6 +1181,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (directCountdownTimer) window.clearInterval(directCountdownTimer)
+  clearDirectPreviewSmokeTimer()
+  clearDirectChangePollTimer()
   window.removeEventListener('message', handleDirectPreviewSmokeMessage)
 })
 </script><style scoped>
