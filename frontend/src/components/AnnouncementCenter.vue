@@ -42,7 +42,6 @@
         <div class="detail-body">{{ selected.body }}</div>
       </div>
       <template #footer>
-        <span class="read-tip">{{ selected?.is_read ? '你已读过这条公告' : '阅读后点击“我知道了”消除未读提醒' }}</span>
         <el-button @click="detailVisible = false">稍后阅读</el-button>
         <el-button v-if="!selected?.is_read" type="primary" :loading="marking" @click="handleMarkRead">我知道了</el-button>
         <el-button v-else type="primary" @click="detailVisible = false">关闭</el-button>
@@ -151,5 +150,4 @@ onMounted(() => { store.load().catch(() => {}) })
 .detail-meta { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 12px; }
 .detail-lead { margin: 17px 0 14px; padding: 13px 14px; border-left: 4px solid #3b82f6; border-radius: 0 8px 8px 0; background: #f8fafc; }
 .detail-body { min-height: 160px; white-space: pre-line; color: #475569; line-height: 1.8; }
-.read-tip { margin-right: auto; color: #64748b; font-size: 12px; }
 </style>
