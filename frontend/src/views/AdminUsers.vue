@@ -155,7 +155,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUsers, registerUser, updateUser, deleteUser } from '../api/auth'
 import { getGroups } from '../api/groups'
@@ -180,9 +180,9 @@ const creating = ref(false)
 const createFormRef = ref(null)
 const createForm = ref({
   username: '',
-  password: '',
+  password: '111111',
   nickname: '',
-  roles: ['viewer'],
+  roles: ['viewer', 'uploader'],
   groupIds: []
 })
 const createRules = {
@@ -192,9 +192,15 @@ const createRules = {
 }
 
 function openCreateDialog() {
-  createForm.value = { username: '', password: '', nickname: '', roles: ['viewer'], groupIds: [] }
+  createForm.value = { username: '', password: '111111', nickname: '', roles: ['viewer', 'uploader'], groupIds: [] }
   showCreateDialog.value = true
 }
+
+watch(() => createForm.value.username, (username, previousUsername) => {
+  if (!createForm.value.nickname || createForm.value.nickname === previousUsername) {
+    createForm.value.nickname = username
+  }
+})
 
 async function handleCreate() {
   const valid = await createFormRef.value.validate().catch(() => false)

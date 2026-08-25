@@ -17,29 +17,29 @@
       </div>
 
       <div class="management-panel">
-        <el-table :data="recycleBinList" v-loading="loading" style="width: 100%">
-        <el-table-column prop="name" label="名称" min-width="200">
+        <el-table class="recycle-table" :data="recycleBinList" v-loading="loading" style="width: 100%" table-layout="fixed">
+        <el-table-column prop="name" label="名称" min-width="420">
           <template #default="{ row }">
             <div class="proto-name">{{ row.name }}</div>
             <div class="proto-desc">{{ row.description || '暂无描述' }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="version" label="版本" width="100" align="center">
+        <el-table-column prop="version" label="版本" width="110" align="center">
           <template #default="{ row }">
             <el-tag size="small">v{{ row.version }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="created_by" label="创建者" width="120" align="center">
+        <el-table-column prop="created_by" label="创建者" width="150" align="center">
           <template #default="{ row }">
             {{ getAuthorName(row.created_by) }}
           </template>
         </el-table-column>
-        <el-table-column prop="deleted_at" label="删除时间" width="180" align="center">
+        <el-table-column prop="deleted_at" label="删除时间" width="190" align="center">
           <template #default="{ row }">
             {{ formatDate(row.deleted_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" align="right" header-align="right" fixed="right">
+        <el-table-column label="操作" width="230" align="right" header-align="right" fixed="right">
           <template #default="{ row }">
             <div class="management-table-actions">
               <el-button
@@ -175,5 +175,22 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.recycle-table :deep(.el-table__header .cell),
+.recycle-table :deep(.el-table__body .cell) {
+  box-sizing: border-box;
+}
+
+.recycle-table :deep(.el-table__header th:nth-child(1) .cell),
+.recycle-table :deep(.el-table__body td:nth-child(1) .cell) {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+.recycle-table :deep(.el-table__header th:nth-child(5) .cell),
+.recycle-table :deep(.el-table__body td:nth-child(5) .cell) {
+  padding-left: 12px;
+  padding-right: 16px;
 }
 </style>
