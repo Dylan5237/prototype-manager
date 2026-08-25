@@ -26,7 +26,7 @@ const {
 } = require('../services/agent-artifacts');
 
 const router = express.Router();
-const SKILL_NAME = 'fuxi-skyui-prototype';
+const SKILL_NAME = 'fuxi-prototype';
 const EXCLUDED_NAMES = new Set([
   '.git', '.npmrc', '.credentials.json', 'node_modules', 'dist', 'build',
   'coverage', 'tests'
@@ -153,14 +153,14 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
        FUXI_CREDENTIALS_FILE: "<实际绝对路径>/.fuxi/mcp-credentials.json",
        FUXI_MCP_TARGET: "<持久化MCP目录>/fuxi-platform-mcp/src/server.js",
        FUXI_INSTALL_ROOT: "<实际绝对路径>/.fuxi/agent-runtime",
-       FUXI_SKILL_TARGET: "<当前客户端实际Skill目录>/fuxi-skyui-prototype"
+       FUXI_SKILL_TARGET: "<当前客户端实际Skill目录>/fuxi-prototype"
      }
 5. 启动 launcher 后优先调用 check_connection。这一步会兑换一次性连接码、建立设备会话并将 refresh token 写入 FUXI_CREDENTIALS_FILE。在 check_connection 成功前，不要调用业务写入工具，不要上传项目或原型。连接码过期报告 AUTHENTICATION_FAILED，授权不足报告 AUTHORIZATION_REQUIRED。
 6. 连接成功后，将 Skill ZIP 安装到当前客户端实际使用的 Skill/Rules 目录：先备份旧版本，先在临时目录完成校验，再原子替换，验证 ${SKILL_NAME}/SKILL.md 存在且可被客户端发现。安装失败时恢复备份。
 7. 将稳定 launcher 保持在客户端的 stdio 配置中，并保留 FUXI_API_URL、FUXI_CREDENTIALS_FILE、FUXI_MCP_TARGET、FUXI_INSTALL_ROOT 和 FUXI_SKILL_TARGET。连接码兑换成功后删除 FUXI_CONNECT_CODE，不要持久化安装 token。
 8. 重启或刷新 AI 客户端，再次调用 check_connection；确认 tools/list 包含 deliver_project，确认 ${SKILL_NAME} 可被发现和调用，确认其他已有 MCP 仍然正常。不能用当前会话中的一次成功代替重启后的验证。
-9. 成功后先报告 AI 客户端、操作系统、MCP 实际安装路径、Skill 实际安装路径、MCP 连接结果、deliver_project 是否存在、Skill 是否发现成功以及后续是否由 launcher 接管更新。禁止回显安装 token、access token、refresh token、完整连接码、用户密码或凭据文件内容。然后引导我使用伏羲平台：
-   【创建新原型】打开伏羲平台“原型列表”→点击“让AI创建原型”→在“新建原型”中输入需求或粘贴需求文件的完整本地路径→选择“快速验证”或“按SkyUI规范”→生成并复制完整提示词→将提示词发送给当前已接入的 AI 助手→回到伏羲查看原型预览、设计文档和版本历史。
+   9. 成功后先报告 AI 客户端、操作系统、MCP 实际安装路径、Skill 实际安装路径、MCP 连接结果、deliver_project 是否存在、Skill 是否发现成功以及后续是否由 launcher 接管更新。禁止回显安装 token、access token、refresh token、完整连接码、用户密码或凭据文件内容。然后引导我使用伏羲平台：
+   【创建新原型】打开伏羲平台“原型列表”→点击“让AI创建原型”→在“新建原型”中输入需求或粘贴需求文件的完整本地路径→选择“快速验证”或“按选定组件规范”→生成并复制完整提示词→将提示词发送给当前已接入的 AI 助手→回到伏羲查看原型预览、设计文档和版本历史。
    【修改独立原型】在“原型列表”打开未归属项目的原型详情→点击“让 AI 修改”→填写修改要求并选择版本策略→生成并复制完整提示词→发送给 AI→等待伏羲完成构建和静态交付检查→查看新的正式版本和预览；如果预览无法加载，再让 AI 排查后重新上传。
    【修改项目中的原型】如果原型已经绑定项目，进入顶部“项目”→打开所属项目→在项目菜单中选择目标原型→点击“让 AI 修改”→生成并复制完整提示词→发送给 AI→候选上传后由项目负责人预览并采用；未采用前不会改变正式版本。
 

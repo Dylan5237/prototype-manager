@@ -147,10 +147,10 @@
           <el-form-item label="创建模式">
             <el-radio-group v-model="prototypePromptMode">
               <el-radio-button label="alignment">快速验证</el-radio-button>
-              <el-radio-button label="implementation-proof">按SkyUI规范</el-radio-button>
+              <el-radio-button label="implementation-proof">按组件规范</el-radio-button>
             </el-radio-group>
             <span v-if="prototypePromptMode === 'alignment'" class="form-help">快速验证优先确认需求、布局和关键交互</span>
-            <span v-else class="form-help">按SkyUI规范会引入SkyUI组件、增加完整构建和交付校验。</span>
+            <span v-else class="form-help">按选定 runtime 的组件规范实现，并增加完整构建和交付校验。</span>
           </el-form-item>
           <el-form-item label="需求描述" required>
             <el-input v-model="prototypeRequirement" type="textarea" :rows="8" placeholder="写清使用者、当前问题、期望结果、关键页面和验收方式。" />
@@ -167,7 +167,7 @@
         </el-form>
       </template>
       <template v-else>
-        <el-alert type="success" :closable="false" show-icon :title="'提示词已生成 · ' + (prototypePromptMode === 'alignment' ? '快速验证' : '按SkyUI规范')">
+        <el-alert type="success" :closable="false" show-icon :title="'提示词已生成 · ' + (prototypePromptMode === 'alignment' ? '快速验证' : '按组件规范')">
           <p>复制完整提示词，发送给已经接入伏羲的 AI 助手。修改需求时可返回编辑，当前输入会保留。</p>
         </el-alert>
         <el-input v-model="prototypePrompt" type="textarea" :rows="22" readonly class="prototype-prompt-output" />

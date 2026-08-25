@@ -15,7 +15,8 @@ export function buildPrototypePrompt({ requirement, mode, attachmentName, attach
     '',
     '【固定模式】',
     '- operation mode: create；必须创建新原型，不得复用、覆盖或更新已有原型。',
-    '- outputMode: ' + (strict ? 'implementation-proof（按SkyUI规范）' : 'alignment（快速验证）') + '。',
+    '- outputMode: ' + (strict ? 'implementation-proof（按选定组件规范）' : 'alignment（快速验证）') + '。',
+    '- runtime profile: 根据需求、选定 prototype spec 和已有项目证据选择；SkyUI 不是默认依赖，不得隐式安装或选择。',
     '- 只能使用下方需求和附件作为业务来源，不得自行创造业务对象、指标、权限或流程。'
   ]
   lines.push(...attachment)

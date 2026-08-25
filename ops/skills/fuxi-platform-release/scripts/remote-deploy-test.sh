@@ -89,7 +89,7 @@ tar -xzf "$ARCHIVE" -C "$NEW_RELEASE"
 [[ -f "$NEW_RELEASE/platform/backend/server.js" ]] || { echo 'Test release backend entry missing.' >&2; exit 3; }
 [[ -f "$NEW_RELEASE/platform/frontend/dist/index.html" ]] || { echo 'Test release frontend dist missing.' >&2; exit 3; }
 [[ -f "$NEW_RELEASE/platform/mcp-server/src/server.js" ]] || { echo 'Test release MCP entry missing.' >&2; exit 3; }
-[[ -f "$NEW_RELEASE/skills/fuxi-skyui-prototype/SKILL.md" ]] || { echo 'Test release Skill entry missing.' >&2; exit 3; }
+[[ -f "$NEW_RELEASE/skills/fuxi-prototype/SKILL.md" ]] || { echo 'Test release Skill entry missing.' >&2; exit 3; }
 
 STATE=install
 (cd "$NEW_RELEASE/platform/backend" && npm ci --omit=dev)
@@ -129,7 +129,7 @@ ln -s "$SHARED/backend.env" "$NEW_RELEASE/platform/backend/.env"
 if [[ ! -f "$SHARED/backend.env" ]]; then
   printf 'PORT=3002\nJWT_SECRET=%s\nFUXI_SKILL_DIR=%s\nFUXI_MCP_DIR=%s\n' \
     "$(openssl rand -hex 32)" \
-    "$NEW_RELEASE/skills/fuxi-skyui-prototype" \
+    "$NEW_RELEASE/skills/fuxi-prototype" \
     "$NEW_RELEASE/platform/mcp-server" > "$SHARED/backend.env"
   chmod 600 "$SHARED/backend.env"
 fi
@@ -140,7 +140,7 @@ set_env() {
   chmod 600 "$temp"
   mv "$temp" "$SHARED/backend.env"
 }
-set_env FUXI_SKILL_DIR "$NEW_RELEASE/skills/fuxi-skyui-prototype"
+set_env FUXI_SKILL_DIR "$NEW_RELEASE/skills/fuxi-prototype"
 set_env FUXI_MCP_DIR "$NEW_RELEASE/platform/mcp-server"
 
 STATE=switch

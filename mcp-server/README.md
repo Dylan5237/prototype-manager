@@ -15,7 +15,7 @@ Set these environment variables in the MCP host:
 | `FUXI_USERNAME` | No | Login username when no connect code, refresh token, or `FUXI_TOKEN` is present. |
 | `FUXI_PASSWORD` | No | Login password for the username/password fallback. |
 | `FUXI_INSTALL_ROOT` | No | Stable launcher local runtime root; defaults to `~/.fuxi/agent-runtime`. |
-| `FUXI_SKILL_TARGET` | No | Native Skill directory to replace after a verified update; defaults to Cursor's `~/.cursor/skills/fuxi-skyui-prototype`. |
+| `FUXI_SKILL_TARGET` | No | Native Skill directory to replace after a verified update; defaults to Cursor's `~/.cursor/skills/fuxi-prototype`. |
 
 On first connect, pass `FUXI_CONNECT_CODE` from the platform MCP dialog. The server exchanges it for an access token
 and a rotating refresh token, then writes the refresh token to `FUXI_CREDENTIALS_FILE`. Later starts restore the

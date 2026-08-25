@@ -106,7 +106,7 @@ tar -xzf "$ARCHIVE" -C "$NEW_RELEASE"
 [[ -f "$NEW_RELEASE/platform/backend/server.js" ]] || { echo 'Release backend entry missing.' >&2; exit 3; }
 [[ -f "$NEW_RELEASE/platform/frontend/dist/index.html" ]] || { echo 'Release frontend dist missing.' >&2; exit 3; }
 [[ -f "$NEW_RELEASE/platform/mcp-server/src/server.js" ]] || { echo 'Release MCP entry missing.' >&2; exit 3; }
-[[ -f "$NEW_RELEASE/skills/fuxi-skyui-prototype/SKILL.md" ]] || { echo 'Release Skill entry missing.' >&2; exit 3; }
+[[ -f "$NEW_RELEASE/skills/fuxi-prototype/SKILL.md" ]] || { echo 'Release Skill entry missing.' >&2; exit 3; }
 [[ "$(node -p "require('$NEW_RELEASE/manifest.json').releaseId")" == "$RELEASE_ID" ]] || { echo 'Manifest release ID mismatch.' >&2; exit 3; }
 
 STATE=install
@@ -154,7 +154,7 @@ set_env() {
   chmod --reference="$SHARED/backend.env" "$temp" 2>/dev/null || chmod 600 "$temp"
   mv "$temp" "$SHARED/backend.env"
 }
-set_env FUXI_SKILL_DIR "$NEW_RELEASE/skills/fuxi-skyui-prototype"
+set_env FUXI_SKILL_DIR "$NEW_RELEASE/skills/fuxi-prototype"
 set_env FUXI_MCP_DIR "$NEW_RELEASE/platform/mcp-server"
 
 STATE=switch

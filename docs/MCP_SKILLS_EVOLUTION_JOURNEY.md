@@ -50,7 +50,7 @@
     |
     | 只调用一个用户入口 Skill
     v
-fuxi-skyui-prototype
+fuxi-prototype
     |-- 原型设计规范：视觉、布局、交互、内容和页面结构
     |-- SkyUI 知识：通过确定性 CLI 查询真实组件示例/API/图标
     |-- Fuxi 交付契约：入口、相对资源、README、校验和打包
@@ -80,7 +80,7 @@ fuxi-skyui-prototype
 “用户只使用一个 Skill”不等于把所有实现写进一个文件。目标分发单元为：
 
 ```text
-fuxi-skyui-prototype/
+fuxi-prototype/
 |-- SKILL.md
 |-- references/
 |   |-- prototype-spec.md
@@ -150,7 +150,7 @@ SkyUI 仅能从内部 npm registry 获取。registry 只用于开发和构建，
 用户表达示例：
 
 ```text
-使用 fuxi-skyui-prototype，根据这份需求生成 SkyUI 原型，创建为新的伏羲原型并返回预览地址。
+使用 fuxi-prototype，根据这份需求生成 SkyUI 原型，创建为新的伏羲原型并返回预览地址。
 ```
 
 标准流程：
@@ -549,7 +549,7 @@ requires:
 状态：`done`
 
 目标：
-- 用户只安装和调用 `fuxi-skyui-prototype`，无需理解内部子模块。
+- 用户只安装和调用 `fuxi-prototype`，无需理解内部子模块。
 
 任务：
 - 创建单一 `SKILL.md`，固化需求分析、生成、构建、校验、创建/更新、上传和回读流程。
@@ -558,7 +558,7 @@ requires:
 - 定义新建与更新的最小用户话术和结构化执行上下文。
 
 已完成：
-- 使用标准 Skill 脚手架创建 `fuxi-skyui-prototype`，包含 `SKILL.md`、`agents/openai.yaml` 和按需加载的 references。
+- 使用标准 Skill 脚手架创建 `fuxi-prototype`，包含 `SKILL.md`、`agents/openai.yaml` 和按需加载的 references。
 - 建立 `create`、`update`、`local-only` 三种显式模式，以及从需求发现到 MCP 回读的完整状态机。
 - 内置工作流、Tiangong 设计基线、SkyUI runtime 和 Fuxi adapter 四类契约；用户不需要手动组合辅助 Skill。
 - 固化目标 ID 唯一性、禁止模糊覆盖、禁止普通流程调用高风险工具、上传后必须回读等安全边界。
@@ -566,7 +566,7 @@ requires:
 
 验收证据：
 - 官方 `quick_validate.py` 已启动，但当前可用 Python 缺少 `PyYAML`，因此未执行到内容校验；未为通过检查而修改共享 Python 环境。
-- 已执行等价结构校验：frontmatter 仅含 `name/description`、命名合法、描述长度合法、4 个 reference 链接存在、无 TODO、默认提示词包含 `$fuxi-skyui-prototype`，结果通过。
+- 已执行等价结构校验：frontmatter 仅含 `name/description`、命名合法、描述长度合法、4 个 reference 链接存在、无 TODO、默认提示词包含 `$fuxi-prototype`，结果通过。
 - `git diff --cached --check`、UTF-8 无 BOM/末尾换行检查和明文凭据扫描通过。
 - 技能 commit：`ab8064e`。
 
@@ -645,7 +645,7 @@ requires:
 - 单一入口 Skill 的 Tiangong 副本同步表格、动作栏、响应式和原型说明语义，不引入 Element Plus 名称。
 
 验收证据：
-- Tiangong 与 `fuxi-skyui-prototype` 均通过 `skill-creator/scripts/quick_validate.py` 官方校验。
+- Tiangong 与 `fuxi-prototype` 均通过 `skill-creator/scripts/quick_validate.py` 官方校验。
 - 通用 references 耦合扫描无 `<el-*`、`.el-*`、`el-table`、`el-dialog` 或 `el-drawer`；主入口只在 profile 选择说明中出现 Element Plus 名称。
 - 所有主入口到一层 references 的链接存在；`git diff --check` 和 UTF-8 字节卫生通过。
 - 技能 commits：`b9de8f8`、`7fea899`。
@@ -671,7 +671,7 @@ requires:
 - 既有 Tiangong 使用方式有迁移说明，不静默破坏旧调用。
 
 最终验收证据：
-- 官方 Skill 校验：Tiangong 与 `fuxi-skyui-prototype` 均为 `Skill is valid!`；`sky-ui-docs` 为 `38/38` tests pass。
+- 官方 Skill 校验：Tiangong 与 `fuxi-prototype` 均为 `Skill is valid!`；`sky-ui-docs` 为 `38/38` tests pass。
 - 双构建：SkyUI `604 modules transformed`，Element Plus `1410 modules transformed`；两边类型检查和 Vite build 均通过，仅保留大于 500 kB 的已知 chunk warning。
 - 确定性门禁：两边均命中 `20` 个语义标记和 `6` 个共享 test ID；组件依赖互斥；通用 Tiangong references 无组件库 API。
 - Fuxi adapter：SkyUI ZIP `560015` bytes、Element Plus ZIP `368714` bytes，入口均为 `index.html`，README 存在，warnings 均为 `[]`。
@@ -722,7 +722,7 @@ requires:
 
 验收标准：
 - 支持的 AI 客户端无需用户手工编辑配置文件。
-- 接入完成后，用户只需调用 `fuxi-skyui-prototype`。
+- 接入完成后，用户只需调用 `fuxi-prototype`。
 - 安装失败、权限拒绝或 token 过期都有明确恢复路径。
 
 计划 commit：

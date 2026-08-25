@@ -1,6 +1,6 @@
 # Fuxi Platform
 
-伏羲原型管理平台：Web 界面 + 后端 API + MCP server，管理 AI 生成的 Vue/SkyUI 前端原型。
+伏羲原型管理平台：Web 界面 + 后端 API + MCP server，管理 AI 生成的前端原型及其 runtime/profile 交付。
 
 ## 怎么跑起来
 

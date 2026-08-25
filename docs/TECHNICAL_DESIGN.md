@@ -41,7 +41,7 @@
 | 项目 | 路径 | 职责 | 禁止承担 |
 |---|---|---|---|
 | 伏羲平台 | `D:\_projects\platform\FuxiPlatform` | Web 平台、后端 API、MCP server、生产兼容和平台接入体验 | 原型视觉规范、组件设计知识 |
-| 原型技能包 | `D:\_projects\skills\prototype-manager-skills` | 单一入口 Skill、可替换原型规范、SkyUI 查询能力、固定伏羲适配契约 | 平台登录脚本、本地凭证、直接实现平台 API |
+| 原型技能包 | `D:\_projects\skills\prototype-manager-skills` | 单一入口 Skill、可替换原型规范和 runtime profile、可选 SkyUI 查询能力、固定伏羲适配契约 | 平台登录脚本、本地凭证、直接实现平台 API |
 
 ### 1.3 架构总览
 
@@ -50,9 +50,9 @@
     |
     | 只调用一个用户入口 Skill
     v
-fuxi-skyui-prototype
+fuxi-prototype
     |-- 原型设计规范：视觉、布局、交互、内容和页面结构
-    |-- SkyUI 知识：通过确定性 CLI 查询真实组件示例/API/图标
+    |-- 选定 runtime 知识：按 profile 查询真实组件示例/API/图标；SkyUI 仅在选中时加载
     |-- 伏羲交付契约：入口、相对资源、README、校验和打包
     `-- MCP 编排：创建/更新/上传/回读/预览和项目协作
                          |
@@ -73,24 +73,24 @@ fuxi-skyui-prototype
 "用户只使用一个 Skill"不等于把所有实现写进一个文件。目标分发单元为：
 
 ```text
-fuxi-skyui-prototype/
+fuxi-prototype/
 |-- SKILL.md                       <- 用户和 AI 助手看到的唯一入口
 |-- agents/openai.yaml             <- 客户端识别元数据
 |-- references/                   <- 渐进式披露参考文档
 |   |-- workflow-contract.md       <- 模式、状态机、工具序列和完成证据
-|   |-- prototype-spec.md          <- 设计语言（天宫规范）
-|   |-- skyui-runtime.md           <- SkyUI 组件查询和运行时约定
+|   |-- prototype-spec.md          <- 选定规范和 profile 的共同契约
+|   |-- skyui-runtime.md           <- 可选 SkyUI 组件查询和运行时约定
 |   `-- fuxi-adapter.md            <- 打包、入口、ZIP 约束
 |-- scripts/sky-ui-docs/          <- SkyUI 真实文档查询工具
 |   |-- run.mjs
 |   |-- cli.mjs
 |   `-- cli.test.mjs
-`-- assets/vue3-skyui-starter/    <- 新项目脚手架模板
+`-- assets/<runtime-profile>-starter/ <- 选定 profile 的新项目脚手架模板
 ```
 
 - `SKILL.md` 编排需求分析、生成、构建、校验和 MCP 操作。
 - `prototype-spec` 负责设计语言，可替换；首先完整实现以天宫设计规则为基础。
-- `skyui-runtime` 把组件语义映射到 Vue 3 + SkyUI，并通过真实文档查询避免臆测 API。
+- runtime references 把组件语义映射到选定 profile；SkyUI 通过真实文档查询避免臆测 API。
 - `fuxi-adapter` 是固定平台契约，不随设计规范替换。
 - MCP 是外部能力。Skill 只能在 AI 助手已接入 MCP 后调用其工具，不能绕过 MCP Host 的授权和配置。
 
@@ -104,21 +104,21 @@ fuxi-skyui-prototype/
 | 运行时组件实现 | Vue 3 + SkyUI、Vue 3 + Element Plus、static HTML | 工程结构和组件代码 |
 | 平台适配 | 伏羲适配器 | 入口、资源、README、ZIP 和上传契约 |
 
-第一阶段不追求任意组合。先交付经过验证的 `天宫 + Vue 3 + SkyUI + 伏羲`，再证明同一设计规范可以替换组件实现。
+第一阶段不追求任意组合。当前验证基线为 `天宫 + Vue 3 + Element Plus + 伏羲`；SkyUI 保留为可选 profile，并要求显式选择或从既有项目检测得到。
 
 ### 1.6 可替换规范模型
 
 ```text
-prototype-specs/
+fuxi-prototype/specs/
 |-- tiangong/        <- 可替换的设计规范之一
 |   |-- SKILL.md     <- 声明 requires: [fuxi-adapter]
 |   `-- references/  <- 色板、布局、交互、标注
 `-- static-html/     <- 另一个设计规范
 fuxi-adapter/        <- 固定的平台契约，所有规范都 requires 它
-fuxi-skyui-prototype/<- 单一入口，内部编排以上各层
+fuxi-prototype/<- 单一入口，内部编排以上各层
 ```
 
-每个 `prototype-specs/<name>/SKILL.md` 用 front-matter 声明 `requires: [fuxi-adapter]`。设计规范只能定义视觉、布局、交互和内容，不能重复定义入口文件、打包规则或 ZIP 排除项。
+每个 `fuxi-prototype/specs/<name>/SKILL.md` 用 front-matter 声明 `name`、runtime/profile 和 `requires: [fuxi-adapter]`。设计规范只能定义视觉、布局、交互和内容，不能重复定义入口文件、打包规则或 ZIP 排除项。
 
 ### 1.7 MCP 与 Skill 分发链路
 
@@ -138,7 +138,7 @@ AI 助手按提示词执行:
   2. 下载 Skill ZIP -> 安装到 Skill 目录 (验证 SKILL.md 可发现)
   3. 下载 MCP ZIP -> 解压到本地工具目录，配置 stdio
   4. 调用 check_connection 验证连通
-  5. 确认 fuxi-skyui-prototype 可调用
+  5. 确认 fuxi-prototype 可调用
 ```
 
 分发过滤规则（`EXCLUDED_NAMES`）：`.git`、`.npmrc`、`.credentials.json`、`node_modules`、`dist`、`build`、`coverage`、`tests`、`*.zip`、`*.log`。
@@ -171,7 +171,7 @@ AI 助手按提示词执行:
 
 | 环境变量 | 用途 | 回退 |
 |---|---|---|
-| `FUXI_SKILL_DIR` | 可分发的 `fuxi-skyui-prototype` Skill 目录，必须包含 `SKILL.md` | 无，未配置时返回 `503 SKILL_DISTRIBUTION_UNAVAILABLE` |
+| `FUXI_SKILL_DIR` | 可分发的 `fuxi-prototype` Skill 目录，必须包含 `SKILL.md` | 无，未配置时返回 `503 SKILL_DISTRIBUTION_UNAVAILABLE` |
 | `FUXI_MCP_DIR` | 可分发的伏羲 MCP 目录，必须包含 `src/server.js` | 仓库内 `mcp-server` |
 
 MCP 是天然内置的（源码在平台仓库 `mcp-server/`）；Skill 通过 `FUXI_SKILL_DIR` 指向技能包仓库目录。生产环境必须配置 `FUXI_SKILL_DIR`，否则分发接口返回 503。
@@ -201,7 +201,7 @@ MCP 是天然内置的（源码在平台仓库 `mcp-server/`）；Skill 通过 `
 - `backend/uploads/`
 - `backend/.env`
 
-### 2.5 SkyUI 依赖策略
+### 2.5 可选 runtime 依赖策略
 
 SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，最终上传产物不依赖该地址，也不得打包 `.npmrc`、`node_modules/` 或其他开发机状态。
 
@@ -209,7 +209,7 @@ SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，
 
 - 非阻断日志告警：生产启动时 `backend/services/proxy.js` 在 Linux 尝试 Windows `reg query`，产生 `/bin/sh: reg: not found` 后正确降级为直连；error 日志最后修改于启动后的 `2026-08-11 21:07:01`，后续验收期间无新增。后续应按 `process.platform === 'win32'` 屏蔽该探测，避免污染 PM2 error log。
 - API 备份不能替代服务器文件级备份；生产应定期一致性备份 `backend/data/app.db` 与 `backend/repos/`，并演练恢复。
-- SkyUI 为私有依赖，构建机必须能够访问技能中声明的私有 registry；公开 npm 镜像不提供该包。
+- 选用 SkyUI profile 时，构建机必须能够访问技能中声明的私有 registry；未选用时不应访问该 registry。
 - 分享短链接访客预览可能返回 `401`，不能以创建者 token 可预览替代访客链接验收。
 
 ---
@@ -230,14 +230,14 @@ SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，
 用户表达示例：
 
 ```text
-使用 fuxi-skyui-prototype，根据这份需求生成 SkyUI 原型，创建为新的伏羲原型并返回预览地址。
+使用 fuxi-prototype，根据这份需求选择合适的 runtime profile，创建新的伏羲原型并返回预览地址。
 ```
 
 标准流程：
 
 1. Skill 分析需求、页面、交互和验收范围。
-2. 对使用到的 SkyUI 组件执行真实文档、API、示例和图标查询。
-3. 生成 Vue 3 + SkyUI 原型，设置 Vite `base: './'`。
+2. 对选定 profile 使用真实组件文档、API、示例和图标查询；仅在选用 SkyUI 时查询 SkyUI docs。
+3. 生成选定 runtime 的原型，设置 Vite `base: './'`（适用时）。
 4. 构建后使用 `validate_project`、`pack_project` 和 `validate_zip` 校验交付物。
 5. MCP 调用 `deliver_project`（mode `create`）创建新记录并上传。
 6. 调用 `get_prototype`、`get_readme` 和 `get_preview_url` 回读校验。
@@ -273,23 +273,23 @@ SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，
 
 ### 4.1 原型规范契约
 
-每个规范必须声明 `prototype_spec`、`supported_runtimes`、`preferred_runtime`、`supported_profiles`（可选）和 `requires`。规范只定义设计语言，不复制伏羲平台规则。下一版契约需要增加组件实现 profile，使天宫不再与 Element Plus 强绑定。
+每个规范必须声明 `name`、`prototype_spec`、`supported_runtimes`、`preferred_runtime`、`supported_profiles`（可选）和 `requires`。规范只定义设计语言，不复制伏羲平台规则。
 
 目标结构：
 
 ```yaml
 prototype_spec: tiangong
 supported_profiles:
-  - vue3-skyui
   - vue3-element-plus
-preferred_profile: vue3-skyui
+  - vue3-skyui
+preferred_profile: vue3-element-plus
 requires:
   - fuxi-adapter
 ```
 
 规则：
 
-- `prototype_spec` 是 `prototype-specs/` 下的文件夹名，必须唯一。
+- `name` 与 `fuxi-prototype/specs/` 下的文件夹名一致，`prototype_spec` 必须唯一。
 - `supported_runtimes` 来自 `fuxi-adapter` 的固定列表，不能自造新运行时。
 - `preferred_runtime` 必须是 `supported_runtimes` 之一。
 - `supported_profiles` 存在时，`preferred_profile` 必填且必须是其中之一。
@@ -297,14 +297,13 @@ requires:
 - `requires: [fuxi-adapter]` 强制，因为伏羲平台规则不放在规范里。
 - 规范只拥有视觉语言、布局、交互和内容约定，不得重新定义入口文件、预览路径、README 提取或 ZIP 排除。
 
-### 4.2 SkyUI 知识接入
+### 4.2 可选 runtime 知识接入
 
-已评估 `sky-ui-docs`：它适合作为组件事实查询能力，不是完整原型规范。接入时必须解决：
+已评估 `sky-ui-docs`：它适合作为 SkyUI profile 的组件事实查询能力，不是完整原型规范。只有选中 SkyUI 时才接入：
 
 - 把 CLI 和必要文档查询能力纳入单一 Skill 分发；用户不需要额外安装第二个 Skill。
 - 保持查询项目实际安装的 `@sky/sky-ui/dist/skill-docs`，不依赖模型记忆臆测组件 API。
-- 修复其当前测试与安装实现不一致：实测 37 页中 33 通过、4 失败，失败集中在 `@latest` 正式依赖安装与旧 devDependency 测试预期冲突。
-- 固定可重现的依赖策略，避免在缺文档时未经许可自动升级项目 SkyUI 版本。
+- 缺少 SkyUI package 或 docs 时返回 `SKYUI_DOCS_UNAVAILABLE`；只有显式授权的 setup 步骤允许安装锁定版本，查询命令不得隐式安装或升级。
 - 验证 SkyUI CSS、SVG iconfont 和字体被 Vite 本地构建处理，预览时不要求内部 registry、私有 CDN 或本机路径。
 
 查询命令约定：
@@ -332,7 +331,7 @@ README 元数据字段：
 prototype_spec: tiangong
 runtime: vite-vue3
 runtime_profile: vue3-skyui
-fuxi_adapter: fuxi-skyui-prototype
+fuxi_adapter: fuxi-prototype
 entry_file: index.html
 ```
 
@@ -341,7 +340,7 @@ entry_file: index.html
 ### 4.4 交付状态机
 
 ```text
-DISCOVER -> PLAN -> QUERY_SKYUI -> GENERATE -> BUILD -> VALIDATE
+DISCOVER -> SELECT_PROFILE -> PLAN -> QUERY_RUNTIME -> GENERATE -> BUILD -> VALIDATE
                                               |
                                               v
 PREFLIGHT -> deliver_project -> COMPLETE
@@ -365,8 +364,8 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 缺少明确的预期版本。
 - `IDEMPOTENCY_CONFLICT`、`VERSION_CONFLICT`、`TARGET_MISMATCH` 或 `CHECKOUT_REQUIRED`。
 - `DELIVERY_PARTIAL_FAILURE`：不盲目重试，先回读精确返回的原型 ID。
-- 更新目标已是 `vue3-element-plus`：保留并停止，不通过此 SkyUI 流程迁移。
-- SkyUI 文档能力缺失或过期。
+- 更新目标 profile 与选定 profile 冲突：保留原 profile 并停止，不静默迁移。
+- 选定 runtime 文档能力缺失或过期。
 - 构建、类型、资源、打包或 MCP 校验失败。
 - 认证或权限失败。
 - 回读指向不同原型 ID。
@@ -559,7 +558,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 平台阶段 11-13 与维护者发布 Skill 已提交并通过不可变 release 部署生产；生产业务代码固定在 `2426470`，后续本地 `8ecb5f6` 仅修正维护者只读探查脚本，不改变线上业务行为。
 - 最新平台 commit: `f1e6da9`（`feat(验收): 完成伏羲新版生产发布与兼容闭环`）。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
-- 技能包目录已重构为: `AGENTS.md`、`SKILLS-README.md`、`fuxi-adapter/`、`acceptance/stage10/`、`prototype-specs/tiangong/`、`prototype-specs/static-html/`、`fuxi-skyui-prototype/`。
+- 技能包目录已重构为: `AGENTS.md`、`SKILLS-README.md`、`fuxi-adapter/`、`acceptance/stage10/`、`fuxi-prototype/specs/tiangong/`、`fuxi-prototype/specs/static-html/`。
 - `prototype-manager-skills` 是独立 Git 仓库，当前分支 `master`，最新 commit `52ed07b`，尚未配置远程。
 - 生产运行 release `20260811-210455-24264705`，`/api/health` 为 `200`，`/api/integrations/agent-bootstrap` 未登录为 `401`，MCP/Skill 分发和新数据验收均通过。
 - `sky-ui-docs` 的确定性 Node CLI 已内置到单一入口 Skill；外部 GitLab 项目仍是上游来源。

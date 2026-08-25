@@ -28,7 +28,7 @@ npm run test:update-spike
 
 Cursor 的当前工作区会把全局 `mcp.json` 解析成缓存的 `user-fuxi-platform` 实例。仅修改全局配置不会切换已经打开的工作区，需要新工作区或明确的 MCP 重载动作；本次试验因此恢复了原配置，没有留下 Cursor 配置改动。
 
-当前 `.cursor/skills/fuxi-skyui-prototype` 的 `SKILL.md` 与 cache manifest 摘要不一致，`build-capability-cache.cjs check` 返回 `CACHE_STALE_FILE SKILL.md`。试验没有自动重建或覆盖 Skill。
+当前 `.cursor/skills/fuxi-prototype` 的 `SKILL.md` 与 cache manifest 摘要不一致，`build-capability-cache.cjs check` 返回 `CACHE_STALE_FILE SKILL.md`。试验没有自动重建或覆盖 Skill。
 
 ## 这项试验没有证明什么
 

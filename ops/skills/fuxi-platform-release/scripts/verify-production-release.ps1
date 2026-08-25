@@ -51,7 +51,7 @@ try {
   Add-Type -AssemblyName System.IO.Compression.FileSystem
   function Get-ZipEntries([string]$path){$zip=[IO.Compression.ZipFile]::OpenRead($path);try{@($zip.Entries|ForEach-Object FullName)}finally{$zip.Dispose()}}
   $skillEntries=Get-ZipEntries $skillZip; $mcpEntries=Get-ZipEntries $mcpZip
-  if('fuxi-skyui-prototype/SKILL.md' -notin $skillEntries){throw 'Skill package entry is missing.'}
+  if('fuxi-prototype/SKILL.md' -notin $skillEntries){throw 'Skill package entry is missing.'}
   if('fuxi-platform-mcp/src/server.js' -notin $mcpEntries -or 'fuxi-platform-mcp/package.json' -notin $mcpEntries){throw 'MCP package entries are missing.'}
   $forbidden=@($skillEntries+$mcpEntries|Where-Object {$_ -match '(^|/)(\.git|node_modules|tests)(/|$)|\.credentials\.json$|\.npmrc$|\.log$'})
   if($forbidden.Count){throw "Distribution package contains forbidden entries: $($forbidden -join ', ')"}

@@ -31,7 +31,7 @@ async function main() {
     const actor = findUserByUsername(actorUsername);
     if (!actor) throw new Error(`发布人不存在: ${actorUsername}`);
     const mcpDir = path.resolve(process.env.FUXI_MCP_DIR || path.join(__dirname, '../../mcp-server'));
-    const skillDir = path.resolve(process.env.FUXI_SKILL_DIR || path.join(__dirname, '../../../../skills/prototype-manager-skills/fuxi-skyui-prototype'));
+    const skillDir = path.resolve(process.env.FUXI_SKILL_DIR || path.join(__dirname, '../../../../skills/prototype-manager-skills/fuxi-prototype'));
     bundle = prepareArtifactBundle({ releaseId, mcpDir, skillDir });
     const manifest = {
       releaseId,

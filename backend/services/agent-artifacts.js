@@ -12,7 +12,7 @@ const ARTIFACTS = {
   skill: {
     fileName: 'skill.zip',
     expectedEntry: /(?:^|\/)SKILL\.md$/,
-    rootName: 'fuxi-skyui-prototype'
+    rootName: 'fuxi-prototype'
   }
 };
 

@@ -31,8 +31,8 @@ $PlatformRoot = (Resolve-Path $PlatformRoot).Path
 $SkillsRepositoryRoot = (Resolve-Path $SkillsRepositoryRoot).Path
 Assert-Clean $PlatformRoot 'Platform'
 Assert-Clean $SkillsRepositoryRoot 'Skills'
-if (-not (Test-Path (Join-Path $SkillsRepositoryRoot 'fuxi-skyui-prototype\SKILL.md'))) {
-  throw 'Skills repository does not contain fuxi-skyui-prototype/SKILL.md.'
+if (-not (Test-Path (Join-Path $SkillsRepositoryRoot 'fuxi-prototype\SKILL.md'))) {
+  throw 'Skills repository does not contain fuxi-prototype/SKILL.md.'
 }
 Invoke-Checked npm @('run','build') (Join-Path $PlatformRoot 'frontend')
 if (-not $Lightweight) {
@@ -54,7 +54,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage 'platform'),(Join-Pa
 try {
   Invoke-Checked git @('-c','core.excludesFile=','-C',$PlatformRoot,'archive','--format=tar',"--output=$platformTar",'HEAD') $PlatformRoot
   Invoke-Checked tar @('-xf',$platformTar,'-C',(Join-Path $stage 'platform')) $PlatformRoot
-  Invoke-Checked git @('-c','core.excludesFile=','-C',$SkillsRepositoryRoot,'archive','--format=tar',"--output=$skillTar",'HEAD','fuxi-skyui-prototype') $SkillsRepositoryRoot
+  Invoke-Checked git @('-c','core.excludesFile=','-C',$SkillsRepositoryRoot,'archive','--format=tar',"--output=$skillTar",'HEAD','fuxi-prototype') $SkillsRepositoryRoot
   Invoke-Checked tar @('-xf',$skillTar,'-C',(Join-Path $stage 'skills')) $SkillsRepositoryRoot
   $distSource = Join-Path $PlatformRoot 'frontend\dist'
   if (-not (Test-Path (Join-Path $distSource 'index.html'))) { throw 'Frontend dist/index.html is missing after build.' }

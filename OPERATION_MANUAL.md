@@ -83,10 +83,10 @@
 陈产品在本地对实体列表原型进行修改：
 
 1. 打开本地代码或设计文件。
-2. 修改完成后，让 AI 助手使用 `fuxi-skyui-prototype` 技能打包并上传：
+2. 修改完成后，让 AI 助手使用 `fuxi-prototype` 技能打包并上传：
 
 ```text
-使用 fuxi-skyui-prototype，更新原型 <prototypeId> 的最新版本，上传后返回版本号和预览地址。
+使用 fuxi-prototype，更新原型 <prototypeId> 的最新版本，上传后返回版本号和预览地址。
 ```
 
 > AI 助手通过伏羲 MCP 的 `deliver_project` 工具完成上传，需先签出对应菜单项。
