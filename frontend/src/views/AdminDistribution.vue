@@ -1,68 +1,35 @@
 <template>
   <div class="management-page admin-distribution">
-    <div class="management-page-head">
-      <div>
-        <div class="management-title-line">
-          <h1>原型分发</h1>
-          <span class="management-count">{{ filteredPrototypes.length }}</span>
-        </div>
-        <p class="management-description">调整原型归属人，提交前明确显示影响对象。</p>
-      </div>
-      <div class="management-toolbar">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索原型"
-          clearable
-          class="management-search"
-          @keyup.enter="loadData"
-        >
-          <template #suffix>
-            <el-icon class="search-action" @click="loadData"><Search /></el-icon>
-          </template>
-        </el-input>
-      </div>
-    </div>
+    <ManagementPageHeader title="原型分发" :count="filteredPrototypes.length" description="选择一个新用户，将原型从当前归属者转移过去。">
+      <el-input v-model="searchKeyword" placeholder="搜索原型名称或 ID" clearable class="management-search" @keyup.enter="loadData">
+        <template #suffix><el-icon class="search-action" @click="loadData"><Search /></el-icon></template>
+      </el-input>
+    </ManagementPageHeader>
 
     <div class="management-panel">
-      <el-table :data="filteredPrototypes" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="name" label="原型名称" min-width="200">
-        <template #default="{ row }">
-          <router-link :to="`/prototype/${row.id}`" class="prototype-link">{{ row.name }}</router-link>
-        </template>
-      </el-table-column>
-      <el-table-column label="当前归属者" width="150">
-        <template #default="{ row }">
-          <el-tag type="info" size="small" effect="light">{{ getOwnerName(row.created_by) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="290" align="right" header-align="right" fixed="right">
-        <template #default="{ row }">
-          <div class="management-table-actions transfer-cell">
-            <el-select
-              v-model="transferTargets[row.id]"
-              placeholder="选择新用户"
-              size="small"
-              style="width: 180px;"
-            >
-              <el-option
-                v-for="u in editorUsers"
-                :key="u.id"
-                :label="u.nickname || u.username"
-                :value="u.id"
-                :disabled="u.id === row.created_by"
-              />
-            </el-select>
-            <el-button
-              size="small"
-              type="primary"
-              :disabled="!transferTargets[row.id] || transferTargets[row.id] === row.created_by"
-              @click="handleTransfer(row, transferTargets[row.id])"
-            >转移</el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty description="暂无符合条件的原型" :image-size="96" /></template>
+      <el-table class="management-table" :data="filteredPrototypes" v-loading="loading" table-layout="fixed">
+        <el-table-column prop="name" label="原型名称" min-width="360" align="left" header-align="left">
+          <template #default="{ row }">
+            <div class="management-primary-cell">
+              <router-link :to="`/prototype/${row.id}`" class="prototype-link management-primary-text">{{ row.name || '—' }}</router-link>
+              <span class="management-secondary-text">ID：{{ row.id || '—' }}</span>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="当前归属者" width="180" align="left" header-align="left">
+          <template #default="{ row }"><el-tag type="info" effect="light">{{ getOwnerName(row.created_by) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column label="转移到新用户" width="330" align="left" header-align="left">
+          <template #default="{ row }">
+            <div class="distribution-action">
+              <el-select v-model="transferTargets[row.id]" placeholder="选择新用户" size="small" class="distribution-target">
+                <el-option v-for="u in editorUsers" :key="u.id" :label="u.nickname || u.username" :value="u.id" :disabled="u.id === row.created_by" />
+              </el-select>
+              <el-button size="small" type="primary" :disabled="!transferTargets[row.id] || transferTargets[row.id] === row.created_by" @click="handleTransfer(row, transferTargets[row.id])">转移</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无符合条件的原型" :image-size="72" /></template>
       </el-table>
     </div>
 
@@ -86,6 +53,7 @@ import { ElMessage } from 'element-plus'
 import { getPrototypes, transferPrototype } from '../api/prototypes'
 import { getUsers } from '../api/auth'
 import { Search } from '@element-plus/icons-vue'
+import ManagementPageHeader from '../components/ManagementPageHeader.vue'
 
 const prototypes = ref([])
 const users = ref([])
@@ -108,12 +76,12 @@ const editorUsers = computed(() =>
 const filteredPrototypes = computed(() => {
   if (!searchKeyword.value) return prototypes.value
   const kw = searchKeyword.value.toLowerCase()
-  return prototypes.value.filter(p => p.name?.toLowerCase().includes(kw))
+  return prototypes.value.filter(p => p.name?.toLowerCase().includes(kw) || String(p.id || '').toLowerCase().includes(kw))
 })
 
 function getOwnerName(userId) {
   const u = users.value.find(u => u.id === userId)
-  return u ? (u.nickname || u.username) : `用户${userId}`
+  return u ? (u.nickname || u.username) : '—'
 }
 
 function handleTransfer(prototype, targetId) {
@@ -173,8 +141,15 @@ onMounted(loadData)
   text-decoration: underline;
 }
 
-.transfer-cell {
-  width: 100%;
+.distribution-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.distribution-target {
+  width: 220px;
 }
 
 .transfer-confirm-text {

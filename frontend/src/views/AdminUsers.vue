@@ -1,82 +1,51 @@
 <template>
   <div class="management-page admin-users">
-    <div class="management-page-head">
-      <div>
-        <div class="management-title-line">
-          <h1>用户列表</h1>
-          <span class="management-count">{{ filteredUsers.length }}</span>
-        </div>
-        <p class="management-description">管理账号、显示名称、固定角色与所属用户组。</p>
-      </div>
-      <div class="management-toolbar">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索账号或昵称"
-          clearable
-          class="management-search"
-          @keyup.enter="handleSearch"
-        >
-          <template #suffix>
-            <el-icon class="search-action" @click="handleSearch"><Search /></el-icon>
-          </template>
-        </el-input>
-        <el-button type="primary" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          新建用户
-        </el-button>
-      </div>
-    </div>
+    <ManagementPageHeader title="用户列表" :count="filteredUsers.length" description="管理账号、显示名称、固定角色与所属用户组。">
+      <el-input v-model="searchKeyword" placeholder="搜索账号或昵称" clearable class="management-search" @keyup.enter="handleSearch">
+        <template #suffix><el-icon class="search-action" @click="handleSearch"><Search /></el-icon></template>
+      </el-input>
+      <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>新建用户</el-button>
+    </ManagementPageHeader>
 
     <div class="management-panel">
-      <el-table :data="filteredUsers" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="username" label="账号" width="150" />
-      <el-table-column prop="nickname" label="昵称" width="150" />
-      <el-table-column label="角色" width="220">
-        <template #default="{ row }">
-          <el-tag
-            v-for="r in getRolesArray(row.role)"
-            :key="r"
-            :type="getRoleType(r)"
-            size="small"
-            effect="light"
-            class="role-tag"
-          >{{ getRoleLabel(r) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="所属组" min-width="200">
-        <template #default="{ row }">
-          <div v-if="row.groups && row.groups.length" class="group-tags">
-            <el-tag
-              v-for="g in row.groups"
-              :key="g.id"
-              size="small"
-              effect="plain"
-              type="info"
-              class="group-tag"
-            >{{ g.name }}</el-tag>
-          </div>
-          <span v-else class="management-muted">未分配</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="190" align="right" header-align="right" fixed="right">
-        <template #default="{ row }">
-          <div class="management-table-actions">
-            <el-button size="small" @click="openEditDialog(row)">
-              <el-icon><Edit /></el-icon>编辑
-            </el-button>
-            <el-button size="small" type="danger" plain @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>删除
-            </el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty description="暂无符合条件的用户" :image-size="96" /></template>
+      <el-table class="management-table" :data="filteredUsers" v-loading="loading" table-layout="fixed">
+        <el-table-column prop="id" label="ID" width="72" align="center" header-align="center">
+          <template #default="{ row }"><span class="management-muted">{{ row.id ?? '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="username" label="账号" width="180" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-primary-text">{{ row.username || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="nickname" label="昵称" width="180" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-primary-text">{{ row.nickname || row.username || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column label="角色" width="190" align="left" header-align="left">
+          <template #default="{ row }">
+            <div class="management-tag-list">
+              <el-tag v-for="r in getRolesArray(row.role)" :key="r" :type="getRoleType(r)" effect="light">{{ getRoleLabel(r) }}</el-tag>
+            </div>
+          </template>
+        </el-table-column>
+        <el-table-column label="所属组" min-width="240" align="left" header-align="left">
+          <template #default="{ row }">
+            <div v-if="row.groups && row.groups.length" class="management-tag-list">
+              <el-tag v-for="g in getVisibleGroups(row)" :key="g.id" type="info" effect="plain">{{ g.name }}</el-tag>
+              <el-tag v-if="row.groups.length > 3" type="info" effect="plain">+{{ row.groups.length - 3 }}</el-tag>
+            </div>
+            <span v-else class="management-muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="175" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-time">{{ formatDate(row.created_at) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" align="right" header-align="right">
+          <template #default="{ row }">
+            <div class="management-table-actions">
+              <el-button size="small" @click="openEditDialog(row)"><el-icon><Edit /></el-icon>编辑</el-button>
+              <el-button size="small" type="danger" plain @click="handleDelete(row)"><el-icon><Delete /></el-icon>删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无符合条件的用户" :image-size="72" /></template>
       </el-table>
     </div>
 
@@ -160,6 +129,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getUsers, registerUser, updateUser, deleteUser } from '../api/auth'
 import { getGroups } from '../api/groups'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
+import ManagementPageHeader from '../components/ManagementPageHeader.vue'
 
 const users = ref([])
 const groups = ref([])
@@ -172,6 +142,10 @@ function getRolesArray(role) {
   if (!role) return ['viewer']
   const arr = Array.isArray(role) ? role : [role]
   return arr.map(r => r === 'editor' ? 'uploader' : r)
+}
+
+function getVisibleGroups(row) {
+  return (row.groups || []).slice(0, 3)
 }
 
 /* ========== 新建 ========== */
@@ -345,7 +319,7 @@ function getRoleType(role) {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return ''
+  if (!dateStr) return '—'
   const d = new Date(dateStr)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`

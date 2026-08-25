@@ -1,49 +1,42 @@
 <template>
   <div class="management-page admin-announcements">
-    <div class="management-page-head">
-      <div>
-        <div class="management-title-line">
-          <h1>平台更新公告</h1>
-          <span class="management-count">{{ announcements.length }}</span>
-        </div>
-        <p class="management-description">发布平台能力、维护窗口和使用影响说明；不用于执行 MCP/Skill 更新。</p>
-      </div>
-      <div class="management-toolbar">
-        <el-button type="primary" @click="openCreate">
-          <el-icon><Plus /></el-icon>新建公告
-        </el-button>
-      </div>
-    </div>
+    <ManagementPageHeader title="平台更新公告" :count="announcements.length" description="发布平台能力、维护窗口和使用影响说明；不用于执行 MCP/Skill 更新。">
+      <el-button type="primary" @click="openCreate"><el-icon><Plus /></el-icon>新建公告</el-button>
+    </ManagementPageHeader>
 
     <div class="management-panel">
-      <el-table :data="announcements" v-loading="loading">
-      <el-table-column prop="title" label="标题" min-width="260">
-        <template #default="{ row }">
-          <div class="title-cell"><strong>{{ row.title }}</strong><span>{{ row.summary || '—' }}</span></div>
+      <el-table class="management-table" :data="announcements" v-loading="loading" table-layout="fixed">
+        <el-table-column prop="title" label="标题" min-width="360" align="left" header-align="left">
+          <template #default="{ row }">
+            <div class="title-cell management-primary-cell"><strong>{{ row.title || '—' }}</strong><span>{{ row.summary || '—' }}</span></div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="type" label="类型" width="120" align="left" header-align="left">
+          <template #default="{ row }"><el-tag effect="plain">{{ typeLabel(row.type) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="version" label="版本" width="120" align="left" header-align="left">
+          <template #default="{ row }"><span>{{ row.version || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="120" align="left" header-align="left">
+          <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
+        </el-table-column>
+        <el-table-column prop="published_at" label="发布时间" width="180" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-time">{{ formatDate(row.published_at || row.updated_at) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" align="right" header-align="right">
+          <template #default="{ row }">
+            <div class="management-table-actions">
+              <el-button size="small" @click="openEdit(row)">编辑</el-button>
+              <el-button v-if="row.status === 'draft'" size="small" type="primary" plain @click="publish(row)">发布</el-button>
+              <el-button v-else-if="row.status === 'published'" size="small" type="warning" plain @click="archive(row)">归档</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty>
+          <el-empty description="暂无平台更新公告" :image-size="72">
+            <template #description><span>暂无平台更新公告</span><small class="management-empty-support">发布后的公告会显示在这里。</small></template>
+          </el-empty>
         </template>
-      </el-table-column>
-      <el-table-column prop="type" label="类型" width="120">
-        <template #default="{ row }"><el-tag size="small" effect="plain">{{ typeLabel(row.type) }}</el-tag></template>
-      </el-table-column>
-      <el-table-column prop="version" label="版本" width="120">
-        <template #default="{ row }">{{ row.version || '—' }}</template>
-      </el-table-column>
-      <el-table-column prop="status" label="状态" width="120">
-        <template #default="{ row }"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
-      </el-table-column>
-      <el-table-column prop="published_at" label="发布时间" width="180">
-        <template #default="{ row }">{{ formatDate(row.published_at || row.updated_at) }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="220" align="right" header-align="right" fixed="right">
-        <template #default="{ row }">
-          <div class="management-table-actions">
-            <el-button size="small" @click="openEdit(row)">编辑</el-button>
-            <el-button v-if="row.status === 'draft'" size="small" type="primary" plain @click="publish(row)">发布</el-button>
-            <el-button v-else-if="row.status === 'published'" size="small" type="warning" plain @click="archive(row)">归档</el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty description="暂无平台更新公告" :image-size="96" /></template>
       </el-table>
     </div>
 
@@ -68,6 +61,7 @@ import { onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { archiveAnnouncement, createAnnouncement, getAnnouncements, updateAnnouncement } from '../api/announcements'
+import ManagementPageHeader from '../components/ManagementPageHeader.vue'
 
 const announcements = ref([])
 const loading = ref(false)

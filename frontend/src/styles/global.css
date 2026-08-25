@@ -65,7 +65,12 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 20px;
+  min-height: 64px;
+  margin-bottom: 18px;
+}
+
+.management-page-title {
+  min-width: 0;
 }
 
 .management-title-line {
@@ -107,8 +112,9 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 9px;
+  gap: 10px;
   flex-wrap: wrap;
+  min-height: 38px;
 }
 
 .management-search {
@@ -150,6 +156,7 @@
   --el-table-row-hover-bg-color: #fafcff;
   --el-table-border-color: #edf2f7;
   color: #334155;
+  table-layout: fixed;
 }
 
 .management-panel .el-table th.el-table__cell {
@@ -162,7 +169,23 @@
 }
 
 .management-panel .el-table td.el-table__cell {
-  padding: 14px 0;
+  padding: 12px 0;
+}
+
+.management-panel .el-table th.el-table__cell .cell,
+.management-panel .el-table td.el-table__cell .cell {
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 0 14px;
+  line-height: 1.45;
+}
+
+.management-panel .el-table tbody tr {
+  transition: background-color 0.16s ease;
+}
+
+.management-panel .el-table tbody tr:hover > td.el-table__cell {
+  background: #f8fbff;
 }
 
 .management-panel .el-table__inner-wrapper::before {
@@ -170,8 +193,17 @@
 }
 
 .management-panel .el-empty {
-  min-height: 240px;
-  padding: 28px 0;
+  min-height: 184px;
+  padding: 22px 0;
+}
+
+.management-panel .el-empty__image {
+  margin-bottom: 8px;
+}
+
+.management-panel .el-empty__description {
+  color: #64748b;
+  font-size: 14px;
 }
 
 .management-table-actions {
@@ -179,6 +211,89 @@
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
+  white-space: nowrap;
+}
+
+.management-table-actions .el-button {
+  min-width: 0;
+}
+
+.management-primary-cell {
+  min-width: 0;
+}
+
+.management-primary-text {
+  display: block;
+  overflow: hidden;
+  color: #172033;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.management-secondary-text,
+.management-time {
+  display: block;
+  overflow: hidden;
+  color: #94a3b8;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.management-secondary-text {
+  margin-top: 3px;
+}
+
+.management-tag-list {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  flex-wrap: nowrap;
+}
+
+.management-tag-list .el-tag {
+  flex: 0 0 auto;
+}
+
+.member-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.member-cell .management-tag-list {
+  flex: 1 1 auto;
+}
+
+.member-cell .el-button.view-members-link {
+  flex: 0 0 auto;
+  min-height: 24px;
+  padding: 0;
+  font-size: 12px;
+}
+
+.management-empty-support {
+  display: block;
+  margin-top: 5px;
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.management-page .el-tag {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 22px;
+}
+
+.management-page .el-button,
+.management-dialog .el-button {
+  transition: border-color 0.16s ease, background-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
 }
 
 .management-muted {

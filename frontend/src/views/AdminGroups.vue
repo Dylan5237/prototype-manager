@@ -1,93 +1,59 @@
 <template>
   <div class="management-page admin-groups">
-    <div class="management-page-head">
-      <div>
-        <div class="management-title-line">
-          <h1>用户组管理</h1>
-          <span class="management-count">{{ filteredGroups.length }}</span>
-        </div>
-        <p class="management-description">按团队维护成员集合，用于共享和分发原型。</p>
-      </div>
-      <div class="management-toolbar">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索用户组"
-          clearable
-          class="management-search"
-          @keyup.enter="handleSearch"
-        >
-          <template #suffix>
-            <el-icon class="search-action" @click="handleSearch"><Search /></el-icon>
-          </template>
-        </el-input>
-        <el-button type="primary" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          新建用户组
-        </el-button>
-      </div>
-    </div>
+    <ManagementPageHeader title="用户组管理" :count="filteredGroups.length" description="按团队维护成员集合，用于共享和分发原型。">
+      <el-input v-model="searchKeyword" placeholder="搜索用户组" clearable class="management-search" @keyup.enter="handleSearch">
+        <template #suffix><el-icon class="search-action" @click="handleSearch"><Search /></el-icon></template>
+      </el-input>
+      <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>新建用户组</el-button>
+    </ManagementPageHeader>
 
     <div class="management-panel">
-      <el-table :data="filteredGroups" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="name" label="组名称" width="180" />
-      <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
-      <el-table-column label="成员" min-width="220">
-        <template #default="{ row }">
-          <div v-if="row.member_count" class="member-preview">
-            <el-tag
-              v-for="(name, idx) in row.member_preview"
-              :key="idx"
-              size="small"
-              effect="plain"
-              type="info"
-              class="member-preview-tag"
-            >{{ name }}</el-tag>
-            <el-tag
-              v-if="row.member_count > (row.member_preview?.length || 0)"
-              size="small"
-              effect="plain"
-              class="member-more-tag"
-            >+{{ row.member_count - (row.member_preview?.length || 0) }}</el-tag>
-            <el-popover placement="top" trigger="click" width="220">
-              <template #reference>
-                <el-link type="primary" :underline="false" class="view-members-link">查看成员</el-link>
-              </template>
-              <div class="member-popover-content">
-                <p class="member-popover-title">全部成员（{{ row.member_count }}）</p>
-                <div v-if="row.members && row.members.length" class="member-popover-list">
-                  <span
-                    v-for="m in row.members"
-                    :key="m.user_id"
-                    class="member-popover-item"
-                  >{{ m.nickname || m.username }}</span>
-                </div>
-                <p v-else class="management-muted">暂无成员</p>
+      <el-table class="management-table" :data="filteredGroups" v-loading="loading" table-layout="fixed">
+        <el-table-column prop="id" label="ID" width="72" align="center" header-align="center">
+          <template #default="{ row }"><span class="management-muted">{{ row.id ?? '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="name" label="组名称" width="210" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-primary-text">{{ row.name || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="240" align="left" header-align="left" show-overflow-tooltip>
+          <template #default="{ row }"><span>{{ row.description || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column label="成员" min-width="320" align="left" header-align="left">
+          <template #default="{ row }">
+            <div v-if="row.member_count" class="member-cell">
+              <div class="management-tag-list">
+                <el-tag v-for="(name, idx) in getVisibleMembers(row)" :key="idx" type="info" effect="plain">{{ name }}</el-tag>
+                <el-tag v-if="getRemainingMemberCount(row) > 0" type="info" effect="plain">+{{ getRemainingMemberCount(row) }}</el-tag>
               </div>
-            </el-popover>
-          </div>
-          <span v-else class="management-muted">未分配成员</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="creator_name" label="创建人" width="120" />
-      <el-table-column prop="created_at" label="创建时间" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="190" align="right" header-align="right" fixed="right">
-        <template #default="{ row }">
-          <div class="management-table-actions">
-            <el-button size="small" @click="openEditDialog(row)">
-              <el-icon><Edit /></el-icon>编辑
-            </el-button>
-            <el-button size="small" type="danger" plain @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>删除
-            </el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty description="暂无符合条件的用户组" :image-size="96" /></template>
+              <el-popover placement="top" trigger="click" width="220">
+                <template #reference><el-button link type="primary" class="view-members-link">查看成员</el-button></template>
+                <div class="member-popover-content">
+                  <p class="member-popover-title">全部成员（{{ row.member_count }}）</p>
+                  <div v-if="row.members && row.members.length" class="member-popover-list">
+                    <span v-for="m in row.members" :key="m.user_id" class="member-popover-item">{{ m.nickname || m.username }}</span>
+                  </div>
+                  <p v-else class="management-muted">暂无成员</p>
+                </div>
+              </el-popover>
+            </div>
+            <span v-else class="management-muted">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="creator_name" label="创建人" width="135" align="left" header-align="left">
+          <template #default="{ row }"><span>{{ row.creator_name || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="175" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-time">{{ formatDate(row.created_at) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" align="right" header-align="right">
+          <template #default="{ row }">
+            <div class="management-table-actions">
+              <el-button size="small" @click="openEditDialog(row)"><el-icon><Edit /></el-icon>编辑</el-button>
+              <el-button size="small" type="danger" plain @click="handleDelete(row)"><el-icon><Delete /></el-icon>删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无符合条件的用户组" :image-size="72" /></template>
       </el-table>
     </div>
 
@@ -127,6 +93,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { getGroups, getGroup, createGroup, updateGroup, deleteGroup } from '../api/groups'
 import { getUsers } from '../api/auth'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
+import ManagementPageHeader from '../components/ManagementPageHeader.vue'
 
 const groups = ref([])
 const users = ref([])
@@ -232,6 +199,14 @@ function filterUser(query, item) {
   return item.label.toLowerCase().includes((query || '').toLowerCase())
 }
 
+function getVisibleMembers(row) {
+  return (row.member_preview || []).slice(0, 3)
+}
+
+function getRemainingMemberCount(row) {
+  return Math.max(0, Number(row.member_count || 0) - getVisibleMembers(row).length)
+}
+
 const filteredGroups = computed(() => {
   if (!searchKeyword.value) return groups.value
   const kw = searchKeyword.value.toLowerCase()
@@ -270,7 +245,7 @@ async function loadUsers() {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return ''
+  if (!dateStr) return '—'
   const d = new Date(dateStr)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
@@ -285,21 +260,6 @@ onMounted(() => {
 <style scoped>
 .search-action {
   cursor: pointer;
-}
-
-.member-preview {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.member-preview-tag {
-  margin-right: 0;
-}
-
-.member-more-tag {
-  margin-right: 8px;
 }
 
 .view-members-link {

@@ -1,59 +1,35 @@
 <template>
   <div class="management-page admin-categories">
-    <div class="management-page-head">
-      <div>
-        <div class="management-title-line">
-          <h1>类别管理</h1>
-          <span class="management-count">{{ filteredCategories.length }}</span>
-        </div>
-        <p class="management-description">维护原型筛选使用的少量稳定类别。</p>
-      </div>
-      <div class="management-toolbar">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="搜索类别"
-          clearable
-          class="management-search"
-          @keyup.enter="loadData"
-        >
-          <template #suffix>
-            <el-icon class="search-action" @click="loadData"><Search /></el-icon>
-          </template>
-        </el-input>
-        <el-button type="primary" @click="openCreateDialog">
-          <el-icon><Plus /></el-icon>
-          新建类别
-        </el-button>
-      </div>
-    </div>
+    <ManagementPageHeader title="类别管理" :count="filteredCategories.length" description="维护原型筛选使用的少量稳定类别。">
+      <el-input v-model="searchKeyword" placeholder="搜索类别" clearable class="management-search" @keyup.enter="loadData">
+        <template #suffix><el-icon class="search-action" @click="loadData"><Search /></el-icon></template>
+      </el-input>
+      <el-button type="primary" @click="openCreateDialog"><el-icon><Plus /></el-icon>新建类别</el-button>
+    </ManagementPageHeader>
 
     <div class="management-panel">
-      <el-table :data="filteredCategories" v-loading="loading">
-      <el-table-column prop="id" label="ID" width="60" />
-      <el-table-column prop="name" label="类别名称" width="200" />
-      <el-table-column prop="description" label="描述" min-width="300">
-        <template #default="{ row }">
-          <span class="description-text">{{ row.description || '—' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180">
-        <template #default="{ row }">
-          {{ formatDate(row.created_at) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="190" align="right" header-align="right" fixed="right">
-        <template #default="{ row }">
-          <div class="management-table-actions">
-            <el-button size="small" @click="openEditDialog(row)">
-              <el-icon><Edit /></el-icon>编辑
-            </el-button>
-            <el-button size="small" type="danger" plain @click="handleDelete(row)">
-              <el-icon><Delete /></el-icon>删除
-            </el-button>
-          </div>
-        </template>
-      </el-table-column>
-      <template #empty><el-empty description="暂无符合条件的类别" :image-size="96" /></template>
+      <el-table class="management-table" :data="filteredCategories" v-loading="loading" table-layout="fixed">
+        <el-table-column prop="id" label="ID" width="72" align="center" header-align="center">
+          <template #default="{ row }"><span class="management-muted">{{ row.id ?? '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="name" label="类别名称" width="230" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-primary-text">{{ row.name || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="description" label="描述" min-width="0" align="left" header-align="left" show-overflow-tooltip>
+          <template #default="{ row }"><span class="description-text">{{ row.description || '—' }}</span></template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="180" align="left" header-align="left">
+          <template #default="{ row }"><span class="management-time">{{ formatDate(row.created_at) }}</span></template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" align="right" header-align="right">
+          <template #default="{ row }">
+            <div class="management-table-actions">
+              <el-button size="small" @click="openEditDialog(row)"><el-icon><Edit /></el-icon>编辑</el-button>
+              <el-button size="small" type="danger" plain @click="handleDelete(row)"><el-icon><Delete /></el-icon>删除</el-button>
+            </div>
+          </template>
+        </el-table-column>
+        <template #empty><el-empty description="暂无符合条件的类别" :image-size="72" /></template>
       </el-table>
     </div>
 
@@ -96,6 +72,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '../api/prototypes'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
+import ManagementPageHeader from '../components/ManagementPageHeader.vue'
 
 const categories = ref([])
 const loading = ref(false)
@@ -205,7 +182,7 @@ async function loadData() {
 }
 
 function formatDate(dateStr) {
-  if (!dateStr) return ''
+  if (!dateStr) return '—'
   const d = new Date(dateStr)
   const pad = (n) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`

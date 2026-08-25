@@ -1,20 +1,9 @@
 <template>
   <PrototypeLayout>
     <div class="management-page recycle-bin-container">
-      <div class="management-page-head">
-        <div>
-          <div class="management-title-line">
-            <h1>回收站</h1>
-            <span class="management-count">{{ recycleBinList.length }}</span>
-          </div>
-          <p class="management-description">可恢复已删除原型；彻底删除后无法恢复。</p>
-        </div>
-        <div class="management-toolbar">
-          <el-button @click="fetchRecycleBin" :loading="loading">
-          <el-icon><Refresh /></el-icon>刷新
-          </el-button>
-        </div>
-      </div>
+      <ManagementPageHeader title="回收站" :count="recycleBinList.length" description="可恢复已删除原型；彻底删除后无法恢复。">
+        <el-button @click="fetchRecycleBin" :loading="loading"><el-icon><Refresh /></el-icon>刷新</el-button>
+      </ManagementPageHeader>
 
       <div class="management-panel">
         <el-table class="recycle-table" :data="recycleBinList" v-loading="loading" style="width: 100%" table-layout="fixed">
@@ -78,6 +67,7 @@ import PrototypeLayout from '@/components/PrototypeLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { getRecycleBin, restorePrototype, hardDeletePrototype } from '@/api/prototypes'
 import { getUsers } from '@/api/auth'
+import ManagementPageHeader from '@/components/ManagementPageHeader.vue'
 
 const authStore = useAuthStore()
 const recycleBinList = ref([])
