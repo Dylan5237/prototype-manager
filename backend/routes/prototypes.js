@@ -25,10 +25,15 @@ const { extractReadme } = require('../services/readme-extractor');
 const { marked } = require('marked');
 const { createComment, getComments, deleteComment, COMMENT_IMAGES_DIR } = require('../services/db-comments');
 const { recordVisit, getVisitStats, getVisitCount } = require('../services/db-stats');
+const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
 
 // 辅助函数：判断当前用户是否为管理员
 function isAdmin(req) {
   return req.user.roles && req.user.roles.includes('admin');
+}
+
+function requestSource(req) {
+  return normalizeSource(req.get('x-fuxi-source'));
 }
 
 // 判断用户是否为原型的协作者（拥有读写权限）
@@ -211,6 +216,15 @@ router.post('/', requireAuth, (req, res) => {
   if (tags && tags.length > 0) {
     setPrototypeTags(id, tags);
   }
+
+  recordUsageEvent({
+    eventType: 'prototype_created',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: id,
+    eventKey: `prototype-created:${id}`
+  });
   
   res.json({ success: true, data: getPrototypeById(id) });
 });
@@ -328,6 +342,15 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
     
     // 清理旧版本，保留最近10个
     cleanupOldVersions(prototype.id, 10);
+
+    recordUsageEvent({
+      eventType: 'version_created',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'prototype',
+      resourceId: prototype.id,
+      metadata: { version: getLatestVersionNumber(prototype.id) }
+    });
     
     res.json({ success: true, data: getPrototypeById(prototype.id) });
   } catch (error) {
@@ -478,6 +501,14 @@ router.post('/:id/shares', requireAuth, (req, res) => {
         addPrototypeShare(prototype.id, memberId);
       }
     });
+    recordUsageEvent({
+      eventType: 'prototype_shared',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'prototype',
+      resourceId: prototype.id,
+      metadata: { targetType: 'group', targetId: group.id, targetCount: group.member_ids.length }
+    });
     const shares = getPrototypeShares(prototype.id);
     return res.json({ success: true, data: shares });
   }
@@ -496,6 +527,14 @@ router.post('/:id/shares', requireAuth, (req, res) => {
   }
 
   const shares = addPrototypeShare(prototype.id, targetUser.id);
+  recordUsageEvent({
+    eventType: 'prototype_shared',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id,
+    metadata: { targetType: 'user', targetId: targetUser.id }
+  });
   res.json({ success: true, data: shares });
 });
 
@@ -527,6 +566,13 @@ router.put('/:id', requireAuth, (req, res) => {
   
   const { name, description, categoryId } = req.body;
   const updated = updatePrototype(prototype.id, { name, description, categoryId });
+  recordUsageEvent({
+    eventType: 'prototype_updated',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id
+  });
   
   res.json({ success: true, data: updated });
 });
@@ -706,6 +752,14 @@ router.get('/:id/public-link', requireAuth, (req, res) => {
     if (!getShareLinkByCode(code)) break;
   }
   createShareLink({ code, prototypeId: prototype.id, entryFile: prototype.entry_file, createdBy: req.user.id });
+  recordUsageEvent({
+    eventType: 'prototype_shared',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id,
+    metadata: { targetType: 'share_link' }
+  });
 
   res.json({ success: true, data: { url: `/api/s/${code}`, code } });
 });
@@ -816,7 +870,8 @@ router.post('/:id/visit', requireAuth, (req, res) => {
   recordVisit({
     prototypeId: req.params.id,
     visitorIp: req.ip,
-    userId: req.user.id
+    userId: req.user.id,
+    source: requestSource(req)
   });
   res.json({ success: true });
 });

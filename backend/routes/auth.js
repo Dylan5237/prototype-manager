@@ -5,6 +5,7 @@ const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, ge
 const { setGroupMembers } = require('../services/db-groups');
 const { CONNECT_CODE_TTL_MS, createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
 const { AgentUpdateError, reportSessionRuntime } = require('../services/db-agent-updates');
+const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
 
 // uploader 与 editor 等价，数据库统一保存为 uploader，显示层统一展示为「编辑者」
 const VALID_ROLES = ['admin', 'uploader', 'viewer'];
@@ -33,6 +34,11 @@ router.post('/login', (req, res) => {
   }
 
   const token = generateToken(user);
+  recordUsageEvent({
+    eventType: 'login_success',
+    userId: user.id,
+    source: normalizeSource(req.get('x-fuxi-source'))
+  });
   res.json({
     success: true,
     data: {
@@ -92,6 +98,7 @@ router.post('/register', (req, res) => {
   }
   try {
     const user = createUser({ username, password, nickname: String(nickname || '').trim() || username, role: ['uploader'] });
+    recordUsageEvent({ eventType: 'user_registered', userId: user.id, source: normalizeSource(req.get('x-fuxi-source')) });
     const token = generateToken(user);
     res.status(201).json({
       success: true,
@@ -174,6 +181,7 @@ router.post('/mcp/connect', (req, res) => {
     return res.status(401).json({ success: false, code: 'INVALID_CODE', message: '用户不存在' });
   }
   const session = createSession(user.id, deviceLabel);
+  recordUsageEvent({ eventType: 'mcp_connected', userId: user.id, source: 'mcp', resourceType: 'mcp_session', resourceId: session.id });
   const accessToken = generateToken(user, { expiresIn: `${MCP_ACCESS_TTL_SECONDS}s` });
   res.json({
     success: true,

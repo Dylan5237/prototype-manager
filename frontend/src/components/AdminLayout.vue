@@ -13,6 +13,11 @@
         text-color="#4a5568"
         active-text-color="#1a202c"
       >
+        <div class="menu-section-label">数据分析</div>
+        <el-menu-item index="/admin/usage">
+          <el-icon><DataAnalysis /></el-icon>
+          <span class="menu-text">使用总览</span>
+        </el-menu-item>
         <div class="menu-section-label">用户与组织</div>
         <el-menu-item index="/admin/users" class="section-menu-item">
           <el-icon><User /></el-icon>
@@ -46,7 +51,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Setting, User, UserFilled, Promotion, Collection, Bell } from '@element-plus/icons-vue'
+import { Setting, User, UserFilled, Promotion, Collection, Bell, DataAnalysis } from '@element-plus/icons-vue'
 
 const route = useRoute()
 const activeMenu = computed(() => route.path)

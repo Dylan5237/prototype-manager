@@ -20,6 +20,7 @@ const {
   RepositoryProvisioningService
 } = require('../services/repository-provisioning');
 const { UPLOADS_DIR } = require('../services/storage');
+const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
 const {
   LightweightCollaborationError,
   LightweightCollaborationService
@@ -33,6 +34,10 @@ const candidateUpload = multer({
     else callback(new LightweightCollaborationError('CANDIDATE_INVALID', '候选只支持 ZIP 文件'));
   }
 });
+
+function requestSource(req) {
+  return normalizeSource(req.get('x-fuxi-source'));
+}
 
 function sendLightweightError(res, error) {
   if (error && error.code === 'LIMIT_FILE_SIZE') {
@@ -294,6 +299,14 @@ router.post('/', requireAuth, (req, res) => {
       description: description || '',
       menuConfig: formatMenuConfig(menuConfig),
       createdBy: req.user.id
+    });
+    recordUsageEvent({
+      eventType: 'project_created',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: project.id,
+      eventKey: `project-created:${project.id}`
     });
     // 创建者自动作为 owner，无需写入 project_members
     res.json({ success: true, data: project });

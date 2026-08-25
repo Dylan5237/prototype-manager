@@ -1,11 +1,20 @@
 const { run, query, queryOne } = require('../database/db');
+const { recordUsageEvent, normalizeSource } = require('./usage-events');
 
-function recordVisit({ prototypeId, visitorIp, userId }) {
+function recordVisit({ prototypeId, visitorIp, userId, source = 'web' }) {
   const now = new Date().toISOString();
   run(
     `INSERT INTO prototype_visits (prototype_id, visitor_ip, user_id, visited_at) VALUES (?, ?, ?, ?)`,
     [prototypeId, visitorIp || null, userId || null, now]
   );
+  recordUsageEvent({
+    eventType: 'prototype_previewed',
+    userId,
+    source: normalizeSource(source),
+    resourceType: 'prototype',
+    resourceId: prototypeId,
+    occurredAt: now
+  });
 }
 
 function getVisitCount(prototypeId) {

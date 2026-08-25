@@ -521,7 +521,7 @@ function writeCredentials() {
 async function connectWithCode(code) {
   const body = await request('/api/auth/mcp/connect', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
     body: JSON.stringify({ code, deviceLabel: DEVICE_LABEL })
   });
   const data = body.data;
@@ -538,7 +538,7 @@ async function connectWithCode(code) {
 async function refreshAccessToken() {
   const body = await request('/api/auth/mcp/refresh', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
     body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
   });
   const data = body.data;
@@ -572,7 +572,7 @@ async function getToken() {
   if (username && password) {
     const body = await request('/api/auth/login', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
       body: JSON.stringify({ username, password })
     });
     cachedToken = body.data.token;
@@ -591,6 +591,7 @@ async function authed(apiPath, options = {}) {
     ...options,
     headers: {
       ...(options.headers || {}),
+      'X-Fuxi-Source': 'mcp',
       Authorization: `Bearer ${token}`
     }
   });

@@ -177,6 +177,26 @@ function createTables() {
     )
   `);
 
+  // 统一用户行为事件：只记录可解释的关键业务动作，不记录全量页面点击。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id TEXT PRIMARY KEY,
+      event_key TEXT UNIQUE,
+      event_type TEXT NOT NULL,
+      user_id INTEGER,
+      source TEXT NOT NULL DEFAULT 'web',
+      resource_type TEXT,
+      resource_id TEXT,
+      result TEXT NOT NULL DEFAULT 'success',
+      occurred_at TEXT NOT NULL,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_time ON usage_events(occurred_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_type_time ON usage_events(event_type, occurred_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_user_time ON usage_events(user_id, occurred_at)`); } catch (e) {}
+
   // prototype_shares 表：记录原型分享给哪些用户
   db.run(`
     CREATE TABLE IF NOT EXISTS prototype_shares (

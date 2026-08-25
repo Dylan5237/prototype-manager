@@ -8,6 +8,7 @@ import AdminDistribution from '../views/AdminDistribution.vue'
 import AdminCategories from '../views/AdminCategories.vue'
 import AdminGroups from '../views/AdminGroups.vue'
 import AdminAnnouncements from '../views/AdminAnnouncements.vue'
+import AdminUsageDashboard from '../views/AdminUsageDashboard.vue'
 import RecycleBinView from '../views/RecycleBinView.vue'
 import ProjectsView from '../views/ProjectsView.vue'
 import ProjectView from '../views/ProjectView.vue'
@@ -27,6 +28,7 @@ const routes = [
   },
   { path: '/project/:id/preview', name: 'project-preview', component: ProjectPreview, meta: { allowGuest: true } },
   { path: '/admin/users', name: 'admin-users', component: AdminUsers, meta: { requireAdmin: true } },
+  { path: '/admin/usage', name: 'admin-usage', component: AdminUsageDashboard, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
   { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },
   { path: '/admin/groups', name: 'admin-groups', component: AdminGroups, meta: { requireAdmin: true } },

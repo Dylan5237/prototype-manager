@@ -210,7 +210,12 @@ router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
   content = processHtml(content, basePath);
 
   // 记录访问
-  recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
+  recordVisit({
+    prototypeId: prototype.id,
+    visitorIp: req.ip,
+    userId: req.user ? req.user.id : null,
+    source: req.user && req.user.username === 'user' ? 'share' : 'web'
+  });
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);
@@ -259,7 +264,12 @@ router.get('/:id/*.html', requireAuth, (req, res) => {
   content = processHtml(content, basePath);
 
   // 记录访问
-  recordVisit({ prototypeId: prototype.id, visitorIp: req.ip, userId: req.user ? req.user.id : null });
+  recordVisit({
+    prototypeId: prototype.id,
+    visitorIp: req.ip,
+    userId: req.user ? req.user.id : null,
+    source: req.user && req.user.username === 'user' ? 'share' : 'web'
+  });
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(content);
