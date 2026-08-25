@@ -1,1 +1,2 @@
 ops/skills/fuxi-platform-release/scripts/remote-deploy.sh text eol=lf
+ops/skills/fuxi-platform-release/scripts/remote-deploy-test.sh text eol=lf

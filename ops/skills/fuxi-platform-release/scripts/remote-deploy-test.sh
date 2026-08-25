@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# This script is uploaded to Linux and must remain LF-only.
 set -Eeuo pipefail
 
 # Deploy an immutable release to the isolated 16077 test environment.
