@@ -1,7 +1,7 @@
 # 伏羲原型体系技术方案设计文档
 
 > 版本: 1.0
-> 更新日期: 2026-08-12
+> 更新日期: 2026-08-25
 > 文档定位: 伏羲原型体系的完整技术方案设计，包含但不限于整体架构、环境信息、使用手册、详细设计说明和迭代计划
 > 配套文档: [MCP_SKILLS_EVOLUTION_JOURNEY.md](MCP_SKILLS_EVOLUTION_JOURNEY.md) 记录迭代旅程和阶段验证证据
 
@@ -192,7 +192,7 @@ MCP 是天然内置的（源码在平台仓库 `mcp-server/`）；Skill 通过 `
 | Backend | Node.js `20.20.2`，端口 `3001` |
 | Frontend | Nginx 端口 `16088`（原 80 被 k3s Traefik CNI 占用），root 在 legacy 项目路径下 |
 | Nginx config | `/etc/nginx/sites-available/fuxi` |
-| Git 分支 | `feature/project-collaboration` |
+| 发布来源分支 | `main`（内网 GitLab） |
 
 持久化路径（生产数据当前在 legacy 项目树下）：
 
@@ -253,11 +253,11 @@ SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，
 
 ### 3.4 MCP 工具分组
 
-当前 MCP 共 26 个工具：
+当前 MCP 共 30 个工具（以 `mcp-server/src/server.js` 和集成测试为准）：
 
 - 原型核心：`check_connection`、`list_prototypes`、`create_prototype`、`get_prototype`、`get_readme`、`get_preview_url`、`upload_zip`
-- 项目协作：`list_projects`、`get_project`、`bind_prototype_to_project`、`checkout_prototype`、`checkin_prototype`、`create_snapshot`
-- 轻协作候选：`create_change_handoff`、`redeem_change_handoff`、`get_change_status`、`submit_change_candidate`
+- 项目读取与协作：`list_projects`、`get_project`、`bind_prototype_to_project`、`checkout_prototype`、`checkin_prototype`、`create_snapshot`
+- 轻协作候选：`create_change_handoff`、`create_prototype_change`、`redeem_prototype_change_handoff`、`get_prototype_change_status`、`submit_prototype_change`、`redeem_change_handoff`、`get_change_status`、`submit_change_candidate`
 - 高风险操作：`restore_snapshot`、`delete_prototype`、`rollback_version`、`force_release_checkout`，均要求 `confirm: true`
 - 本地交付：`validate_project`、`validate_zip`、`pack_project`、`upload_project`、`deliver_project`
 
@@ -546,23 +546,20 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 已落地真实制品与最小 API：管理员从配置源目录生成 stable MCP/Skill ZIP，服务端保存并鉴权下载；用户查询设备更新、创建幂等更新意图、launcher claim、结果回报、MCP heartbeat。
 - 已落地 Windows launcher：启动前下载、SHA-256、受限解压、MCP/Skill Smoke、current/previous 切换、native Skill 替换和结果回报。
 - MCP `check_connection` 会上报运行时版本并返回第一条可用更新；旧服务端没有 heartbeat 时保持兼容，不阻断现有连接。
-- 已通过后端 37 项测试、MCP 语法检查、远程更新协议测试和真实集成测试；前端通知已接入，尚待 16077 真实重启验收。
+- 已通过后端 44 项测试、MCP 语法检查、远程更新协议测试和隔离集成测试；前端通知已接入，尚待 16077 真实重启验收。
 
 ---
 
 ## 7. 当前工作区事实
 
-截至 2026-08-12：
+截至 2026-08-25：
 
-- **FuxiPlatform** 当前分支: `feature/project-collaboration`。
-- 平台阶段 11-13 与维护者发布 Skill 已提交并通过不可变 release 部署生产；生产业务代码固定在 `2426470`，后续本地 `8ecb5f6` 仅修正维护者只读探查脚本，不改变线上业务行为。
-- 最新平台 commit: `f1e6da9`（`feat(验收): 完成伏羲新版生产发布与兼容闭环`）。
+- **FuxiPlatform** 当前工作区分支: `main` @ `1070a79`，与 `zoesoftgitlab/main` 对齐；GitHub `origin` 不作为生产来源。
+- 本地最新完整 release manifest 仍为 `20260825-162339-d4816ce4`，验证字段为 `frontend-build+mcp-check+mcp-integration`，早于当前源码提交；本地 manifest 不能单独证明生产已切换到该 release。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
-- 技能包目录已重构为: `AGENTS.md`、`SKILLS-README.md`、`fuxi-adapter/`、`acceptance/stage10/`、`fuxi-prototype/specs/tiangong/`、`fuxi-prototype/specs/static-html/`。
-- `prototype-manager-skills` 是独立 Git 仓库，当前分支 `master`，最新 commit `52ed07b`，尚未配置远程。
-- 生产运行 release `20260811-210455-24264705`，`/api/health` 为 `200`，`/api/integrations/agent-bootstrap` 未登录为 `401`，MCP/Skill 分发和新数据验收均通过。
-- `sky-ui-docs` 的确定性 Node CLI 已内置到单一入口 Skill；外部 GitLab 项目仍是上游来源。
-- 生产已有 52 个原型（含本次新增验收原型），发布前 50 个旧 ID 全部保留，15 个关键字段零差异。
+- `prototype-manager-skills` 是独立 Git 仓库；当前工作区为 `main` @ `20d9d69`。
+- 2026-08-25 只读探针显示 16077 与 16088 的 `/api/health` 均为 `200`；active release marker、完整用户路径和 Git provider 外部验收不由本次探针证明。
+- 阶段 17 无 Git 轻协作 MVP 已完成代码和本地自动化验证；阶段 18 MCP/Skill 延后更新仍保留 16077 真实设备重启验收 pending。
 
 ## 更新规则
 

@@ -8,7 +8,7 @@ Set these environment variables in the MCP host:
 
 | Variable | Required | Description |
 |---|---|---|
-| `FUXI_API_URL` | Yes | Fuxi backend URL, defaults to `http://localhost:3001` |
+| `FUXI_API_URL` | No | Fuxi backend URL, defaults to `http://localhost:3001` |
 | `FUXI_CONNECT_CODE` | No | One-time code from the platform "接入平台MCP" dialog. Used only on first connect to exchange a device session. |
 | `FUXI_CREDENTIALS_FILE` | No | Path to the local credential file, defaults to `~/.fuxi/mcp-credentials.json`. |
 | `FUXI_TOKEN` | No | Legacy short-lived access token from `GET /api/auth/mcp-token`. Takes priority over username/password login but does not auto-refresh. |
@@ -40,6 +40,14 @@ the current installation unchanged.
 - `upload_zip`: upload an existing ZIP file as a new prototype version.
 - `list_projects`: list accessible collaboration projects.
 - `get_project`: read project details, bindings, members, and checkout status.
+- `create_change_handoff`: create a one-time task handoff for a project-bound prototype.
+- `create_prototype_change`: create a one-time task handoff for an independent prototype change.
+- `redeem_prototype_change_handoff`: redeem an independent-prototype task handoff and receive the source download contract.
+- `get_prototype_change_status`: read an independent-prototype change status.
+- `submit_prototype_change`: upload an independent-prototype candidate ZIP.
+- `redeem_change_handoff`: redeem a project task handoff and receive the source download contract.
+- `get_change_status`: read a project change status.
+- `submit_change_candidate`: upload a project candidate ZIP for owner/admin review.
 - `bind_prototype_to_project`: bind a prototype into a project menu.
 - `checkout_prototype`: check out a bound project prototype for exclusive editing.
 - `checkin_prototype`: check in a project prototype checked out by the current user.
@@ -84,7 +92,7 @@ npm run test:integration
 
 The integration test runs a copied backend in a temporary isolated directory. It verifies one-time connect-code
 exchange, device-session registration, refresh-token rotation, session revocation, short-lived and expired-token
-authentication, all 22 MCP tools, local validation and packaging, idempotent create/update/project-bound delivery,
+authentication, all 30 MCP tools, local validation and packaging, idempotent create/update/project-bound delivery,
 optimistic version and checkout protection, partial-failure reporting, README and browser preview behavior, project
 collaboration, destructive-operation confirmation gates, and structured failures. It removes the temporary workspace
 afterward and does not modify the platform's current database or prototype repository.

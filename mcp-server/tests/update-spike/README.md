@@ -21,7 +21,7 @@ npm run test:update-spike
 
 ## Cursor 真实边界试验
 
-2026-08-21 使用已安装的测试环境做了两层验证：
+2026-08-21 使用已安装的测试环境做了两层验证（该次安装版本的历史记录，不代表当前源码工具数）：
 
 - 真实安装只读 Smoke：16077 health 正常，`tools/list` 返回 26 个工具并包含 `deliver_project`，`check_connection` authentication 为 `verified`。
 - 真实 MCP launcher 协议 Smoke：临时副本从 v1 切到 cursor-v2，`initialize`、`tools/list` 和 `check_connection` 均通过；launcher 日志写 stderr，未污染 stdout。

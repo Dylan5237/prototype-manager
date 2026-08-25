@@ -1,5 +1,7 @@
 # 伏羲平台项目化协作迭代计划
 
+> **历史方案快照**：本文记录早期 Git/项目协作方案，不是当前实施入口。当前轻协作以“任务码 → 候选 ZIP → 预览 → 采用/退回 → 基础版本 CAS”为准，见 [`docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md`](docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md)。
+
 > 目标：把当前以“单个原型”为中心的平台，升级为以“项目（Project）”为中心的协作门户。一个项目对应一个业务系统（如“天宫平台”），项目下可以划分固定模块菜单，不同成员负责不同模块，最终对外提供统一的项目访问链接。
 
 ---
@@ -22,7 +24,7 @@
 3. **统一门户链接**：`/project/:projectId` 作为对外的统一演示入口。
 4. **模块级签出协作**：不同成员签出不同菜单项（原型），避免冲突。
 5. **项目级版本快照**：重大节点可以保存整个项目的菜单结构 + 各原型版本快照，支持回滚。
-6. **不影响主分支**：本次改造在 `feature/project-collaboration` 分支进行，验证完成前不影响 `master` 的伏羲平台正常使用。
+6. **不影响主分支**：本次历史改造曾在 `feature/project-collaboration` 分支进行；该分支名和 `master` 关系只属于当时的实施快照。
 
 ---
 
@@ -316,7 +318,7 @@
 2. **新增路由，不改旧路由**：`/api/projects/*` 是新增路由，现有 `/api/prototypes/*` 逻辑不变。
 3. **新增页面，不改旧页面**：`/projects`、`/project/:id` 是新路由，首页 `/` 和 `/prototype/:id` 保持不变。
 4. **新增导航入口，不替换旧入口**：侧边栏/顶部增加“项目”入口，原有“原型列表”“用户管理”等保留。
-5. **生产已部署**：`feature/project-collaboration` 分支已通过不可变 release 部署到生产 `192.168.2.145`（release `20260811-210455-24264705`），已有 50 个原型零漂移。
+5. **历史验证记录**：当时的 `feature/project-collaboration` 分支曾通过不可变 release 部署到生产；release、原型数量和零漂移数字只属于该次记录，不作为当前发布状态。
 
 ---
 
@@ -351,7 +353,7 @@
 ## 十三、任务清单
 
 - [x] 编写迭代计划文档
-- [x] 创建 `feature/project-collaboration` 分支
+- [x] 创建历史实施分支 `feature/project-collaboration`
 - [x] Phase 1 后端：项目表 + 项目-原型关联表 + API
 - [x] Phase 1 前端：项目列表 + 项目门户 + 菜单配置 + 原型绑定
 - [x] Phase 2 后端：签出/签入/超时释放 + 快照 API

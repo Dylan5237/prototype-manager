@@ -204,6 +204,6 @@ P1-状态流转 ──→ P2-模板库
 - **原型 Fork**：未实现。
 - **版本 Diff**：未实现。
 - **模板库**：未实现。
-- **项目化协作**：已在 `ITERATION_PLAN.md` 中设计并在 `feature/project-collaboration` 分支实现，详见 `docs/TECHNICAL_DESIGN.md`。
+- **项目化协作（历史方案）**：曾在 `ITERATION_PLAN.md` 中设计并在 `feature/project-collaboration` 分支实现；当前实施入口已切换为无 Git 轻协作 MVP，详见 `docs/TECHNICAL_DESIGN.md`。
 
 权威文档为 `docs/TECHNICAL_DESIGN.md` 和 `docs/MCP_SKILLS_EVOLUTION_JOURNEY.md`。本文档保留为规划历史记录。

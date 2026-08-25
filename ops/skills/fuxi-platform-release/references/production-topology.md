@@ -2,7 +2,7 @@
 
 Read this file before probing, deploying, or rolling back production.
 
-## Authoritative live baseline (2026-08-13)
+## Reference live baseline (2026-08-13; re-probe before use)
 
 | Item | Value |
 |---|---|
@@ -19,7 +19,7 @@ Read this file before probing, deploying, or rolling back production.
 | Backend | Node.js `20.20.2`, port `3001` |
 | Frontend | Nginx port `16088`, root below legacy project path |
 | Nginx config | `/etc/nginx/sites-available/fuxi` |
-| Git branch before new release | `feature/project-collaboration` |
+| Git branch for new release | `main` |
 | Legacy update script | `/zoesoft/fuxi/update-intranet.sh`; inspect only, do not use for immutable releases |
 
 ## Test environment (16077)
