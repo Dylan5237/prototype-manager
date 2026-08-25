@@ -48,7 +48,14 @@ function paths(root = process.env.FUXI_INSTALL_ROOT || path.join(os.homedir(), '
 }
 
 function skillTarget() {
-  return process.env.FUXI_SKILL_TARGET || path.join(os.homedir(), '.cursor', 'skills', 'fuxi-skyui-prototype');
+  return process.env.FUXI_SKILL_TARGET
+    || process.env.FUXI_CANONICAL_SKILL_TARGET
+    || path.join(os.homedir(), '.cursor', 'skills', 'fuxi-prototype');
+}
+
+function legacySkillTarget() {
+  return process.env.FUXI_LEGACY_SKILL_TARGET
+    || path.join(os.homedir(), '.cursor', 'skills', 'fuxi-skyui-prototype');
 }
 
 function assertWithin(root, candidate) {
@@ -352,6 +359,10 @@ async function applyRelease({ p, apiUrl, token, intent, manifest }) {
   let switched = false;
   let skillReplaced = false;
   const targetSkillDir = skillTarget();
+  const legacyTargetDir = legacySkillTarget();
+  const shouldMigrateLegacy = !process.env.FUXI_SKILL_TARGET
+    && !fs.existsSync(targetSkillDir)
+    && fs.existsSync(legacyTargetDir);
   const runId = `${releaseId}-${process.pid}-${Date.now()}`;
   const staging = assertWithin(p.staging, path.join(p.staging, runId));
   try {
@@ -363,12 +374,15 @@ async function applyRelease({ p, apiUrl, token, intent, manifest }) {
     await downloadArtifact({ apiUrl, token, artifact: manifest.artifacts.skill, targetFile: stagingSkill });
     const unpackRoot = ensureDir(path.join(staging, 'unpacked'));
     const mcpPackage = packageRoot(extractZip(stagingMcp, path.join(unpackRoot, 'mcp')), 'fuxi-platform-mcp');
-    const skillPackage = packageRoot(extractZip(stagingSkill, path.join(unpackRoot, 'skill')), 'fuxi-skyui-prototype');
+    const skillPackage = packageRoot(extractZip(stagingSkill, path.join(unpackRoot, 'skill')), 'fuxi-prototype');
     smokeCheck(mcpPackage, skillPackage);
     const previousSkillBackup = path.join(staging, 'previous-skill');
+    const legacySkillBackup = path.join(staging, 'legacy-skill');
+    if (shouldMigrateLegacy) copyTree(legacyTargetDir, legacySkillBackup);
     if (fs.existsSync(targetSkillDir)) copyTree(targetSkillDir, previousSkillBackup);
     replaceTree(skillPackage, targetSkillDir);
     skillReplaced = true;
+    if (shouldMigrateLegacy) fs.rmSync(legacyTargetDir, { recursive: true, force: true });
 
     const versionDir = assertWithin(p.versions, path.join(p.versions, releaseId));
     fs.rmSync(versionDir, { recursive: true, force: true });
@@ -400,6 +414,8 @@ async function applyRelease({ p, apiUrl, token, intent, manifest }) {
       const previousSkillBackup = path.join(staging, 'previous-skill');
       if (fs.existsSync(previousSkillBackup)) replaceTree(previousSkillBackup, targetSkillDir);
       else fs.rmSync(targetSkillDir, { recursive: true, force: true });
+      const legacySkillBackup = path.join(staging, 'legacy-skill');
+      if (shouldMigrateLegacy && fs.existsSync(legacySkillBackup)) replaceTree(legacySkillBackup, legacyTargetDir);
     }
     if (switched && current) restorePrevious(p);
     const restored = current || null;

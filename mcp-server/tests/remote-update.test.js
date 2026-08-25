@@ -14,6 +14,8 @@ let server;
 let previousAgentRoot;
 let previousToken;
 let previousSkillTarget;
+let previousCanonicalSkillTarget;
+let previousLegacySkillTarget;
 let heartbeatPayload;
 
 function json(res, value, status = 200) {
@@ -28,19 +30,23 @@ test.beforeEach(async () => {
   previousAgentRoot = process.env.FUXI_AGENT_RELEASE_ROOT;
   previousToken = process.env.FUXI_TOKEN;
   previousSkillTarget = process.env.FUXI_SKILL_TARGET;
+  previousCanonicalSkillTarget = process.env.FUXI_CANONICAL_SKILL_TARGET;
+  previousLegacySkillTarget = process.env.FUXI_LEGACY_SKILL_TARGET;
   heartbeatPayload = null;
   process.env.FUXI_AGENT_RELEASE_ROOT = path.join(tempRoot, 'server-artifacts');
   process.env.FUXI_TOKEN = 'test-access-token';
   process.env.FUXI_SKILL_TARGET = path.join(tempRoot, 'native-skill');
+  process.env.FUXI_CANONICAL_SKILL_TARGET = path.join(tempRoot, 'canonical-skill');
+  process.env.FUXI_LEGACY_SKILL_TARGET = path.join(tempRoot, 'legacy-skill');
 
   fs.mkdirSync(path.join(sourceRoot, 'mcp', 'src'), { recursive: true });
   fs.mkdirSync(path.join(sourceRoot, 'skill'), { recursive: true });
   fs.cpSync(path.join(__dirname, '..', 'src', 'server.js'), path.join(sourceRoot, 'mcp', 'src', 'server.js'));
   fs.cpSync(path.join(__dirname, '..', 'src', 'fuxi-zip.js'), path.join(sourceRoot, 'mcp', 'src', 'fuxi-zip.js'));
   fs.cpSync(path.join(__dirname, '..', 'package.json'), path.join(sourceRoot, 'mcp', 'package.json'));
-  fs.writeFileSync(path.join(sourceRoot, 'skill', 'SKILL.md'), '---\nname: fuxi-skyui-prototype\n---\n\n# Test Skill\n');
+  fs.writeFileSync(path.join(sourceRoot, 'skill', 'SKILL.md'), '---\nname: fuxi-prototype\n---\n\n# Test Skill\n');
   fs.mkdirSync(process.env.FUXI_SKILL_TARGET, { recursive: true });
-  fs.writeFileSync(path.join(process.env.FUXI_SKILL_TARGET, 'SKILL.md'), '---\nname: fuxi-skyui-prototype\n---\n\n# Legacy Skill\n');
+  fs.writeFileSync(path.join(process.env.FUXI_SKILL_TARGET, 'SKILL.md'), '---\nname: fuxi-prototype\n---\n\n# Legacy Skill\n');
 
   const bundle = prepareArtifactBundle({
     releaseId: 'remote-v2',
@@ -101,6 +107,10 @@ test.afterEach(async () => {
   else process.env.FUXI_TOKEN = previousToken;
   if (previousSkillTarget === undefined) delete process.env.FUXI_SKILL_TARGET;
   else process.env.FUXI_SKILL_TARGET = previousSkillTarget;
+  if (previousCanonicalSkillTarget === undefined) delete process.env.FUXI_CANONICAL_SKILL_TARGET;
+  else process.env.FUXI_CANONICAL_SKILL_TARGET = previousCanonicalSkillTarget;
+  if (previousLegacySkillTarget === undefined) delete process.env.FUXI_LEGACY_SKILL_TARGET;
+  else process.env.FUXI_LEGACY_SKILL_TARGET = previousLegacySkillTarget;
   fs.rmSync(tempRoot, { recursive: true, force: true });
   fs.rmSync(sourceRoot, { recursive: true, force: true });
 });
@@ -150,4 +160,27 @@ test('launcher runtime heartbeat reports versions for legacy MCP targets', async
     runtimeVersion: 'v20.0.0',
     platform: 'win32'
   });
+});
+
+test('migrates an installed legacy skill to the canonical target when no explicit target is configured', async () => {
+  const port = server.address().port;
+  const apiUrl = `http://127.0.0.1:${port}`;
+  const credentialsFile = path.join(tempRoot, 'credentials-migration.json');
+  fs.writeFileSync(credentialsFile, JSON.stringify({
+    apiUrl,
+    refreshToken: 'refresh-token-not-printed',
+    sessionId: 'session-migration'
+  }));
+  fs.mkdirSync(process.env.FUXI_LEGACY_SKILL_TARGET, { recursive: true });
+  fs.writeFileSync(path.join(process.env.FUXI_LEGACY_SKILL_TARGET, 'SKILL.md'), '# Legacy Installed Skill\n');
+  delete process.env.FUXI_SKILL_TARGET;
+  const startup = await prepareStartup({
+    apiUrl,
+    credentialsFile,
+    installRoot: path.join(tempRoot, 'migration-runtime'),
+    deviceLabel: 'legacy-migration-test'
+  });
+  assert.equal(startup.update.status, 'READY_TO_START');
+  assert.match(fs.readFileSync(path.join(process.env.FUXI_CANONICAL_SKILL_TARGET, 'SKILL.md'), 'utf8'), /Test Skill/);
+  assert.equal(fs.existsSync(process.env.FUXI_LEGACY_SKILL_TARGET), false);
 });

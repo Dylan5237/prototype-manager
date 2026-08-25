@@ -169,10 +169,10 @@ async function main() {
     assert(packedEntries.some(e => e.name === 'README.md'));
     assert(packedEntries.some(e => e.name === 'assets/app.js'));
 
-    const distributedSkillDir = path.join(tempRoot, 'fuxi-skyui-prototype');
+    const distributedSkillDir = path.join(tempRoot, 'fuxi-prototype');
     fs.mkdirSync(path.join(distributedSkillDir, 'references'), { recursive: true });
     fs.mkdirSync(path.join(distributedSkillDir, 'node_modules'), { recursive: true });
-    fs.writeFileSync(path.join(distributedSkillDir, 'SKILL.md'), '# Fuxi SkyUI Prototype\n');
+    fs.writeFileSync(path.join(distributedSkillDir, 'SKILL.md'), '# Fuxi Prototype\n');
     fs.writeFileSync(path.join(distributedSkillDir, 'references', 'workflow.md'), '# Workflow\n');
     fs.writeFileSync(path.join(distributedSkillDir, '.npmrc'), 'secret=must-not-ship\n');
     fs.writeFileSync(path.join(distributedSkillDir, 'node_modules', 'ignored.js'), '');
@@ -318,7 +318,7 @@ async function main() {
     });
     const bootstrap = await bootstrapResponse.json();
     assert.equal(bootstrapResponse.status, 200);
-    assert.equal(bootstrap.data.skillName, 'fuxi-skyui-prototype');
+    assert.equal(bootstrap.data.skillName, 'fuxi-prototype');
     assert(bootstrap.data.prompt.includes('check_connection'));
     assert(bootstrap.data.prompt.includes('deliver_project'));
     assert(bootstrap.data.prompt.includes('识别当前 AI 客户端'));
@@ -435,8 +435,8 @@ async function main() {
     assert.equal(skillPackageResponse.status, 200);
     const skillPackage = new AdmZip(Buffer.from(await skillPackageResponse.arrayBuffer()));
     const skillEntries = skillPackage.getEntries().map(entry => entry.entryName);
-    assert(skillEntries.includes('fuxi-skyui-prototype/SKILL.md'));
-    assert(skillEntries.includes('fuxi-skyui-prototype/references/workflow.md'));
+    assert(skillEntries.includes('fuxi-prototype/SKILL.md'));
+    assert(skillEntries.includes('fuxi-prototype/references/workflow.md'));
     assert(!skillEntries.some(name => name.includes('.npmrc') || name.includes('node_modules')));
 
     const mcpPackageResponse = await fetch(bootstrap.data.mcpUrl, { headers: packageHeaders });
@@ -631,7 +631,7 @@ async function main() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${login.data.token}`
       },
-      body: JSON.stringify({ username: 'mcpuser2', password: 'pass1234', role: ['uploader'] })
+      body: JSON.stringify({ username: 'mcpuser2', password: 'pass1234', passwordConfirmation: 'pass1234', role: ['uploader'] })
     });
     const registered = await registerResponse.json();
     const memberResponse = await fetch(`${apiUrl}/api/projects/${project.data.id}/members`, {
@@ -640,7 +640,7 @@ async function main() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${login.data.token}`
       },
-      body: JSON.stringify({ userId: registered.data.id, role: 'editor' })
+      body: JSON.stringify({ userId: registered.data.user.id, role: 'editor' })
     });
     assert.equal(memberResponse.status, 200);
 
