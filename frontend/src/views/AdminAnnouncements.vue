@@ -20,6 +20,9 @@
         <el-table-column prop="status" label="状态" width="120" align="left" header-align="left">
           <template #default="{ row }"><el-tag :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></template>
         </el-table-column>
+        <el-table-column label="自动提示" width="120" align="left" header-align="left">
+          <template #default="{ row }"><el-tag :type="row.auto_popup ? 'success' : 'info'" effect="plain">{{ row.auto_popup ? '自动弹出' : '仅公告中心' }}</el-tag></template>
+        </el-table-column>
         <el-table-column prop="published_at" label="发布时间" width="210" align="left" header-align="left">
           <template #default="{ row }"><span class="management-time">{{ formatDate(row.published_at || row.updated_at) }}</span></template>
         </el-table-column>
@@ -48,7 +51,11 @@
           <el-form-item label="版本号"><el-input v-model="form.version" placeholder="例如：v1.8.0" /></el-form-item>
         </div>
         <el-form-item label="摘要"><el-input v-model="form.summary" maxlength="240" show-word-limit placeholder="列表和首页横幅显示的一句话说明" /></el-form-item>
-        <el-form-item label="正文" prop="body"><el-input v-model="form.body" type="textarea" :rows="10" maxlength="10000" show-word-limit placeholder="请按“更新了什么、影响谁、用户要做什么、使用限制”组织内容。" /></el-form-item>
+        <el-form-item label="正文（支持 Markdown）" prop="body"><el-input v-model="form.body" type="textarea" :rows="10" maxlength="10000" show-word-limit placeholder="支持标题、列表、链接、加粗等 Markdown；请按“更新了什么、影响谁、用户要做什么、使用限制”组织内容。" /></el-form-item>
+        <el-form-item label="发布后提示方式">
+          <el-switch v-model="form.autoPopup" active-text="自动弹出" inactive-text="仅公告中心查看" />
+          <p class="form-help">关闭后公告仍会发布，用户可通过顶部公告铃铛查看。</p>
+        </el-form-item>
         <el-form-item label="发布状态"><el-radio-group v-model="form.status"><el-radio value="draft">保存草稿</el-radio><el-radio value="published">立即发布</el-radio></el-radio-group></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="submitting" @click="save">保存</el-button></template>
@@ -69,7 +76,7 @@ const submitting = ref(false)
 const dialogVisible = ref(false)
 const editing = ref(false)
 const formRef = ref(null)
-const form = ref({ id: '', title: '', summary: '', body: '', type: 'feature', version: '', status: 'draft' })
+const form = ref({ id: '', title: '', summary: '', body: '', type: 'feature', version: '', status: 'draft', autoPopup: true })
 const rules = { title: [{ required: true, message: '请输入公告标题', trigger: 'blur' }], body: [{ required: true, message: '请输入公告正文', trigger: 'blur' }] }
 
 function typeLabel(type) { return ({ feature: '功能更新', maintenance: '维护通知', notice: '平台通知' }[type] || '平台通知') }
@@ -77,15 +84,15 @@ function statusLabel(status) { return ({ draft: '草稿', published: '已发布'
 function statusType(status) { return ({ draft: 'info', published: 'success', archived: 'warning' }[status] || 'info') }
 function formatDate(value) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false }) }
 
-function openCreate() { editing.value = false; form.value = { id: '', title: '', summary: '', body: '', type: 'feature', version: '', status: 'draft' }; dialogVisible.value = true }
-function openEdit(row) { editing.value = true; form.value = { id: row.id, title: row.title, summary: row.summary || '', body: row.body || '', type: row.type, version: row.version || '', status: row.status }; dialogVisible.value = true }
+function openCreate() { editing.value = false; form.value = { id: '', title: '', summary: '', body: '', type: 'feature', version: '', status: 'draft', autoPopup: true }; dialogVisible.value = true }
+function openEdit(row) { editing.value = true; form.value = { id: row.id, title: row.title, summary: row.summary || '', body: row.body || '', type: row.type, version: row.version || '', status: row.status, autoPopup: row.auto_popup !== false }; dialogVisible.value = true }
 
 async function save() {
   const valid = await formRef.value.validate().catch(() => false)
   if (!valid) return
   submitting.value = true
   try {
-    const payload = { title: form.value.title, summary: form.value.summary, body: form.value.body, type: form.value.type, version: form.value.version, status: form.value.status }
+    const payload = { title: form.value.title, summary: form.value.summary, body: form.value.body, type: form.value.type, version: form.value.version, status: form.value.status, autoPopup: form.value.autoPopup }
     if (editing.value) await updateAnnouncement(form.value.id, payload)
     else await createAnnouncement(payload)
     ElMessage.success(editing.value ? '公告已更新' : form.value.status === 'published' ? '公告已发布' : '草稿已保存')
@@ -126,5 +133,6 @@ onMounted(load)
 .title-cell strong,.title-cell span { display:block; }
 .title-cell span { margin-top:4px; overflow:hidden; color:#718096; font-size:12px; text-overflow:ellipsis; white-space:nowrap; }
 .form-row { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.form-help { margin: 6px 0 0; color: #718096; font-size: 12px; line-height: 1.5; }
 @media(max-width:600px){.form-row{display:block}}
 </style>

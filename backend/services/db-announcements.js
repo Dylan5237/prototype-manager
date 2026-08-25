@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { marked } = require('marked');
 const { query, queryOne, run } = require('../database/db');
 
 const ANNOUNCEMENT_TYPES = ['feature', 'maintenance', 'notice'];
@@ -16,6 +17,16 @@ function normalizeStatus(status) {
   return ANNOUNCEMENT_STATUSES.includes(status) ? status : 'draft';
 }
 
+function renderMarkdown(body) {
+  const html = marked.parse(String(body || ''), { gfm: true, breaks: true });
+  // 公告由管理员维护，但仍不允许原始脚本、事件属性和 javascript 协议进入用户页面。
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/\son[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/(href|src)\s*=\s*("|')\s*javascript:[^"']*(\2)/gi, '$1=$2#$3');
+}
+
 function mapAnnouncement(row) {
   if (!row) return null;
   return {
@@ -23,9 +34,11 @@ function mapAnnouncement(row) {
     title: row.title,
     summary: row.summary || '',
     body: row.body || '',
+    body_html: renderMarkdown(row.body || ''),
     type: row.type,
     version: row.version || '',
     status: row.status,
+    auto_popup: row.auto_popup == null ? true : Boolean(Number(row.auto_popup)),
     published_at: row.published_at || null,
     created_by: row.created_by,
     creator_name: row.creator_name || null,
@@ -75,7 +88,7 @@ function getAnnouncement(id, { userId, includeDrafts = false } = {}) {
   return mapAnnouncement(row);
 }
 
-function createAnnouncement({ title, summary, body, type, version, status, publishedAt, createdBy }) {
+function createAnnouncement({ title, summary, body, type, version, status, autoPopup = true, publishedAt, createdBy }) {
   const cleanTitle = String(title || '').trim();
   const cleanBody = String(body || '').trim();
   if (!cleanTitle) throw new Error('公告标题不能为空');
@@ -86,9 +99,9 @@ function createAnnouncement({ title, summary, body, type, version, status, publi
   const id = newId();
   run(`
     INSERT INTO platform_announcements
-      (id, title, summary, body, type, version, status, published_at, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [id, cleanTitle, String(summary || '').trim(), cleanBody, normalizeType(type), String(version || '').trim(), cleanStatus, published, createdBy || null, now, now]);
+      (id, title, summary, body, type, version, status, auto_popup, published_at, created_by, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [id, cleanTitle, String(summary || '').trim(), cleanBody, normalizeType(type), String(version || '').trim(), cleanStatus, autoPopup === false ? 0 : 1, published, createdBy || null, now, now]);
   return getAnnouncement(id, { userId: createdBy, includeDrafts: true });
 }
 
@@ -104,9 +117,12 @@ function updateAnnouncement(id, fields = {}) {
   const publishedAt = nextStatus === 'published'
     ? (current.published_at || fields.publishedAt || now)
     : null;
+  const autoPopup = fields.autoPopup === undefined
+    ? (current.auto_popup == null ? 1 : Number(current.auto_popup))
+    : (fields.autoPopup === false ? 0 : 1);
   run(`
     UPDATE platform_announcements
-       SET title = ?, summary = ?, body = ?, type = ?, version = ?, status = ?, published_at = ?, updated_at = ?
+       SET title = ?, summary = ?, body = ?, type = ?, version = ?, status = ?, auto_popup = ?, published_at = ?, updated_at = ?
      WHERE id = ?
   `, [
     nextTitle,
@@ -115,6 +131,7 @@ function updateAnnouncement(id, fields = {}) {
     fields.type === undefined ? current.type : normalizeType(fields.type),
     fields.version === undefined ? current.version : String(fields.version || '').trim(),
     nextStatus,
+    autoPopup,
     publishedAt,
     now,
     id

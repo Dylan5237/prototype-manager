@@ -39,7 +39,7 @@
       <div v-if="selected" class="announcement-detail">
         <div class="detail-meta"><el-tag type="primary" effect="plain">{{ selected.version || typeLabel(selected.type, true) }}</el-tag><span>{{ formatDate(selected.published_at || selected.updated_at) }}</span><span>平台公告</span></div>
         <p class="detail-lead">{{ selected.summary }}</p>
-        <div class="detail-body">{{ selected.body }}</div>
+        <div class="detail-body" v-html="selected.body_html || selected.body"></div>
       </div>
       <template #footer>
         <el-button @click="detailVisible = false">稍后阅读</el-button>
@@ -149,5 +149,16 @@ onMounted(() => { store.load().catch(() => {}) })
 .announcement-detail { color: #334155; }
 .detail-meta { display: flex; align-items: center; gap: 10px; color: #64748b; font-size: 12px; }
 .detail-lead { margin: 17px 0 14px; padding: 13px 14px; border-left: 4px solid #3b82f6; border-radius: 0 8px 8px 0; background: #f8fafc; }
-.detail-body { min-height: 160px; white-space: pre-line; color: #475569; line-height: 1.8; }
+.detail-body { min-height: 160px; color: #475569; line-height: 1.8; }
+.detail-body :deep(h1), .detail-body :deep(h2), .detail-body :deep(h3) { margin: 18px 0 8px; color: #1e293b; line-height: 1.35; }
+.detail-body :deep(h1) { font-size: 22px; }
+.detail-body :deep(h2) { font-size: 18px; }
+.detail-body :deep(h3) { font-size: 16px; }
+.detail-body :deep(p) { margin: 8px 0; }
+.detail-body :deep(ul), .detail-body :deep(ol) { margin: 8px 0; padding-left: 24px; }
+.detail-body :deep(blockquote) { margin: 12px 0; padding: 8px 12px; border-left: 3px solid #93c5fd; background: #f8fafc; color: #64748b; }
+.detail-body :deep(code) { padding: 2px 5px; border-radius: 4px; background: #f1f5f9; font-size: .92em; }
+.detail-body :deep(pre) { overflow: auto; margin: 12px 0; padding: 12px; border-radius: 8px; background: #0f172a; color: #e2e8f0; }
+.detail-body :deep(pre code) { padding: 0; background: transparent; color: inherit; }
+.detail-body :deep(a) { color: #2563eb; }
 </style>

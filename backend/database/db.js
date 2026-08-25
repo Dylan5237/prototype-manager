@@ -402,6 +402,7 @@ function createTables() {
       type TEXT NOT NULL DEFAULT 'feature',
       version TEXT,
       status TEXT NOT NULL DEFAULT 'published',
+      auto_popup INTEGER NOT NULL DEFAULT 1,
       published_at TEXT,
       created_by INTEGER,
       created_at TEXT NOT NULL,
@@ -409,6 +410,7 @@ function createTables() {
       FOREIGN KEY (created_by) REFERENCES users(id)
     )
   `);
+  try { db.run(`ALTER TABLE platform_announcements ADD COLUMN auto_popup INTEGER NOT NULL DEFAULT 1`); } catch (e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS platform_announcement_reads (

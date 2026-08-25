@@ -26,7 +26,7 @@ import { useAnnouncementStore } from '../stores/announcements'
 
 const store = useAnnouncementStore()
 const visible = ref(true)
-const current = computed(() => store.unread[0] || null)
+const current = computed(() => store.unread.find(item => item.auto_popup) || null)
 
 function typeLabel(type) {
   return ({ feature: '功能更新', maintenance: '维护通知', notice: '平台通知' }[type] || '平台公告')

@@ -84,3 +84,20 @@ test('admin can publish and archive without deleting announcement history', () =
   assert.equal(archived.status, 'archived');
   assert.equal(getAnnouncement(draft.id, { includeDrafts: true }).status, 'archived');
 });
+
+test('announcement stores auto popup preference and renders markdown safely', () => {
+  const draft = createAnnouncement({
+    title: 'Markdown 公告',
+    body: '# 更新内容\n\n**重点**\n\n<script>alert(1)</script>',
+    status: 'draft',
+    autoPopup: false,
+    createdBy: 1
+  });
+  assert.equal(draft.auto_popup, false);
+  assert.match(draft.body_html, /<h1>更新内容<\/h1>/);
+  assert.match(draft.body_html, /<strong>重点<\/strong>/);
+  assert.doesNotMatch(draft.body_html, /<script/i);
+
+  const published = updateAnnouncement(draft.id, { status: 'published', autoPopup: true });
+  assert.equal(published.auto_popup, true);
+});
