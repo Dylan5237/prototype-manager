@@ -19,9 +19,9 @@
         <el-table-column label="当前归属者" width="180" align="left" header-align="left">
           <template #default="{ row }"><el-tag type="info" effect="light">{{ getOwnerName(row.created_by) }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="转移到新用户" width="330" align="left" header-align="left">
+        <el-table-column label="转移到新用户" width="330" align="center" header-align="center">
           <template #default="{ row }">
-            <div class="distribution-action">
+            <div class="distribution-action distribution-action--center">
               <el-select v-model="transferTargets[row.id]" placeholder="选择新用户" size="small" class="distribution-target">
                 <el-option v-for="u in editorUsers" :key="u.id" :label="u.nickname || u.username" :value="u.id" :disabled="u.id === row.created_by" />
               </el-select>
@@ -146,6 +146,10 @@ onMounted(loadData)
   align-items: center;
   gap: 8px;
   min-width: 0;
+}
+
+.distribution-action--center {
+  justify-content: center;
 }
 
 .distribution-target {

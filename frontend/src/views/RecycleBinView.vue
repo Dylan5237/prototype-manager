@@ -13,24 +13,24 @@
               <div class="proto-desc">{{ row.description || '暂无描述' }}</div>
             </template>
           </el-table-column>
-          <el-table-column prop="version" label="版本" width="110" align="center" header-align="center">
+          <el-table-column prop="version" label="版本" width="110" align="left" header-align="left">
             <template #default="{ row }">
               <el-tag size="small">v{{ row.version ?? 0 }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="created_by" label="创建者" width="150" align="center" header-align="center">
+          <el-table-column prop="created_by" label="创建者" width="150" align="left" header-align="left">
             <template #default="{ row }">
               {{ row.creator_name || getAuthorName(row.created_by) }}
             </template>
           </el-table-column>
-          <el-table-column prop="deleted_at" label="删除时间" width="190" align="center" header-align="center">
+          <el-table-column prop="deleted_at" label="删除时间" width="210" align="left" header-align="left">
             <template #default="{ row }">
               {{ formatDate(row.deleted_at) }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="230" align="left" header-align="left">
+          <el-table-column label="操作" width="200" align="center" header-align="center">
             <template #default="{ row }">
-              <div class="recycle-actions">
+              <div class="recycle-actions recycle-actions--center">
                 <el-button
                   size="small"
                   @click="handleRestore(row)"
@@ -174,5 +174,9 @@ onMounted(() => {
   align-items: center;
   justify-content: flex-start;
   gap: 7px;
+}
+
+.recycle-actions--center {
+  justify-content: center;
 }
 </style>

@@ -9,10 +9,10 @@
 
     <div class="management-panel">
       <el-table class="management-table" :data="filteredCategories" v-loading="loading" table-layout="fixed">
-        <el-table-column prop="id" label="ID" width="72" align="center" header-align="center">
+        <el-table-column prop="id" label="ID" width="64" align="left" header-align="left">
           <template #default="{ row }"><span class="management-muted">{{ row.id ?? '—' }}</span></template>
         </el-table-column>
-        <el-table-column prop="name" label="类别名称" width="230" align="left" header-align="left">
+        <el-table-column prop="name" label="类别名称" width="190" align="left" header-align="left">
           <template #default="{ row }"><span class="management-primary-text">{{ row.name || '—' }}</span></template>
         </el-table-column>
         <el-table-column prop="description" label="描述" min-width="0" align="left" header-align="left" show-overflow-tooltip>
@@ -21,9 +21,9 @@
         <el-table-column prop="created_at" label="创建时间" width="180" align="left" header-align="left">
           <template #default="{ row }"><span class="management-time">{{ formatDate(row.created_at) }}</span></template>
         </el-table-column>
-        <el-table-column label="操作" width="180" align="right" header-align="right">
+        <el-table-column label="操作" width="170" align="center" header-align="center">
           <template #default="{ row }">
-            <div class="management-table-actions">
+            <div class="management-table-actions management-table-actions--center">
               <el-button size="small" @click="openEditDialog(row)"><el-icon><Edit /></el-icon>编辑</el-button>
               <el-button size="small" type="danger" plain @click="handleDelete(row)"><el-icon><Delete /></el-icon>删除</el-button>
             </div>
