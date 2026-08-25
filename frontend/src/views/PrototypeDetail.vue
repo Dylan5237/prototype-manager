@@ -93,14 +93,14 @@
       </div>
     </el-alert>
 
-    <section v-if="!prototype.project_binding && canEdit" class="direct-change-card" v-loading="directChangeLoading">
+    <section v-if="!prototype.project_binding && canEdit && directChange && directChange.status !== 'cancelled'" class="direct-change-card" v-loading="directChangeLoading">
       <div class="direct-change-head">
         <div>
           <h3><el-icon><MagicStick /></el-icon> 让 AI 修改</h3>
           <p>独立原型修改会先完成静态交付检查，通过后直接生成正式版本。</p>
         </div>
       </div>
-      <template v-if="directChange && !['cancelled'].includes(directChange.status)">
+      <template v-if="directChange && directChange.status !== 'cancelled'">
         <div class="direct-change-meta">
           <span>基线 v{{ directChange.base_version_number }}</span>
           <span>版本策略：{{ directChange.version_strategy_type === 'custom' ? `自定义 v${directChange.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</span>
@@ -119,7 +119,6 @@
           <el-button v-if="directChange.status === 'editing' && directChange.handoff_status !== 'redeemed'" size="small" type="danger" plain @click="cancelCurrentDirectChange">取消修改</el-button>
         </div>
       </template>
-      <el-empty v-else description="尚未发起独立修改" :image-size="60" />
     </section>
 
     <!-- 左右布局：左侧 Tab 导航 + 右侧内容 -->
