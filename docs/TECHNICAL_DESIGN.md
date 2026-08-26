@@ -550,7 +550,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 19: 管理员使用统计 v1.0
 
-状态: `in-progress`
+状态: `completed`（2026-08-26 已正式发布并完成 live verification）
 
 目标: 用统一行为事件回答真实用户活跃、有效产出、协作交付和行为来源，完成后一次性发布到正式环境。
 
@@ -559,25 +559,33 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 已落地 `usage_events` 统一事件表、事件幂等、来源归一化和敏感 metadata 过滤。
 - 已覆盖登录失败/成功、原型访问/预览/创建/更新/删除/恢复/下载/分享、版本管理、项目协作、评论和 MCP 接入等核心动作。
 - 已落地管理员使用总览、趋势、漏斗、行为分布、活跃用户、再次使用率、来源筛选和数据质量提示。
-- 第一阶段已在 16077 部署；16088 暂不发布，等待 v1.0 全量验收。
+- 16077 已完成测试环境部署与页面资源验收；16088 已切换到完整 v1.0 release `20260826-202055-cc32bd96`，健康、Nginx、认证业务路由和管理员统计看板资源均已回读。
 
 验收边界:
 
 - 有效使用不包含单纯登录、打开页面；历史业务事实只用于补足上线前的创建、版本、访问和项目数据。
-- 16077 必须完成真实登录、创建/编辑/预览/版本/分享/项目协作路径，并核对原始事件与看板统计。
-- 正式发布前必须完成前后端构建、后端回归、权限校验、备份、旧数据零漂移和目标版本接口验收。
+- 16077 已完成真实管理员页面复核；有效使用口径为成功完成业务动作，不把单纯登录或页面打开计为有效使用。
+- 正式发布验收已完成前端构建、后端回归、MCP 集成、认证 bootstrap、Skill/MCP ZIP、备份、旧数据零漂移和新验收原型全链路。
+
+正式发布证据（2026-08-26）:
+
+- release：`20260826-202055-cc32bd96`；platform commit `cc32bd96756132d97cf7f8599c352dc91235d158`；Skill commit `20d9d69c92e4b3a39f18a25b87598a420ba51742`；SHA-256 `90a78b977dfd2a786d9c92d61884262c36a38a1089d2f2c7f2691a23b3c8f75c`。
+- 生产备份：`20260826-202127-pre-20260826-202055-cc32bd96`；发布结果 `deployment_status=complete`、health `200`、bootstrap 未登录 `401`、Nginx `200`。
+- 发布前只读基线：63 个原型、1 个项目；发布后 63 个原型、1 个项目，既有 ID/元数据/项目状态零漂移。
+- 新验收原型：`mta2hdjc4f1g1q`，`deliver_project create/update` 版本 `0 → 1`，入口 `index.html`、README `present`、分享 `302 → 200`；未改写既有原型。
+- 回滚命令（需再次明确确认）：`rollback-release.ps1 -BackupId 20260826-202127-pre-20260826-202055-cc32bd96 -ConfirmProductionRollback ROLLBACK_FUXI_PRODUCTION -RestoreData`。
 
 ---
 
 ## 7. 当前工作区事实
 
-截至 2026-08-25：
+截至 2026-08-26：
 
-- **FuxiPlatform** 当前工作区分支: `main` @ `1070a79`，与 `zoesoftgitlab/main` 对齐；GitHub `origin` 不作为生产来源。
-- 本地最新完整 release manifest 仍为 `20260825-162339-d4816ce4`，验证字段为 `frontend-build+mcp-check+mcp-integration`，早于当前源码提交；本地 manifest 不能单独证明生产已切换到该 release。
+- **FuxiPlatform** 当前工作区分支: `codex/admin-usage-dashboard-20260825` @ `cc32bd9`；本次生产 release manifest 固定该提交，未推送 GitHub/GitLab。
+- 当前生产 release 为 `20260826-202055-cc32bd96`，验证字段为 `frontend-build+mcp-check+mcp-integration`；生产 live verification 已补齐认证分发、MCP/Skill 包、新原型和分享预览证据。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - `prototype-manager-skills` 是独立 Git 仓库；当前工作区为 `main` @ `20d9d69`。
-- 2026-08-25 只读探针显示 16077 与 16088 的 `/api/health` 均为 `200`；active release marker、完整用户路径和 Git provider 外部验收不由本次探针证明。
+- 2026-08-26 复核 16088 `/api/health=200`、`/api/admin/usage-stats=401`（未登录路由存在）、前端资源包含“再次使用与来源/再次使用用户”，旧待办文案缺失；16077 保持测试版本。
 - 阶段 17 无 Git 轻协作 MVP 已完成代码和本地自动化验证；阶段 18 MCP/Skill 延后更新仍保留 16077 真实设备重启验收 pending。
 
 ## 更新规则

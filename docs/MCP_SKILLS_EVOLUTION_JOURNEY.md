@@ -973,6 +973,25 @@ commit：
 - 已用 Cursor 测试环境完成真实 MCP launcher 协议试验：临时副本 v1→v2、`initialize`、`tools/list`（26 个工具，含 `deliver_project`）和 `check_connection`（16077、verified）通过；Cursor 已打开工作区会缓存 `user-fuxi-platform`，仅改全局 `mcp.json` 不会热切换现有实例。
 - 当前 Cursor Skill 的 `SKILL.md` 与能力 cache 摘要不一致，检查返回 `CACHE_STALE_FILE SKILL.md`；本轮不自动重建或覆盖，避免把用户现有 Skill 改动误认为更新结果。
 
+### 阶段 19：管理员使用统计 v1.0 正式发布
+
+状态：`completed`（2026-08-26 live verified）
+
+本阶段交付：
+- 统一 `usage_events` 行为事件、来源归一化、有效使用闭环、趋势/漏斗/行为分布/再次使用/来源筛选看板。
+- 移除管理员看板无行动价值的“待处理事项”，将“回访”明确为“再次使用”：注册后至少 24 小时再次完成有效业务动作；有效动作不包含单纯登录或页面打开。
+- 16077 测试环境已部署并完成新页面资源验收；16088 正式环境切换到完整 release `20260826-202055-cc32bd96`。
+
+正式发布证据：
+- 平台 commit：`cc32bd96756132d97cf7f8599c352dc91235d158`；Skill commit：`20d9d69c92e4b3a39f18a25b87598a420ba51742`；归档 SHA-256：`90a78b977dfd2a786d9c92d61884262c36a38a1089d2f2c7f2691a23b3c8f75c`。
+- 备份：`20260826-202127-pre-20260826-202055-cc32bd96`；部署结果 `complete`，health `200`，Nginx `200`，未登录 bootstrap `401`。
+- 基线 63 个原型/1 个项目，发布后原型和项目状态零漂移；新建唯一验收原型 `mta2hdjc4f1g1q`，MCP 工具数 30，`check_connection` ok，`deliver_project` 版本 `0 → 1`，README present，分享 `302 → 200`。
+- 正式页面回读：`16088` `/api/admin/usage-stats` 未登录返回 `401`；前端资源包含“再次使用与来源/再次使用用户”，不存在“待处理事项/现在需要处理/回访用户/回访率”等旧文案。
+
+遗留：
+- 生产新增的 `[ACCEPTANCE] Fuxi Production Release 20260826-202055-cc32bd96` 原型是发布验收凭证，按发布规范保留，不作为业务原型删除。
+- 回滚需用户再次明确确认，使用备份 `20260826-202127-pre-20260826-202055-cc32bd96` 和 `rollback-release.ps1`。
+
 ## 更新规则
 
 每完成一个阶段，必须更新：
