@@ -16,20 +16,32 @@ function normalizeRoles(role) {
   return arr.map(r => r === 'editor' ? 'uploader' : r);
 }
 
+function recordLoginFailure(req, reason) {
+  recordUsageEvent({
+    eventType: 'login_failed',
+    source: normalizeSource(req.get('x-fuxi-source')),
+    result: 'failure',
+    metadata: { reason }
+  });
+}
+
 // 登录
 router.post('/login', (req, res) => {
   const { password } = req.body;
   const username = String(req.body.username || '').trim().toLowerCase();
   if (!username || !password) {
+    recordLoginFailure(req, 'missing_credentials');
     return res.status(400).json({ success: false, message: '账号和密码不能为空' });
   }
 
   const user = findUserByUsername(username);
   if (!user) {
+    recordLoginFailure(req, 'unknown_user');
     return res.status(401).json({ success: false, message: '账号或密码错误' });
   }
 
   if (!verifyPassword(user, password)) {
+    recordLoginFailure(req, 'invalid_password');
     return res.status(401).json({ success: false, message: '账号或密码错误' });
   }
 

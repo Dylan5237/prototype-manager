@@ -1,15 +1,8 @@
 const { query, queryOne } = require('../database/db');
+const { normalizeSource } = require('./usage-events');
+const { EFFECTIVE_EVENT_TYPES, getEventDefinition } = require('./usage-event-definitions');
 
-const MEANINGFUL_EVENTS = [
-  'prototype_previewed',
-  'prototype_created',
-  'prototype_updated',
-  'version_created',
-  'prototype_shared',
-  'project_created',
-  'release_created',
-  'mcp_connected'
-];
+const MEANINGFUL_EVENTS = EFFECTIVE_EVENT_TYPES;
 
 const PRODUCTIVE_EVENTS = new Set(['version_created', 'release_created']);
 
@@ -70,8 +63,12 @@ function filterRowsByUsers(rows, userIds) {
 
 function getActivityRows({ startIso, endIso, userIds, source } = {}) {
   const rows = [];
-  const eventSourceClause = source ? ` AND source = '${String(source).replace(/'/g, "''")}'` : '';
-  const trackingStartedAt = queryOne(`SELECT MIN(occurred_at) AS started_at FROM usage_events`)?.started_at || null;
+  const eventSourceClause = source ? ' AND source = ?' : '';
+  const eventSourceParam = source ? normalizeSource(source) : null;
+  const trackingStartedAt = queryOne(
+    `SELECT MIN(occurred_at) AS started_at FROM usage_events WHERE event_type IN (${MEANINGFUL_EVENTS.map(() => '?').join(',')})`,
+    MEANINGFUL_EVENTS
+  )?.started_at || null;
   const legacyEnd = trackingStartedAt && trackingStartedAt < endIso ? trackingStartedAt : endIso;
   rows.push(...query(`
     SELECT user_id, occurred_at, event_type, resource_type, resource_id, source
@@ -80,7 +77,7 @@ function getActivityRows({ startIso, endIso, userIds, source } = {}) {
       AND result = 'success'
       AND event_type IN (${MEANINGFUL_EVENTS.map(() => '?').join(',')})
       ${eventSourceClause}
-  `, [startIso, endIso, ...MEANINGFUL_EVENTS]));
+  `, [startIso, endIso, ...MEANINGFUL_EVENTS, ...(eventSourceParam ? [eventSourceParam] : [])]));
 
   // Legacy facts remain visible after rollout, but do not pretend they have a source.
   if (!source && startIso < legacyEnd) {
@@ -169,6 +166,110 @@ function buildTrend(rows, start, end) {
   return result;
 }
 
+function buildEventBreakdown(rows) {
+  const counts = new Map();
+  rows.forEach(row => {
+    const current = counts.get(row.event_type) || { eventType: row.event_type, count: 0, users: new Set() };
+    current.count += 1;
+    if (row.user_id !== null && row.user_id !== undefined) current.users.add(Number(row.user_id));
+    counts.set(row.event_type, current);
+  });
+  return [...counts.values()]
+    .map(item => ({
+      eventType: item.eventType,
+      label: getEventDefinition(item.eventType).label,
+      category: getEventDefinition(item.eventType).category,
+      count: item.count,
+      users: item.users.size
+    }))
+    .sort((a, b) => (b.count - a.count) || a.label.localeCompare(b.label, 'zh-CN'));
+}
+
+function buildSourceBreakdown(rows) {
+  const counts = new Map();
+  rows.forEach(row => {
+    const source = row.source || 'legacy';
+    const current = counts.get(source) || { source, count: 0, users: new Set() };
+    current.count += 1;
+    if (row.user_id !== null && row.user_id !== undefined) current.users.add(Number(row.user_id));
+    counts.set(source, current);
+  });
+  return [...counts.values()]
+    .map(item => ({ source: item.source, count: item.count, users: item.users.size }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function buildActiveUsers(rows, userIds) {
+  const allowed = new Set(userIds);
+  const users = query(`SELECT id, username, nickname, role FROM users ORDER BY id`)
+    .filter(user => allowed.has(Number(user.id)));
+  const activity = new Map();
+  rows.forEach(row => {
+    const userId = Number(row.user_id);
+    if (!Number.isFinite(userId)) return;
+    const current = activity.get(userId) || {
+      actions: 0,
+      productiveActions: 0,
+      previews: 0,
+      versions: 0,
+      lastActiveAt: null,
+      eventTypes: new Set()
+    };
+    current.actions += 1;
+    if (PRODUCTIVE_EVENTS.has(row.event_type)) current.productiveActions += 1;
+    if (row.event_type === 'prototype_previewed') current.previews += 1;
+    if (row.event_type === 'version_created') current.versions += 1;
+    if (!current.lastActiveAt || row.occurred_at > current.lastActiveAt) current.lastActiveAt = row.occurred_at;
+    current.eventTypes.add(row.event_type);
+    activity.set(userId, current);
+  });
+  return users
+    .filter(user => activity.has(Number(user.id)))
+    .map(user => {
+      const item = activity.get(Number(user.id));
+      return {
+        userId: Number(user.id),
+        username: user.username,
+        nickname: user.nickname || user.username,
+        role: parseRoles(user.role)[0] || 'viewer',
+        actions: item.actions,
+        productiveActions: item.productiveActions,
+        previews: item.previews,
+        versions: item.versions,
+        eventTypes: item.eventTypes.size,
+        lastActiveAt: item.lastActiveAt
+      };
+    })
+    .sort((a, b) => (b.actions - a.actions) || (b.productiveActions - a.productiveActions) || a.nickname.localeCompare(b.nickname, 'zh-CN'))
+    .slice(0, 20);
+}
+
+function buildRetention({ newUsers, activityRows, end }) {
+  const windows = [7, 14, 30];
+  return windows.map(days => {
+    const windowMs = days * 24 * 60 * 60 * 1000;
+    const eligible = newUsers.filter(user => {
+      const createdAt = new Date(user.created_at);
+      return createdAt.getTime() + windowMs <= end.getTime();
+    });
+    const retained = eligible.filter(user => {
+      const createdAt = new Date(user.created_at).getTime();
+      return activityRows.some(row => {
+        if (Number(row.user_id) !== Number(user.id)) return false;
+        const occurredAt = new Date(row.occurred_at).getTime();
+        return occurredAt > createdAt && occurredAt <= createdAt + windowMs;
+      });
+    });
+    return {
+      days,
+      label: `${days} 日回访率`,
+      rate: eligible.length ? Math.round((retained.length / eligible.length) * 1000) / 10 : null,
+      retained: retained.length,
+      eligible: eligible.length
+    };
+  });
+}
+
 function getTopPrototypes({ startIso, endIso, rows }) {
   const prototypes = query(`
     SELECT p.id, p.name, p.created_by, u.nickname AS creator_name,
@@ -252,12 +353,29 @@ function getUsageStats(options = {}) {
   const previousActiveUsers = distinctUserCount(previousRows);
   const activeUsers = distinctUserCount(activityRows);
   const productiveRows = activityRows.filter(row => PRODUCTIVE_EVENTS.has(row.event_type));
+  const userRows = buildActiveUsers(activityRows, userIds);
+  const returningUsers = new Set(
+    query(`SELECT id, created_at FROM users WHERE id IN (${userIds.length ? userIds.map(() => '?').join(',') : 'NULL'})`, userIds)
+      .filter(user => user.created_at < range.startIso)
+      .map(user => Number(user.id))
+      .filter(userId => activityRows.some(row => Number(row.user_id) === userId))
+  ).size;
   const activePrototypeIds = new Set(activityRows.filter(row => row.resource_type === 'prototype').map(row => String(row.resource_id)).filter(Boolean));
   const totalUsers = userIds.length;
-  const trackingStartedAt = queryOne(`SELECT MIN(occurred_at) AS started_at FROM usage_events`).started_at || null;
+  const trackingStartedAt = queryOne(
+    `SELECT MIN(occurred_at) AS started_at FROM usage_events WHERE event_type IN (${MEANINGFUL_EVENTS.map(() => '?').join(',')})`,
+    MEANINGFUL_EVENTS
+  )?.started_at || null;
   const attentionItems = getAttentionItems({ start: range.start, end: range.end });
   const totalVersions = activityRows.filter(row => row.event_type === 'version_created').length;
   const totalVisits = activityRows.filter(row => row.event_type === 'prototype_previewed').length;
+  const totalEvents = activityRows.length;
+  const eventHealth = queryOne(`
+    SELECT COUNT(*) AS tracked_count,
+      SUM(CASE WHEN result = 'failure' THEN 1 ELSE 0 END) AS failure_count
+    FROM usage_events
+    WHERE occurred_at >= ? AND occurred_at < ? AND event_type <> 'admin_usage_viewed'
+  `, [range.startIso, range.endIso]);
   const currentSessions = queryOne(`
     SELECT COUNT(*) AS count FROM mcp_sessions
     WHERE revoked_at IS NULL AND expires_at > ?
@@ -271,6 +389,8 @@ function getUsageStats(options = {}) {
     },
     dataQuality: {
       trackingStartedAt,
+      trackedEventCount: Number(eventHealth?.tracked_count || 0),
+      failureEventCount: Number(eventHealth?.failure_count || 0),
       isPartial: !trackingStartedAt || new Date(range.startIso) < new Date(trackingStartedAt),
       notes: trackingStartedAt
         ? '访问、原型、版本等历史事实与统一行为事件合并统计；来源筛选只作用于统一行为事件。'
@@ -282,9 +402,12 @@ function getUsageStats(options = {}) {
       activeUsers,
       previousActiveUsers,
       productiveUsers: distinctUserCount(productiveRows),
+      returningUsers,
+      averageActionsPerActiveUser: activeUsers ? Math.round((totalEvents / activeUsers) * 10) / 10 : 0,
       activePrototypes: activePrototypeIds.size,
       previewVisits: totalVisits,
       versions: totalVersions,
+      totalEvents,
       pendingItems: attentionItems.length,
       mcpSessions: Number(currentSessions?.count || 0),
       activationRate: activation.rate,
@@ -292,6 +415,10 @@ function getUsageStats(options = {}) {
       activationEligible: activation.eligible
     },
     trend: buildTrend(activityRows, range.start, range.end),
+    eventBreakdown: buildEventBreakdown(activityRows),
+    sourceBreakdown: buildSourceBreakdown(activityRows),
+    activeUsers: userRows,
+    retention: buildRetention({ newUsers, activityRows, end: range.end }),
     funnel: [
       { key: 'first_use', label: '首次有效使用', value: distinctUserCount(activityRows) },
       { key: 'prototype_activity', label: '创建或更新原型', value: distinctUserCount(activityRows.filter(row => ['prototype_created', 'prototype_updated'].includes(row.event_type))) },

@@ -118,6 +118,13 @@ router.post('/handoffs/redeem', requireAuth, (req, res) => {
   try {
     const service = new LightweightCollaborationService();
     const result = service.redeemHandoff({ actor: req.user, handoffCode: req.body.handoffCode });
+    recordUsageEvent({
+      eventType: 'handoff_redeemed',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: result.project?.id || null
+    });
     res.json({ success: true, data: result });
   } catch (error) {
     sendLightweightError(res, error);
@@ -153,6 +160,14 @@ router.post('/:id/prototypes/:prototypeId/changes', requireAuth, requireProjectA
         value: req.body.versionStrategyValue
       }
     });
+    recordUsageEvent({
+      eventType: 'change_created',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { prototypeId: req.params.prototypeId, changeId: result.change?.id || result.id }
+    });
     res.status(201).json({ success: true, data: result });
   } catch (error) {
     sendLightweightError(res, error);
@@ -181,6 +196,15 @@ router.post('/:id/changes/:changeId/preview-validation', requireAuth, requirePro
       warnings: req.body.warnings,
       durationMs: req.body.durationMs
     });
+    recordUsageEvent({
+      eventType: 'preview_validated',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      result: req.body.status === 'failed' ? 'failure' : 'success',
+      metadata: { changeId: req.params.changeId, status: req.body.status, durationMs: req.body.durationMs }
+    });
     res.json({ success: true, data: change });
   } catch (error) {
     sendLightweightError(res, error);
@@ -198,6 +222,14 @@ router.patch('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req, 
       requirement: req.body.requirement,
       versionStrategy: req.body.versionStrategy
     });
+    recordUsageEvent({
+      eventType: 'change_updated',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { changeId: req.params.changeId }
+    });
     res.json({ success: true, data: result });
   } catch (error) {
     sendLightweightError(res, error);
@@ -211,6 +243,14 @@ router.delete('/:id/changes/:changeId', requireAuth, requireProjectAccess, (req,
       actor: req.user,
       projectId: req.params.id,
       changeId: req.params.changeId
+    });
+    recordUsageEvent({
+      eventType: 'change_cancelled',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { changeId: req.params.changeId }
     });
     res.json({ success: true, data: change });
   } catch (error) {
@@ -237,6 +277,14 @@ router.post(
         zipPath: req.file.path,
         versionType: req.body.versionType
       });
+      recordUsageEvent({
+        eventType: 'candidate_uploaded',
+        userId: req.user.id,
+        source: requestSource(req),
+        resourceType: 'project',
+        resourceId: req.params.id,
+        metadata: { changeId: req.params.changeId, versionType: req.body.versionType }
+      });
       res.json({ success: true, data: change });
     } catch (error) {
       sendLightweightError(res, error);
@@ -250,6 +298,14 @@ router.post('/:id/changes/:changeId/adopt', requireAuth, requireProjectRole('own
   try {
     const service = new LightweightCollaborationService();
     const result = service.adoptChange({ actor: req.user, projectId: req.params.id, changeId: req.params.changeId });
+    recordUsageEvent({
+      eventType: 'change_adopted',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { changeId: req.params.changeId }
+    });
     res.json({ success: true, data: result });
   } catch (error) {
     sendLightweightError(res, error);
@@ -264,6 +320,14 @@ router.post('/:id/changes/:changeId/reject', requireAuth, requireProjectRole('ow
       projectId: req.params.id,
       changeId: req.params.changeId,
       note: req.body.note
+    });
+    recordUsageEvent({
+      eventType: 'change_rejected',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { changeId: req.params.changeId }
     });
     res.json({ success: true, data: change });
   } catch (error) {
@@ -353,6 +417,13 @@ router.get('/:id', requireAuth, requireProjectAccess, (req, res) => {
     ...pp,
     checkout: checkoutMap.get(pp.id) || null
   }));
+  recordUsageEvent({
+    eventType: 'project_opened',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'project',
+    resourceId: project.id
+  });
   res.json({
     success: true,
     data: {
@@ -373,6 +444,13 @@ router.put('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res)
       description,
       menuConfig: menuConfig !== undefined ? formatMenuConfig(menuConfig) : undefined
     });
+    recordUsageEvent({
+      eventType: 'project_updated',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id
+    });
     res.json({ success: true, data: project });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -382,6 +460,13 @@ router.put('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res)
 // 删除项目
 router.delete('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   softDeleteProject(req.params.id);
+  recordUsageEvent({
+    eventType: 'project_deleted',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'project',
+    resourceId: req.params.id
+  });
   res.json({ success: true });
 });
 
@@ -403,6 +488,14 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
       prototypeId,
       menuPath,
       sortOrder: sortOrder || 0
+    });
+    recordUsageEvent({
+      eventType: 'project_prototype_bound',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { prototypeId }
     });
     res.json({ success: true, data: binding });
   } catch (err) {
@@ -426,6 +519,14 @@ router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'ad
     if (!binding) {
       return res.status(404).json({ success: false, message: '绑定不存在' });
     }
+    recordUsageEvent({
+      eventType: 'project_prototype_bound',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { projectPrototypeId: ppId, operation: 'update' }
+    });
     res.json({ success: true, data: binding });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -440,6 +541,14 @@ router.delete('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 
     return res.status(404).json({ success: false, message: '绑定不存在' });
   }
   removeProjectPrototype(ppId);
+  recordUsageEvent({
+    eventType: 'project_prototype_unbound',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'project',
+    resourceId: req.params.id,
+    metadata: { projectPrototypeId: ppId, prototypeId: existing.prototype_id }
+  });
   res.json({ success: true });
 });
 
@@ -455,6 +564,14 @@ router.post('/:id/prototypes/:prototypeId/repository', requireAuth, async (req, 
       prototypeId: req.params.prototypeId,
       name: req.body.name,
       description: req.body.description || ''
+    });
+    recordUsageEvent({
+      eventType: 'repository_provisioned',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { prototypeId: req.params.prototypeId }
     });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -490,6 +607,14 @@ router.post('/:id/members', requireAuth, requireProjectRole('owner', 'admin'), (
   }
   try {
     const member = addProjectMember({ projectId: req.params.id, userId, role });
+    recordUsageEvent({
+      eventType: 'project_member_added',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { memberId: userId, role }
+    });
     res.json({ success: true, data: member });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -499,6 +624,14 @@ router.post('/:id/members', requireAuth, requireProjectRole('owner', 'admin'), (
 // 移除成员
 router.delete('/:id/members/:userId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   removeProjectMember(req.params.id, parseInt(req.params.userId, 10));
+  recordUsageEvent({
+    eventType: 'project_member_removed',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'project',
+    resourceId: req.params.id,
+    metadata: { memberId: parseInt(req.params.userId, 10) }
+  });
   res.json({ success: true });
 });
 
@@ -522,6 +655,14 @@ router.post('/:id/prototypes/:ppId/checkout', requireAuth, requireProjectAccess,
       note: req.body.note || '',
       durationHours: req.body.durationHours || 24
     });
+    recordUsageEvent({
+      eventType: 'checkout_created',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { projectPrototypeId: ppId }
+    });
     res.json({ success: true, data: checkout });
   } catch (err) {
     res.status(409).json({ success: false, message: err.message });
@@ -536,6 +677,14 @@ router.post('/:id/prototypes/:ppId/checkin', requireAuth, requireProjectAccess, 
     if (!checkout) {
       return res.status(400).json({ success: false, message: '该模块未签出或不是你签出' });
     }
+    recordUsageEvent({
+      eventType: 'checkin_completed',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { projectPrototypeId: ppId }
+    });
     res.json({ success: true, data: checkout });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -550,6 +699,14 @@ router.post('/:id/prototypes/:ppId/release', requireAuth, requireProjectRole('ow
     return res.status(400).json({ success: false, message: '该模块未被签出' });
   }
   const checkout = forceReleaseCheckout({ checkoutId: active.id, byAdmin: true });
+  recordUsageEvent({
+    eventType: 'checkout_released',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'project',
+    resourceId: req.params.id,
+    metadata: { projectPrototypeId: ppId }
+  });
   res.json({ success: true, data: checkout });
 });
 
@@ -578,6 +735,14 @@ router.post('/:id/snapshots', requireAuth, requireProjectRole('owner', 'admin'),
       versionLabel: versionLabel || '',
       createdBy: req.user.id
     });
+    recordUsageEvent({
+      eventType: 'snapshot_created',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { snapshotId: snapshot.id }
+    });
     res.json({ success: true, data: snapshot });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -588,6 +753,14 @@ router.post('/:id/snapshots', requireAuth, requireProjectRole('owner', 'admin'),
 router.post('/:id/snapshots/:snapshotId/restore', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   try {
     const result = restoreSnapshot(parseInt(req.params.snapshotId, 10), { restoredBy: req.user.id });
+    recordUsageEvent({
+      eventType: 'snapshot_restored',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project',
+      resourceId: req.params.id,
+      metadata: { snapshotId: parseInt(req.params.snapshotId, 10) }
+    });
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -597,6 +770,14 @@ router.post('/:id/snapshots/:snapshotId/restore', requireAuth, requireProjectRol
 // 删除快照
 router.delete('/:id/snapshots/:snapshotId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   deleteSnapshot(parseInt(req.params.snapshotId, 10));
+  recordUsageEvent({
+    eventType: 'snapshot_deleted',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'project',
+    resourceId: req.params.id,
+    metadata: { snapshotId: parseInt(req.params.snapshotId, 10) }
+  });
   res.json({ success: true });
 });
 

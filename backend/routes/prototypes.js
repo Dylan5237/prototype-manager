@@ -121,6 +121,13 @@ router.put('/recycle-bin/:id/restore', requireAuth, (req, res) => {
     return res.status(403).json({ success: false, message: '无权操作该原型' });
   }
   restorePrototype(req.params.id);
+  recordUsageEvent({
+    eventType: 'prototype_restored',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: req.params.id
+  });
   res.json({ success: true });
 });
 
@@ -130,6 +137,13 @@ router.delete('/recycle-bin/:id', requireAuth, requireRole(['admin']), (req, res
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
+  recordUsageEvent({
+    eventType: 'prototype_hard_deleted',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: req.params.id
+  });
   removeRepoDir(req.params.id);
   hardDeletePrototype(req.params.id);
   res.json({ success: true });
@@ -155,6 +169,13 @@ router.get('/:id', requireAuth, (req, res) => {
 
   const sharedUserIds = getSharedUserIds(prototype.id);
   const projectBinding = getPrototypeProjectBinding(prototype.id);
+  recordUsageEvent({
+    eventType: 'prototype_opened',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id
+  });
   res.json({
     success: true,
     data: { ...prototype, files, shared_user_ids: sharedUserIds, project_binding: projectBinding }
@@ -191,6 +212,14 @@ router.get('/:id/download', requireAuth, (req, res) => {
 
     const zipName = `${prototype.name || prototype.id}.zip`;
     const zipBuffer = zip.toBuffer();
+    recordUsageEvent({
+      eventType: 'prototype_downloaded',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'prototype',
+      resourceId: prototype.id,
+      metadata: { sizeBytes: zipBuffer.length }
+    });
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(zipName)}"`);
     res.send(zipBuffer);
@@ -404,6 +433,14 @@ router.post('/:id/versions/:versionId/rollback', requireAuth, (req, res) => {
   const repoDir = path.join(__dirname, '../repos', prototype.id);
   const entryFile = findEntryFile(repoDir);
   updatePrototype(prototype.id, { entryFile });
+  recordUsageEvent({
+    eventType: 'version_rollback',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id,
+    metadata: { version: versionNumber }
+  });
   
   res.json({ success: true, data: getPrototypeById(prototype.id) });
 });
@@ -429,6 +466,14 @@ router.delete('/:id/versions/:versionId', requireAuth, (req, res) => {
   removeVersionDir(prototype.id, found.version_number);
   // 删除数据库记录
   deleteVersion(versionId);
+  recordUsageEvent({
+    eventType: 'version_deleted',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id,
+    metadata: { version: found.version_number }
+  });
   
   res.json({ success: true });
 });
@@ -456,6 +501,14 @@ router.put('/:id/versions/:versionId/note', requireAuth, (req, res) => {
   }
 
   const updated = updateVersionNote(found.id, note.trim());
+  recordUsageEvent({
+    eventType: 'version_updated',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id,
+    metadata: { version: found.version_number }
+  });
   res.json({ success: true, data: updated });
 });
 
@@ -550,6 +603,14 @@ router.delete('/:id/shares/:userId', requireAuth, (req, res) => {
 
   const targetUserId = parseInt(req.params.userId, 10);
   const shares = removePrototypeShare(prototype.id, targetUserId);
+  recordUsageEvent({
+    eventType: 'prototype_share_revoked',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id,
+    metadata: { targetUserId }
+  });
   res.json({ success: true, data: shares });
 });
 
@@ -590,6 +651,13 @@ router.delete('/:id', requireAuth, (req, res) => {
   }
   
   softDeletePrototype(prototype.id);
+  recordUsageEvent({
+    eventType: 'prototype_deleted',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id
+  });
   res.json({ success: true });
 });
 
@@ -794,6 +862,13 @@ router.post('/:id/comments', requireAuth, (req, res) => {
       images: images || '[]',
       parentId
     });
+    recordUsageEvent({
+      eventType: 'comment_created',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'prototype',
+      resourceId: prototype.id
+    });
     res.json({ success: true, data: comment });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -815,6 +890,13 @@ router.delete('/:id/comments/:commentId', requireAuth, (req, res) => {
     return res.status(403).json({ success: false, message: '无权删除该评论' });
   }
   deleteComment(commentId);
+  recordUsageEvent({
+    eventType: 'comment_deleted',
+    userId: req.user.id,
+    source: requestSource(req),
+    resourceType: 'prototype',
+    resourceId: prototype.id
+  });
   res.json({ success: true });
 });
 
