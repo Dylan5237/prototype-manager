@@ -82,8 +82,11 @@ test('admin usage stats combine tracked events and legacy facts with stable defi
   assert.equal(stats.activeUsers[0].actions, 2);
   assert.equal(stats.eventBreakdown.find(item => item.eventType === 'prototype_previewed').count, 1);
   assert.equal(stats.sourceBreakdown.find(item => item.source === 'web').count, 3);
+  assert.equal(stats.retention[0].label, '7 日再次使用率');
   assert.equal(stats.retention[0].rate, 100);
   assert.equal(stats.dataQuality.trackedEventCount, 3);
   assert.equal(stats.dataQuality.failureEventCount, 0);
+  assert.equal('pendingItems' in stats.summary, false);
+  assert.equal('attentionItems' in stats, false);
   assert.equal(stats.dataQuality.isPartial, true);
 });

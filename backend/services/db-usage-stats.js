@@ -257,12 +257,12 @@ function buildRetention({ newUsers, activityRows, end }) {
       return activityRows.some(row => {
         if (Number(row.user_id) !== Number(user.id)) return false;
         const occurredAt = new Date(row.occurred_at).getTime();
-        return occurredAt > createdAt && occurredAt <= createdAt + windowMs;
+        return occurredAt >= createdAt + 24 * 60 * 60 * 1000 && occurredAt <= createdAt + windowMs;
       });
     });
     return {
       days,
-      label: `${days} 日回访率`,
+      label: `${days} 日再次使用率`,
       rate: eligible.length ? Math.round((retained.length / eligible.length) * 1000) / 10 : null,
       retained: retained.length,
       eligible: eligible.length
@@ -298,51 +298,6 @@ function getTopPrototypes({ startIso, endIso, rows }) {
   })).sort((a, b) => (b.visits - a.visits) || (b.actions - a.actions)).slice(0, 10);
 }
 
-function getAttentionItems({ start, end }) {
-  const items = [];
-  const failedBuilds = query(`
-    SELECT b.id, b.prototype_id, p.name, b.finished_at, b.status
-    FROM prototype_builds b
-    LEFT JOIN prototypes p ON p.id = b.prototype_id
-    WHERE b.status IN ('failed', 'error')
-      AND COALESCE(b.finished_at, b.queued_at) >= ?
-    ORDER BY COALESCE(b.finished_at, b.queued_at) DESC
-    LIMIT 5
-  `, [start.toISOString()]);
-  failedBuilds.forEach(row => items.push({
-    type: 'build_failed', severity: 'high', title: `${row.name || row.prototype_id} 构建失败`,
-    subtitle: row.finished_at || '最近', resourceId: row.prototype_id, action: '查看失败原因'
-  }));
-
-  const pendingChanges = query(`
-    SELECT c.id, c.prototype_id, p.name, c.status, c.updated_at
-    FROM prototype_changes c
-    LEFT JOIN prototypes p ON p.id = c.prototype_id
-    WHERE c.status IN ('ready', 'preview_pending')
-    ORDER BY c.updated_at ASC
-    LIMIT 5
-  `);
-  pendingChanges.forEach(row => items.push({
-    type: 'change_pending', severity: row.status === 'preview_pending' ? 'medium' : 'low',
-    title: `${row.name || row.prototype_id} 候选待处理`, subtitle: row.updated_at,
-    resourceId: row.prototype_id, action: row.status === 'ready' ? '进入审核' : '查看预览'
-  }));
-
-  const staleBefore = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const stale = query(`
-    SELECT p.id, p.name, p.updated_at
-    FROM prototypes p
-    WHERE p.deleted_at IS NULL AND p.updated_at < ?
-    ORDER BY p.updated_at ASC
-    LIMIT 5
-  `, [staleBefore]);
-  stale.forEach(row => items.push({
-    type: 'prototype_stale', severity: 'low', title: `${row.name} 超过 30 天未更新`,
-    subtitle: row.updated_at, resourceId: row.id, action: '查看原型'
-  }));
-  return items.slice(0, 10);
-}
-
 function getUsageStats(options = {}) {
   const range = getDateRange(options);
   const userIds = getFilteredUserIds(options);
@@ -366,7 +321,6 @@ function getUsageStats(options = {}) {
     `SELECT MIN(occurred_at) AS started_at FROM usage_events WHERE event_type IN (${MEANINGFUL_EVENTS.map(() => '?').join(',')})`,
     MEANINGFUL_EVENTS
   )?.started_at || null;
-  const attentionItems = getAttentionItems({ start: range.start, end: range.end });
   const totalVersions = activityRows.filter(row => row.event_type === 'version_created').length;
   const totalVisits = activityRows.filter(row => row.event_type === 'prototype_previewed').length;
   const totalEvents = activityRows.length;
@@ -408,7 +362,6 @@ function getUsageStats(options = {}) {
       previewVisits: totalVisits,
       versions: totalVersions,
       totalEvents,
-      pendingItems: attentionItems.length,
       mcpSessions: Number(currentSessions?.count || 0),
       activationRate: activation.rate,
       activationActivated: activation.activated,
@@ -426,7 +379,6 @@ function getUsageStats(options = {}) {
       { key: 'delivery', label: '交付/发布', value: distinctUserCount(activityRows.filter(row => row.event_type === 'release_created')) }
     ],
     topPrototypes: getTopPrototypes({ startIso: range.startIso, endIso: range.endIso, rows: activityRows }),
-    attentionItems
   };
 }
 
