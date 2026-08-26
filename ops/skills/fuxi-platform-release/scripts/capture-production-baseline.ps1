@@ -20,7 +20,7 @@ $projectDetails = foreach($project in @($projectResponse.data)) {
 }
 $baseline = [ordered]@{
   schemaVersion = 1
-  capturedAt = (Get-Date).ToUniversalTime().ToString('o')
+  capturedAt = [DateTimeOffset]::UtcNow.ToString('o')
   apiUrl = $ApiUrl
   prototypeTotal = [int]$prototypeResponse.total
   prototypes = @($prototypeResponse.data)

@@ -27,12 +27,9 @@ $actualHash = (Get-FileHash -Algorithm SHA256 $archivePath).Hash.ToLowerInvarian
 if ($actualHash -ne $expectedHash) { throw 'Local archive checksum mismatch.' }
 $baseline = Get-Content -Raw -Encoding utf8 $baselinePath | ConvertFrom-Json
 if (-not $baseline.capturedAt -or @($baseline.prototypes).Count -eq 0) { throw 'Production baseline is invalid.' }
-$capturedUtc = if ($baseline.capturedAt -is [datetime]) {
-  $baseline.capturedAt.ToUniversalTime()
-} else {
-  [datetime]::Parse($baseline.capturedAt, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()
-}
-if ((Get-Date).ToUniversalTime() - $capturedUtc -gt [timespan]::FromHours(1)) { throw 'Production baseline is older than one hour.' }
+$utcStyles = [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal
+$capturedUtc = [DateTimeOffset]::Parse([string]$baseline.capturedAt, [System.Globalization.CultureInfo]::InvariantCulture, $utcStyles).UtcDateTime
+if ([DateTime]::UtcNow - $capturedUtc -gt [timespan]::FromHours(1)) { throw 'Production baseline is older than one hour.' }
 $plink = (Get-Command plink.exe -ErrorAction Stop).Source
 $pscp = (Get-Command pscp.exe -ErrorAction Stop).Source
 $remoteArchive = "/tmp/$([IO.Path]::GetFileName($archivePath))"
