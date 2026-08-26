@@ -7,9 +7,10 @@ param(
   [Parameter(Mandatory)][string]$Archive,
   [Parameter(Mandatory)][string]$BaselinePath,
   [Parameter(Mandatory)][string]$ConfirmProductionDeploy,
-  [string]$Server = '192.168.2.145',
-  [string]$User = 'root',
-  [string]$HostKey = 'ssh-ed25519 255 d0:c5:d3:c9:5f:a9:3c:b9:17:3b:6f:5c:e7:1d:61:d1'
+    [string]$Server = '192.168.2.145',
+    [string]$User = 'root',
+    [string]$HostKey = 'ssh-ed25519 255 d0:c5:d3:c9:5f:a9:3c:b9:17:3b:6f:5c:e7:1d:61:d1',
+    [string]$HostKeyBlob = 'AAAAC3NzaC1lZDI1NTE5AAAAIPpFgKEioF5OGqWrLh+s8s5vkHKVDkLsHMk/iSgW1ntn'
 )
 $ErrorActionPreference = 'Stop'
 if ($ConfirmProductionDeploy -cne 'DEPLOY_FUXI_PRODUCTION') { throw 'Use -ConfirmProductionDeploy DEPLOY_FUXI_PRODUCTION after explicit user approval.' }
@@ -36,12 +37,11 @@ $remoteArchive = "/tmp/$([IO.Path]::GetFileName($archivePath))"
 $remoteScript = "/tmp/fuxi-remote-deploy-$($manifest.releaseId).sh"
 $remoteBaseline = "/tmp/fuxi-production-baseline-$($manifest.releaseId).json"
 $scriptPath = Join-Path $PSScriptRoot 'remote-deploy.sh'
-$pscpHostKey = ($HostKey -split '\s+')[-1]
-& $pscp -batch -hostkey $pscpHostKey -pw $password $archivePath "${User}@${Server}:$remoteArchive"
+& $pscp -batch -hostkey $HostKeyBlob -pw $password $archivePath "${User}@${Server}:$remoteArchive"
 if ($LASTEXITCODE -ne 0) { throw 'Release archive upload failed; production was not switched.' }
-& $pscp -batch -hostkey $pscpHostKey -pw $password $scriptPath "${User}@${Server}:$remoteScript"
+& $pscp -batch -hostkey $HostKeyBlob -pw $password $scriptPath "${User}@${Server}:$remoteScript"
 if ($LASTEXITCODE -ne 0) { throw 'Deploy script upload failed; production was not switched.' }
-& $pscp -batch -hostkey $pscpHostKey -pw $password $baselinePath "${User}@${Server}:$remoteBaseline"
+& $pscp -batch -hostkey $HostKeyBlob -pw $password $baselinePath "${User}@${Server}:$remoteBaseline"
 if ($LASTEXITCODE -ne 0) { throw 'Production baseline upload failed; production was not switched.' }
 & $plink -batch -ssh -hostkey $HostKey -l $User -pw $password $Server "bash '$remoteScript' --archive '$remoteArchive' --baseline '$remoteBaseline' --sha256 '$expectedHash' --release-id '$($manifest.releaseId)' --confirm DEPLOY_FUXI_PRODUCTION"
 if ($LASTEXITCODE -ne 0) { throw "Remote deployment failed with exit code $LASTEXITCODE. Read its deployment_status before retrying." }
