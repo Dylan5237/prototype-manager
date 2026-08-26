@@ -23,6 +23,7 @@ dist
 docs/*
 !docs/MCP_SKILLS_EVOLUTION_JOURNEY.md
 !docs/TECHNICAL_DESIGN.md
+!docs/FUXI_RELEASE_SKILL_REQUIREMENTS.md
 !docs/prototypes/
 docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/
