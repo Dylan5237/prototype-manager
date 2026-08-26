@@ -186,54 +186,17 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showMcpDialog" title="接入平台MCP" width="720px">
-      <div class="mcp-dialog-body">
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          title="复制下面的提示词发给你的 AI 助手，它会自动完成 MCP 接入和连通验证。"
-        />
-        <el-alert
-          v-if="mcpPrompt"
-          type="success"
-          :closable="false"
-          show-icon
-          :title="`安装 token 至 ${mcpTokenExpiresLocal} 有效；连接码至 ${mcpConnectCodeExpiresLocal} 有效。请尽快复制提示词给 AI 助手完成首次兑换。`"
-        />
-        <el-alert
-          v-else
-          type="warning"
-          :closable="false"
-          show-icon
-          title="完整接入包暂不可用，请确认平台已配置 Skill 分发目录后重试。"
-        />
-        <el-input
-          v-model="mcpPrompt"
-          type="textarea"
-          :rows="14"
-          readonly
-          class="mcp-prompt"
-        />
-      </div>
-      <template #footer>
-        <el-button @click="showMcpDialog = false">关闭</el-button>
-        <el-button type="primary" :loading="mcpLoading" :disabled="!mcpPrompt" @click="copyMcpPrompt">
-          <el-icon><DocumentCopy /></el-icon>复制提示词
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, deletePrototype } from '../api/prototypes'
-import { getUsers, getAgentBootstrap, getMcpSessions, getAgentUpdates, createAgentUpdateIntent } from '../api/auth'
+import { getUsers, getMcpSessions, getAgentUpdates, createAgentUpdateIntent } from '../api/auth'
 import { getCategories } from '../api/prototypes'
-import { Search, Plus, User, Loading, Delete, DocumentCopy } from '@element-plus/icons-vue'
+import { Search, Plus, User, Loading, Delete } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
 import { buildPrototypePrompt } from '../utils/prototype-prompts'
@@ -260,11 +223,6 @@ const prototypeRequirement = ref('')
 const prototypeFilePath = ref('')
 const prototypePrompt = ref('')
 const prototypePromptGenerated = ref(false)
-const showMcpDialog = ref(false)
-const mcpTokenExpiresAt = ref('')
-const mcpConnectCodeExpiresAt = ref('')
-const mcpLoading = ref(false)
-const mcpPrompt = ref('')
 const agentUpdateLoading = ref(false)
 const agentUpdateSubmitting = ref(false)
 const agentUpdateSession = ref(null)
@@ -274,20 +232,6 @@ const agentUpdateAvailable = ref(false)
 const agentUpdateDismissed = ref(false)
 
 const AGENT_UPDATE_DISMISSED_PREFIX = 'fuxi.agent-update.completed-dismissed'
-
-const mcpTokenExpiresLocal = computed(() => {
-  if (!mcpTokenExpiresAt.value) return ''
-  const d = new Date(mcpTokenExpiresAt.value)
-  if (Number.isNaN(d.getTime())) return mcpTokenExpiresAt.value
-  return d.toLocaleString('zh-CN', { hour12: false })
-})
-
-const mcpConnectCodeExpiresLocal = computed(() => {
-  if (!mcpConnectCodeExpiresAt.value) return ''
-  const d = new Date(mcpConnectCodeExpiresAt.value)
-  if (Number.isNaN(d.getTime())) return mcpConnectCodeExpiresAt.value
-  return d.toLocaleString('zh-CN', { hour12: false })
-})
 
 const agentUpdateRelease = computed(() => agentUpdate.value || agentUpdateIntent.value?.release || null)
 const agentUpdateIntentStatus = computed(() => agentUpdateIntent.value?.status || '')
@@ -490,23 +434,6 @@ function dismissAgentUpdate() {
   agentUpdateDismissed.value = true
 }
 
-async function loadAgentBootstrap() {
-  mcpLoading.value = true
-  try {
-    const res = await getAgentBootstrap()
-    mcpPrompt.value = res.data.data.prompt
-    mcpTokenExpiresAt.value = res.data.data.expiresAt
-    mcpConnectCodeExpiresAt.value = res.data.data.connectCodeExpiresAt
-  } catch (err) {
-    mcpPrompt.value = ''
-    mcpTokenExpiresAt.value = ''
-    mcpConnectCodeExpiresAt.value = ''
-    ElMessage.error(err.response?.data?.message || '生成 Skill + MCP 接入提示词失败')
-  } finally {
-    mcpLoading.value = false
-  }
-}
-
 async function loadAgentUpdate() {
   agentUpdateLoading.value = true
   try {
@@ -560,17 +487,6 @@ async function scheduleAgentUpdate() {
   }
 }
 
-async function openMcpDialog() {
-  showMcpDialog.value = true
-  await loadAgentBootstrap()
-}
-
-function copyMcpPrompt() {
-  copyClipboardText(mcpPrompt.value)
-    .then(() => ElMessage.success('MCP 接入提示词已复制'))
-    .catch(() => ElMessage.warning('复制失败，请手工选择提示词'))
-}
-
 async function handleCardCommand(command, p) {
   if (command === 'delete') {
     try {
@@ -595,16 +511,12 @@ watch(() => route.query.tab, () => {
 })
 
 onMounted(() => {
-  window.addEventListener('fuxi:open-mcp', openMcpDialog)
   loadData()
   loadUsers()
   loadCategories()
   loadAgentUpdate()
 })
 
-onBeforeUnmount(() => {
-  window.removeEventListener('fuxi:open-mcp', openMcpDialog)
-})
 </script>
 
 <style scoped>
@@ -690,17 +602,6 @@ onBeforeUnmount(() => {
 
 .category-select {
   width: 150px;
-}
-
-.mcp-dialog-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.mcp-prompt :deep(textarea) {
-  font-family: Consolas, Monaco, 'Courier New', monospace;
-  line-height: 1.55;
 }
 
 .prompt-form {

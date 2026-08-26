@@ -34,6 +34,7 @@
           </div>
         </div>
       </el-header>
+      <McpOnboardingDialog v-if="authStore.isLoggedIn && !isLoginPage && !isProjectPreview" />
       <el-main :class="['app-main', { 'app-main--login': isLoginPage || isProjectPreview }]">
         <!-- 登录页 -->
         <router-view v-if="isLoginPage" />
@@ -62,6 +63,7 @@ import AdminLayout from './components/AdminLayout.vue'
 import PrototypeLayout from './components/PrototypeLayout.vue'
 import AnnouncementCenter from './components/AnnouncementCenter.vue'
 import AccountMenu from './components/AccountMenu.vue'
+import McpOnboardingDialog from './components/McpOnboardingDialog.vue'
 import { Files, FolderOpened, Setting } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
