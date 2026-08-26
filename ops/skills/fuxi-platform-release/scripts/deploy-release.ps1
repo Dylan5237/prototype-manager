@@ -36,11 +36,12 @@ $remoteArchive = "/tmp/$([IO.Path]::GetFileName($archivePath))"
 $remoteScript = "/tmp/fuxi-remote-deploy-$($manifest.releaseId).sh"
 $remoteBaseline = "/tmp/fuxi-production-baseline-$($manifest.releaseId).json"
 $scriptPath = Join-Path $PSScriptRoot 'remote-deploy.sh'
-& $pscp -batch -hostkey $HostKey -pw $password $archivePath "${User}@${Server}:$remoteArchive"
+$pscpHostKey = ($HostKey -split '\s+')[-1]
+& $pscp -batch -hostkey $pscpHostKey -pw $password $archivePath "${User}@${Server}:$remoteArchive"
 if ($LASTEXITCODE -ne 0) { throw 'Release archive upload failed; production was not switched.' }
-& $pscp -batch -hostkey $HostKey -pw $password $scriptPath "${User}@${Server}:$remoteScript"
+& $pscp -batch -hostkey $pscpHostKey -pw $password $scriptPath "${User}@${Server}:$remoteScript"
 if ($LASTEXITCODE -ne 0) { throw 'Deploy script upload failed; production was not switched.' }
-& $pscp -batch -hostkey $HostKey -pw $password $baselinePath "${User}@${Server}:$remoteBaseline"
+& $pscp -batch -hostkey $pscpHostKey -pw $password $baselinePath "${User}@${Server}:$remoteBaseline"
 if ($LASTEXITCODE -ne 0) { throw 'Production baseline upload failed; production was not switched.' }
 & $plink -batch -ssh -hostkey $HostKey -l $User -pw $password $Server "bash '$remoteScript' --archive '$remoteArchive' --baseline '$remoteBaseline' --sha256 '$expectedHash' --release-id '$($manifest.releaseId)' --confirm DEPLOY_FUXI_PRODUCTION"
 if ($LASTEXITCODE -ne 0) { throw "Remote deployment failed with exit code $LASTEXITCODE. Read its deployment_status before retrying." }
