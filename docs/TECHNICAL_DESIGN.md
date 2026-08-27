@@ -581,7 +581,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 截至 2026-08-27：
 
-- **FuxiPlatform** 当前维护分支: `codex/admin-usage-dashboard-20260825`，其统计代码对应生产 release `20260826-202055-cc32bd96`；平台变更尚未推送 GitLab `main`，GitHub 不作为生产来源。
+- **FuxiPlatform** 当前工作区已快进到本地 `main` @ `6359908`，其统计代码对应生产 release `20260826-202055-cc32bd96`；平台变更尚未推送 GitLab `main`，GitHub 不作为生产来源。
 - 当前生产 release 为 `20260826-202055-cc32bd96`，验证字段为 `frontend-build+mcp-check+mcp-integration`；生产 live verification 已补齐认证分发、MCP/Skill 包、新原型和分享预览证据。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - `prototype-manager-skills` 是独立 Git 仓库；当前 `main` @ `20d9d69`。
