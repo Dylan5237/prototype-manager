@@ -2,6 +2,22 @@
 
 伏羲原型管理平台：Web 界面 + 后端 API + MCP server，管理 AI 生成的前端原型及其 runtime/profile 交付。
 
+## 思考风格
+
+- 不默认用户的判断正确；结合当前代码、测试、运行态和授权边界客观判断。
+- 区分代码完成、提交、合并、推送、部署和 live verification，不用其中一个状态替代另一个。
+
+## Git 操作规范
+
+- 仓库 `zoesoftgitlab` 是伏羲平台 GitLab 远端；`origin` 是 GitHub，不作为伏羲生产源码来源。
+- 平台当前集成和生产源码分支是 `main`；开发分支使用 `codex/` 前缀。
+- 本项目不使用本地 `master` 或 GitLab `develop` 作为平台发布目标；本地 `master` 当前跟踪旧的 GitHub 分支，GitLab `develop` 不是已配置的远端分支。
+- 平台变更应先在本地合并或快进到 `main`，再按当前会话确认后推送 `zoesoftgitlab/main`；禁止推送 GitHub `origin` 作为生产同步。
+- 生产发布只能从 GitLab `main` 新鲜构建；测试环境可以使用已确认的本地提交，但不得将测试分支直接当作正式源码来源。
+- 提交遵循 Conventional Commits：`type(scope): 中文标题`；body 写现象/根因 -> 改法；footer 使用 `Co-Authored-By: Codex <noreply@openai.com>`。
+- 一个独立任务一个 commit；commit 前按改动范围执行必要的 `npm test`、`npm run build`、MCP 检查或文档检查。
+- 不执行 force push，不用 reset/clean/checkout 覆盖用户改动；不把凭证、密码或长期 token 写入仓库。
+
 ## 怎么跑起来
 
 - 后端：`cd backend && npm install && npm start`（端口 3001，SQLite）
@@ -19,19 +35,20 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 - `frontend/`：Vue SPA，页面在 `src/views/`，API 封装在 `src/api/`。
 - `mcp-server/`：面向 Agent 的 30 个结构化工具，源码在 `src/server.js`。
 - `ops/skills/fuxi-platform-release/`：维护者发布技能，内置只读预检、不可变 release、备份和回滚脚本。
-- `docs/`：体系持续事实入口（`TECHNICAL_DESIGN.md`、`MCP_SKILLS_EVOLUTION_JOURNEY.md`）。
+- `docs/`：体系持续事实入口（`TECHNICAL_DESIGN.md`、`MCP_SKILLS_EVOLUTION_JOURNEY.md`、`BACKLOG.md`）。
 - `.backup/` 和 `.release/`：本地备份和发布产物，Git 忽略。
 
 ## 当前状态和下一步
 
 - 管理员使用统计 v1.0 已完成正式发布；当前生产 release 为 `20260826-202055-cc32bd96`，GitHub `origin` 不作为生产来源。
-- 当前工作区已快进到本地 `main` @ `6359908`；统计代码已在生产，平台变更尚未推送到 GitLab `main`，推送前仍需当前会话单独确认。
+- 当前工作区为本地 `main`；统计代码已在生产，平台变更尚未推送到 GitLab `main`，本地领先远端，推送前仍需当前会话单独确认。
 - 生产入口 `http://192.168.2.145:16088`（Nginx）；16077 测试入口与 16088 生产入口当前健康和页面可达，完整业务验收以发布证据和用户确认记录为准。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
 - 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
 - 不写凭证、密码或长期 token 进仓库或文档。
 - 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；Git provider 真实环境验收暂放，详见 `docs/BACKLOG.md`。
 - 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
+- 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
 
 ## 测试环境部署约定
 
