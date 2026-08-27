@@ -942,7 +942,7 @@ commit：
 
 ### 阶段 18：MCP stdio 与 Skill 延后更新设计
 
-状态：`in-progress`
+状态：`completed`（2026-08-27 用户确认验收）
 
 背景与目标：
 - 首次接入已经建立设备会话，后续 MCP/Skill 版本更新不应再让 AI 重跑完整接入流程。
@@ -966,12 +966,17 @@ commit：
 - MCP `check_connection` 已回报 MCP/Skill/Node/平台版本并读取服务端可用更新；对未升级的旧服务端保持兼容。
 - 后端 37 项测试、MCP 语法检查、远程更新协议测试和集成测试通过；这只证明代码闭环，不等于 16077 真实用户验收。
 
-尚未完成：
+历史待验收记录（截至 2026-08-26；已由用户于 2026-08-27 确认完成，不代表当前状态）：
 - 需要在 16077 发布一个真实测试 release，并把 Cursor 测试配置一次性迁移到固定 launcher；生产 16088 尚未发布。
 - 前端已加入更新通知、确认和 scheduled/running 状态展示；完成/回滚结果需通过 16077 真实重启验收。
 - 已完成隔离 Windows 本地技术试验：成功切换、摘要/Smoke 回滚、凭据不变、客户端运行中等待、并发锁均有脚本证据；真实设备通知、Skill 发现和 16077 端到端证据尚未形成。
 - 已用 Cursor 测试环境完成真实 MCP launcher 协议试验：临时副本 v1→v2、`initialize`、`tools/list`（26 个工具，含 `deliver_project`）和 `check_connection`（16077、verified）通过；Cursor 已打开工作区会缓存 `user-fuxi-platform`，仅改全局 `mcp.json` 不会热切换现有实例。
 - 当前 Cursor Skill 的 `SKILL.md` 与能力 cache 摘要不一致，检查返回 `CACHE_STALE_FILE SKILL.md`；本轮不自动重建或覆盖，避免把用户现有 Skill 改动误认为更新结果。
+
+验收收口：
+
+- 用户已确认阶段 18 完成验收；本阶段不再保留当前 pending。
+- 深链接、静默更新、多渠道灰度和多平台守护进程仍属于后续范围，统一登记在 [docs/BACKLOG.md](BACKLOG.md)。
 
 ### 阶段 19：管理员使用统计 v1.0 正式发布
 

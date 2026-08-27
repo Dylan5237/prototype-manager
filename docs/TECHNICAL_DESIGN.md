@@ -1,7 +1,7 @@
 # 伏羲原型体系技术方案设计文档
 
 > 版本: 1.0
-> 更新日期: 2026-08-25
+> 更新日期: 2026-08-27
 > 文档定位: 伏羲原型体系的完整技术方案设计，包含但不限于整体架构、环境信息、使用手册、详细设计说明和迭代计划
 > 配套文档: [MCP_SKILLS_EVOLUTION_JOURNEY.md](MCP_SKILLS_EVOLUTION_JOURNEY.md) 记录迭代旅程和阶段验证证据
 
@@ -526,7 +526,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 18: MCP stdio 与 Skill 延后更新
 
-状态: `in-progress`
+状态: `completed`（2026-08-27 用户确认验收）
 
 目标: 已完成首次接入的用户在伏羲平台确认更新意图，AI 客户端下一次启动前由稳定 launcher 原子更新 MCP stdio 与 Skill，不重复完整接入。
 
@@ -546,7 +546,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 已落地真实制品与最小 API：管理员从配置源目录生成 stable MCP/Skill ZIP，服务端保存并鉴权下载；用户查询设备更新、创建幂等更新意图、launcher claim、结果回报、MCP heartbeat。
 - 已落地 Windows launcher：启动前下载、SHA-256、受限解压、MCP/Skill Smoke、current/previous 切换、native Skill 替换和结果回报。
 - MCP `check_connection` 会上报运行时版本并返回第一条可用更新；旧服务端没有 heartbeat 时保持兼容，不阻断现有连接。
-- 已通过后端 44 项测试、MCP 语法检查、远程更新协议测试和隔离集成测试；前端通知已接入，尚待 16077 真实重启验收。
+- 已通过后端测试、MCP 语法检查、远程更新协议测试和隔离集成测试；前端通知、launcher 更新和 16077 真实验收已由用户确认完成。
 
 ### 阶段 19: 管理员使用统计 v1.0
 
@@ -579,14 +579,15 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ## 7. 当前工作区事实
 
-截至 2026-08-26：
+截至 2026-08-27：
 
-- **FuxiPlatform** 当前工作区分支: `codex/admin-usage-dashboard-20260825` @ `cc32bd9`；本次生产 release manifest 固定该提交，未推送 GitHub/GitLab。
+- **FuxiPlatform** 当前维护分支: `codex/admin-usage-dashboard-20260825`，其统计代码对应生产 release `20260826-202055-cc32bd96`；平台变更尚未推送 GitLab `main`，GitHub 不作为生产来源。
 - 当前生产 release 为 `20260826-202055-cc32bd96`，验证字段为 `frontend-build+mcp-check+mcp-integration`；生产 live verification 已补齐认证分发、MCP/Skill 包、新原型和分享预览证据。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
-- `prototype-manager-skills` 是独立 Git 仓库；当前工作区为 `main` @ `20d9d69`。
+- `prototype-manager-skills` 是独立 Git 仓库；当前 `main` @ `20d9d69`。
 - 2026-08-26 复核 16088 `/api/health=200`、`/api/admin/usage-stats=401`（未登录路由存在）、前端资源包含“再次使用与来源/再次使用用户”，旧待办文案缺失；16077 保持测试版本。
-- 阶段 17 无 Git 轻协作 MVP 已完成代码和本地自动化验证；阶段 18 MCP/Skill 延后更新仍保留 16077 真实设备重启验收 pending。
+- 阶段 17 无 Git 轻协作 MVP 已完成代码和验收；阶段 18 MCP/Skill 延后更新已由用户确认验收。
+- 暂放的发布 Skill 工程化、GitLab Provider 真实验收、性能/日志/移动端技术债务和发布现场清理评估统一记录在 [docs/BACKLOG.md](BACKLOG.md)。
 
 ## 更新规则
 

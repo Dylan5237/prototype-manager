@@ -2,13 +2,13 @@
 
 伏羲是 AI 生成前端原型的托管、预览、版本和协作控制面，提供 Web 管理界面、后端 API 和面向 Agent 的 MCP Server。它不提供网页代码编辑器；修改由本地 IDE 或已接入的 AI Agent 完成，平台负责交付校验、候选预览、人工采用和版本保护。
 
-## 当前状态（2026-08-25）
+## 当前状态（2026-08-27）
 
-- 当前工作区为 `main`，平台代码 `1070a79` 与内网 GitLab `main` 对齐；生产发布只能从 GitLab `main` 走受控流程，GitHub `origin` 不作为生产来源。
-- 最新完整 release manifest 仍为 `20260825-162339-d4816ce4`，早于当前源码提交；本次文档收口未重新打包或部署。
-- 16077 测试入口和 16088 生产入口的 `/api/health` 均已通过本次只读探针；这只证明服务健康，不等于本次完成生产发布或完整用户验收。
+- 管理员使用统计 v1.0 已完成 16077 测试和 16088 正式环境 live verification；正式 release 为 `20260826-202055-cc32bd96`，GitHub `origin` 不作为生产来源。
+- 当前维护分支为 `codex/admin-usage-dashboard-20260825`；平台统计代码已进入上述生产 release，但 GitLab `main` 仍需完成本地合并后的外部推送，未把未确认的推送结果写成已完成。
+- 16077 测试入口和 16088 生产入口当前健康检查、页面访问正常；健康检查只证明服务存活，业务验收以对应发布证据和用户确认结果为准。
 - 当前主流程是“创建/修改原型 → 校验并交付 → 预览/回读”；项目协作使用“任务码 → 候选 ZIP → 独立预览 → 负责人采用/退回 → 基础版本 CAS”闭环。
-- Git/GitLab 分支、MR 和源码自动合并方案保留为历史设计；Git provider 的真实外部环境验收仍待配置，不是轻协作 MVP 的默认路径。
+- 阶段 18 MCP/Skill 延后更新已由用户确认验收；发布 Skill 工程化、GitLab Provider 真实验收和非阻塞技术债务暂放，统一记录在 docs/BACKLOG.md。
 
 ## 快速访问
 
@@ -89,7 +89,7 @@ MCP 连接变量：
 - 首页接入提示词包含 Skill 与 MCP 的受控下载地址，使用短期 token 和一次性连接码。
 - MCP 会话支持 refresh token 轮换、撤销和版本心跳。
 - 管理员可发布不可变 MCP/Skill release；稳定 launcher 在 AI 客户端下次启动前执行下载、摘要校验、Smoke、原子切换和失败回滚。
-- 更新闭环的代码和本地集成测试已具备；真实设备/16077 重启验收仍按发布技能单独核对。
+- 更新闭环代码、本地回归和 16077 真实验收已完成用户确认；深链接、静默更新、多平台守护进程等不属于当前 MVP。
 
 ## 明确不属于当前默认合同
 
@@ -149,7 +149,7 @@ npm run test:remote-update
 2. 生产环境只使用 `deploy-production-from-gitlab.ps1`，从两个仓库的 `main` 新鲜构建，完成完整 build/check/integration 门禁后才可切换 16088。
 3. 生产上传、切换、回滚和备份清理都需要当前会话的明确确认；不要运行旧的 `update-intranet.sh`。
 
-详见 [`ops/skills/fuxi-platform-release/SKILL.md`](ops/skills/fuxi-platform-release/SKILL.md)、[`OPERATION_MANUAL.md`](OPERATION_MANUAL.md) 和 [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)。
+详见 [`ops/skills/fuxi-platform-release/SKILL.md`](ops/skills/fuxi-platform-release/SKILL.md)、[`OPERATION_MANUAL.md`](OPERATION_MANUAL.md)、[`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md) 和 [`docs/BACKLOG.md`](docs/BACKLOG.md)。
 
 ## 权威文档
 
