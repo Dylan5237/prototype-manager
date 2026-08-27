@@ -18,6 +18,14 @@
 - 一个独立任务一个 commit；commit 前按改动范围执行必要的 `npm test`、`npm run build`、MCP 检查或文档检查。
 - 不执行 force push，不用 reset/clean/checkout 覆盖用户改动；不把凭证、密码或长期 token 写入仓库。
 
+## 伏羲平台与配套 Skill 的双边分析规则
+
+- 配套 Skill 独立仓库路径：`D:\_projects\skills\prototype-manager-skills`；Skill 入口为 `fuxi-prototype`，当前分支为 `main`。
+- 任何需求先同时分析 FuxiPlatform 与配套 Skill 两个仓库的影响，不能只看平台或只看 Skill。
+- 重点检查双方的 API/工具契约、入口目录、分发包、版本/hash、运行时配置和验收链路；判断需求是否需要一边改、两边改或仅记录不改。
+- 涉及平台接口、MCP 工具、Skill 入口、ZIP 分发、运行时 profile 或安装流程时，默认按跨仓库变更评估；不能因改动集中在一边就跳过另一边分析。
+- 两边都改时分别提交、分别验证，并在发布记录中绑定 platform commit 与 Skill commit；只改一边时必须记录另一边无需修改的依据。
+
 ## 怎么跑起来
 
 - 后端：`cd backend && npm install && npm start`（端口 3001，SQLite）
