@@ -1,4 +1,4 @@
 interface:
   display_name: "伏羲平台安全发布"
   short_description: "安全构建发布包并完成生产预检、备份、部署、验收和故障回滚"
-  default_prompt: "使用 $fuxi-platform-release 安全发布伏羲平台；先只读预检和备份，未经明确确认不得切换生产。"
+  default_prompt: "使用 $fuxi-platform-release 安全发布伏羲平台；通用 SSH/传输故障按需调用 $linux-server-ops，先只读预检和备份，未经明确确认不得切换生产。"

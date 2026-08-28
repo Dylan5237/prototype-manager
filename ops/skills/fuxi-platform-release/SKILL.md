@@ -7,6 +7,12 @@ description: Safely inspect, package, deploy, verify, or roll back Fuxi Platform
 
 Operate the maintainer-only release workflow for Fuxi Platform. Preserve every existing prototype and keep platform code, user-facing Skill source, credentials, and persistent data in separate ownership domains.
 
+## Shared Linux/SSH base
+
+`linux-server-ops` is the shared generic base for SSH/SCP/SFTP/`plink`/`pscp` connection diagnosis, host-key handling, remote command quoting, transfer verification, stable error classification, and recoverable operation state. Use it when the task includes a general Linux/SSH problem; keep this Skill as the authoritative Fuxi adapter for release source, environment topology, backup, switch, rollback, and acceptance.
+
+The dependency is logical rather than a copied path. If `linux-server-ops` is unavailable, do not invent a replacement workflow: this Skill's existing pinned scripts remain the only allowed Fuxi release execution path. Changes to Fuxi-specific facts or release gates belong here; changes to generic transport methods belong in `linux-server-ops`.
+
 ## Non-negotiable gates
 
 - Default to inspection. Treat package creation, upload, deploy, rollback, PM2 changes, symlink changes, and backup cleanup as separate actions.
