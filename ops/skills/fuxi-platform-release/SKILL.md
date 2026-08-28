@@ -62,6 +62,15 @@ $env:FUXI_PASSWORD = '<platform acceptance password>'
 
 Clear them after the operation. Never place these values in command history, scripts, `.env` committed files, manifests, or reports.
 
+## Local credential storage
+
+For local storage, use the shared linux-server-ops wrapper
+scripts/invoke-with-local-credentials.ps1 around the selected Fuxi entrypoint.
+It reads an external protected credential file, loads only explicitly allowed
+keys, restores the process environment after the child command, and never
+prints credential values. The wrapper does not replace the Fuxi confirmation,
+backup, source, or acceptance gates.
+
 ## Failure handling
 
 - Report the exact failed gate and whether production was untouched, backed up only, switched, or automatically restored.
