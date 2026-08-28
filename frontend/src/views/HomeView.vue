@@ -719,6 +719,7 @@ onMounted(() => {
 }
 
 .card-title {
+  padding-right: 76px;
   font-size: 15px;
   font-weight: 700;
   color: #1a202c;

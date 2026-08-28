@@ -5,28 +5,29 @@
         <h1>项目</h1>
         <p class="sub-title">按业务系统组织原型，统一门户入口</p>
       </div>
-      <el-button type="primary" @click="openCreateDialog">
-        <el-icon><Plus /></el-icon>
-        创建项目
-      </el-button>
-    </div>
-
-    <div class="toolbar">
-      <el-input
-        v-model="keyword"
-        placeholder="搜索项目"
-        clearable
-        style="width: 300px"
-        @keyup.enter="loadProjects"
-      >
-        <template #prefix>
-          <el-icon><Search /></el-icon>
-        </template>
-      </el-input>
-      <el-button text @click="loadProjects">
-        <el-icon><Refresh /></el-icon>
-        刷新
-      </el-button>
+      <div class="header-actions">
+        <div class="toolbar">
+          <el-input
+            v-model="keyword"
+            placeholder="搜索项目"
+            clearable
+            style="width: 300px"
+            @keyup.enter="loadProjects"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+          <el-button text @click="loadProjects">
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+        </div>
+        <el-button type="primary" @click="openCreateDialog">
+          <el-icon><Plus /></el-icon>
+          创建项目
+        </el-button>
+      </div>
     </div>
 
     <div v-loading="loading" class="project-grid">
@@ -142,6 +143,7 @@ function formatDate(str) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+  gap: 24px;
 }
 .page-header h1 {
   font-size: 24px;
@@ -157,7 +159,11 @@ function formatDate(str) {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 20px;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 .project-grid {
   display: grid;
@@ -203,5 +209,27 @@ function formatDate(str) {
 .card-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-actions {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .toolbar {
+    width: 100%;
+  }
+
+  .toolbar :deep(.el-input) {
+    flex: 1;
+    width: auto !important;
+  }
 }
 </style>

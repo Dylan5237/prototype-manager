@@ -48,6 +48,10 @@
         <PrototypeLayout v-else-if="isHomePage">
           <router-view />
         </PrototypeLayout>
+        <!-- 项目页（含项目列表与项目门户） -->
+        <ProjectLayout v-else-if="isProjectPage && !isProjectPreview">
+          <router-view />
+        </ProjectLayout>
         <!-- 原型详情页 -->
         <router-view v-else />
       </el-main>
@@ -61,6 +65,7 @@ import { useRoute } from 'vue-router'
 import { useAuthStore } from './stores/auth'
 import AdminLayout from './components/AdminLayout.vue'
 import PrototypeLayout from './components/PrototypeLayout.vue'
+import ProjectLayout from './components/ProjectLayout.vue'
 import AnnouncementCenter from './components/AnnouncementCenter.vue'
 import AccountMenu from './components/AccountMenu.vue'
 import McpOnboardingDialog from './components/McpOnboardingDialog.vue'
