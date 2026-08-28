@@ -230,6 +230,8 @@ body {
 .app-main {
   width: 100%;
   padding: 0;
+  /* Element Plus 默认 overflow:auto 会把主区变成滚动上下文，导致页面侧栏无法随页面 sticky。 */
+  overflow: visible;
 }
 
 .app-main--login {

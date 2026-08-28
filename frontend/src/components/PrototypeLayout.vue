@@ -83,6 +83,14 @@ function navigateTo(tab) {
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: sticky;
+  top: 56px;
+  height: calc(100vh - 56px);
+  max-height: calc(100vh - 56px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-self: flex-start;
+  z-index: 10;
 }
 
 .sidebar-header {
@@ -109,6 +117,7 @@ function navigateTo(tab) {
   border-right: none !important;
   padding: 8px 0;
   flex: 1;
+  min-height: 0;
 }
 
 .sidebar-menu .el-menu-item {
@@ -156,6 +165,12 @@ function navigateTo(tab) {
     align-items: center;
     border-right: none;
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    align-self: auto;
+    z-index: auto;
   }
 
   .sidebar-header {

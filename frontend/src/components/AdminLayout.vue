@@ -75,6 +75,14 @@ const activeMenu = computed(() => route.path)
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  position: sticky;
+  top: 56px;
+  height: calc(100vh - 56px);
+  max-height: calc(100vh - 56px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  align-self: flex-start;
+  z-index: 10;
 }
 
 .sidebar-header {
@@ -101,6 +109,7 @@ const activeMenu = computed(() => route.path)
   border-right: none !important;
   padding: 0 0 16px;
   flex: 1;
+  min-height: 0;
 }
 
 .sidebar-menu .el-menu-item {
@@ -167,6 +176,12 @@ const activeMenu = computed(() => route.path)
     align-items: center;
     border-right: none;
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    position: static;
+    height: auto;
+    max-height: none;
+    overflow: visible;
+    align-self: auto;
+    z-index: auto;
   }
 
   .sidebar-header {
