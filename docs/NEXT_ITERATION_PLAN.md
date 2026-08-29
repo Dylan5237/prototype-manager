@@ -1,9 +1,12 @@
 # 伏羲平台下一阶段迭代计划书
 
-> 计划基线：2026-08-28  
-> 计划范围：FuxiPlatform、配套 `fuxi-prototype` Skill、MCP 接入与更新、原型生成与交付链路  
-> 平台仓库：`D:\_projects\platform\FuxiPlatform`  
-> Skill 仓库：`D:\_projects\skills\prototype-manager-skills`  
+> 计划基线：2026-08-28
+>
+> 计划范围：FuxiPlatform、配套 `fuxi-prototype` Skill、MCP 接入与更新、原型生成与交付链路
+>
+> 平台仓库：`D:\_projects\platform\FuxiPlatform`
+>
+> Skill 仓库：`D:\_projects\skills\prototype-manager-skills`
 > 计划状态：已确认并执行阶段 20；本地实现和主要回归完成，16077 验收待单独确认；本文不代表已经部署或生产验收
 
 ## 1. 迭代结论
