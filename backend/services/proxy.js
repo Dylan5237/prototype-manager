@@ -33,9 +33,11 @@ function checkPortOpen(host, port, timeout = 2000) {
 /**
  * 尝试读取 Windows 系统代理设置（注册表）
  */
-async function getWindowsSystemProxy() {
+async function getWindowsSystemProxy({ platform = process.platform, execute } = {}) {
+  if (platform !== 'win32') return null;
+
   try {
-    const { execSync } = require('child_process');
+    const execSync = execute || require('child_process').execSync;
     const result = execSync(
       'reg query "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings" /v ProxyServer',
       { encoding: 'utf-8', windowsHide: true }
@@ -141,6 +143,7 @@ async function checkUrlAccessibleViaProxy(url, proxyUrl, timeout = 10000) {
 
 module.exports = {
   detectProxy,
+  getWindowsSystemProxy,
   setupEnvProxy,
   createHttpsRequest,
   checkUrlAccessibleViaProxy,
