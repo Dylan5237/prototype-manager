@@ -24,6 +24,9 @@ docs/*
 !docs/MCP_SKILLS_EVOLUTION_JOURNEY.md
 !docs/TECHNICAL_DESIGN.md
 !docs/FUXI_RELEASE_SKILL_REQUIREMENTS.md
+!docs/NEXT_ITERATION_PLAN.md
+!docs/PHASE20_CLEANUP_PREVIEW.md
+!docs/PHASE20_EVIDENCE.md
 !docs/prototypes/
 docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/

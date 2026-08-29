@@ -473,6 +473,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 | `todo` | 尚未开始 |
 | `blocked` | 被外部条件阻塞 |
 | `deferred` | 暂缓，不影响当前主线 |
+| `superseded` | 旧方案已被后续架构替代，不再按原任务实施 |
 
 ### 阶段 0-13（已完成）
 
@@ -480,9 +481,11 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 14: 技能内置与分发对齐
 
-状态: `todo`
+状态: `superseded`
 
-目标: 把 Skill 分发从「外挂 env」改成「内置 + env 回退」，与 MCP 同构。
+历史目标: 把 Skill 分发从「外挂 env」改成「内置 + env 回退」，与 MCP 同构。
+
+当前结论: 不再在平台源码中维护 `skills/` 副本。Skill 保持独立仓库，发布时绑定 Skill commit 并生成不可变 ZIP；首次接入和阶段 18 launcher 更新链路负责分发、摘要校验、原子切换和回滚。以下任务保留为历史方案，不再执行。
 
 任务:
 
@@ -500,9 +503,11 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 15: 平台运维增强
 
-状态: `todo`
+状态: `superseded`
 
-目标: 补齐生产运维的薄弱环节。
+历史目标: 补齐生产运维的薄弱环节。
+
+当前结论: 发布 Skill v1 已完成，剩余事项不再以旧阶段 15 整包启动；Linux 注册表探测日志作为 BL-004 进入阶段 20，其余事项只有重新进入 [BACKLOG.md](BACKLOG.md) 后才实施。
 
 任务:
 
@@ -575,19 +580,34 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 新验收原型：`mta2hdjc4f1g1q`，`deliver_project create/update` 版本 `0 → 1`，入口 `index.html`、README `present`、分享 `302 → 200`；未改写既有原型。
 - 回滚命令（需再次明确确认）：`rollback-release.ps1 -BackupId 20260826-202127-pre-20260826-202055-cc32bd96 -ConfirmProductionRollback ROLLBACK_FUXI_PRODUCTION -RestoreData`。
 
+### 阶段 20: Backlog 与性能基线收口
+
+状态: `in-progress / local-verified`（2026-08-28 启动；2026-08-29 完成本地实现和主要回归，16077 验收待执行）
+
+目标: 关闭已完成或废弃的历史事项，实施前端主包拆分和 Linux 日志修复，生成发布现场清理预览，并为 MCP 接入、更新、生成与上传建立可诊断的性能/质量基线。
+
+权威计划: [NEXT_ITERATION_PLAN.md](NEXT_ITERATION_PLAN.md)。执行证据: [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md)。
+
+当前边界:
+
+- BL-001 已完成，BL-002 已废弃并以无 Git 轻协作为默认路径。
+- BL-003、BL-004 已完成本地实现和回归，等待 16077 命名环境验收；BL-005 明确不做；BL-006 已生成只读清理预览，任何删除仍需单独确认。
+- 本阶段平台代码改动不改变 `fuxi-prototype` 的 API、MCP、ZIP、profile 或安装契约，Skill 仓库只做兼容性回归，不做无依据修改。
+- 性能优化先建立分阶段基线；没有同环境前后对比的改动不计为性能成果。
+
 ---
 
 ## 7. 当前工作区事实
 
-截至 2026-08-27：
+截至 2026-08-29：
 
-- **FuxiPlatform** 当前工作区已快进到本地 `main` @ `6359908`，其统计代码对应生产 release `20260826-202055-cc32bd96`；平台变更尚未推送 GitLab `main`，GitHub 不作为生产来源。
-- 当前生产 release 为 `20260826-202055-cc32bd96`，验证字段为 `frontend-build+mcp-check+mcp-integration`；生产 live verification 已补齐认证分发、MCP/Skill 包、新原型和分享预览证据。
+- **FuxiPlatform** 阶段 20 开始前本地 `main` 与 `zoesoftgitlab/main` 均为 `c1edcab`；本轮修改已在本地 `codex/phase20-backlog-baseline` 拆分提交，尚未合并 `main`、推送或部署。GitHub 不作为生产来源。
+- 当前生产 release 为 `20260828-185117-c1edcab0`。2026-08-29 只读探针确认 PM2 有运行 PID、health `200`、bootstrap 未授权 `401`、持久化目录存在；这不是本轮阶段 20 的生产验收。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - `prototype-manager-skills` 是独立 Git 仓库；当前 `main` @ `20d9d69`。
 - 2026-08-26 复核 16088 `/api/health=200`、`/api/admin/usage-stats=401`（未登录路由存在）、前端资源包含“再次使用与来源/再次使用用户”，旧待办文案缺失；16077 保持测试版本。
 - 阶段 17 无 Git 轻协作 MVP 已完成代码和验收；阶段 18 MCP/Skill 延后更新已由用户确认验收。
-- 暂放的发布 Skill 工程化、GitLab Provider 真实验收、性能/日志/移动端技术债务和发布现场清理评估统一记录在 [docs/BACKLOG.md](BACKLOG.md)。
+- 阶段 20 已完成本地实现和主要回归；BL-003/004 仍待 16077，BL-006 待人工处置决策，详见 [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md) 和 [BACKLOG.md](BACKLOG.md)。
 
 ## 更新规则
 
