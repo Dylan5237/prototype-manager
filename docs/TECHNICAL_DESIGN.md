@@ -601,7 +601,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 截至 2026-08-29：
 
-- **FuxiPlatform** 阶段 20 开始前本地 `main` 与 `zoesoftgitlab/main` 均为 `c1edcab`；本轮修改已在本地 `codex/phase20-backlog-baseline` 拆分提交，尚未合并 `main`、推送或部署。GitHub 不作为生产来源。
+- **FuxiPlatform** 阶段 20 开始前本地 `main` 与 `zoesoftgitlab/main` 均为 `c1edcab`；本轮修改已从 `codex/phase20-backlog-baseline` 快进到本地 `main`，当前领先 GitLab 6 个提交，尚未推送或部署。GitHub 不作为生产来源。
 - 当前生产 release 为 `20260828-185117-c1edcab0`。2026-08-29 只读探针确认 PM2 有运行 PID、health `200`、bootstrap 未授权 `401`、持久化目录存在；这不是本轮阶段 20 的生产验收。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - `prototype-manager-skills` 是独立 Git 仓库；当前 `main` @ `20d9d69`。

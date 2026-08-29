@@ -49,7 +49,7 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 ## 当前状态和下一步
 
 - 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`，GitHub `origin` 不作为生产来源。
-- 阶段 20 已在本地 `codex/phase20-backlog-baseline` 拆分提交，等待快进到本地 `main`；尚未推送 GitLab 或部署 16077/16088，推送和部署仍需当前会话单独确认。
+- 阶段 20 已从 `codex/phase20-backlog-baseline` 快进到本地 `main`，本地领先 `zoesoftgitlab/main` 6 个提交；尚未推送 GitLab 或部署 16077/16088，推送和部署仍需当前会话单独确认。
 - 生产入口 `http://192.168.2.145:16088`（Nginx）；16077 测试入口与 16088 生产入口当前健康和页面可达，完整业务验收以发布证据和用户确认记录为准。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
 - 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
