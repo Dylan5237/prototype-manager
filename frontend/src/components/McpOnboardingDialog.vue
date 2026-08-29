@@ -40,7 +40,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { DocumentCopy } from '@element-plus/icons-vue'
 import { getAgentBootstrap } from '../api/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'

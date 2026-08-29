@@ -69,7 +69,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { getCategories, createCategory, updateCategory, deleteCategory } from '../api/prototypes'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
 import ManagementPageHeader from '../components/ManagementPageHeader.vue'

@@ -49,7 +49,7 @@
 
 <script setup>
 import { ref, onMounted, computed, reactive } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { getPrototypes, transferPrototype } from '../api/prototypes'
 import { getUsers } from '../api/auth'
 import { Search } from '@element-plus/icons-vue'

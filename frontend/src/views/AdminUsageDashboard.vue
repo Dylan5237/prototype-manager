@@ -138,7 +138,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ArrowRight, InfoFilled, Refresh, WarningFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { getUsageStats } from '../api/admin-usage'
 import { getGroups } from '../api/groups'
 

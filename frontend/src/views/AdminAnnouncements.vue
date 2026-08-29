@@ -73,7 +73,8 @@
 
 <script setup>
 import { onMounted, ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { Plus } from '@element-plus/icons-vue'
 import { archiveAnnouncement, createAnnouncement, getAnnouncements, updateAnnouncement } from '../api/announcements'
 import ManagementPageHeader from '../components/ManagementPageHeader.vue'

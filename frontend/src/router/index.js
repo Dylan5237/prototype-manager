@@ -1,18 +1,19 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
-import HomeView from '../views/HomeView.vue'
-import PrototypeDetail from '../views/PrototypeDetail.vue'
-import LoginView from '../views/LoginView.vue'
-import AdminUsers from '../views/AdminUsers.vue'
-import AdminDistribution from '../views/AdminDistribution.vue'
-import AdminCategories from '../views/AdminCategories.vue'
-import AdminGroups from '../views/AdminGroups.vue'
-import AdminAnnouncements from '../views/AdminAnnouncements.vue'
-import AdminUsageDashboard from '../views/AdminUsageDashboard.vue'
-import RecycleBinView from '../views/RecycleBinView.vue'
-import ProjectsView from '../views/ProjectsView.vue'
-import ProjectView from '../views/ProjectView.vue'
-import ProjectPreview from '../views/ProjectPreview.vue'
+
+const HomeView = () => import('../views/HomeView.vue')
+const PrototypeDetail = () => import('../views/PrototypeDetail.vue')
+const LoginView = () => import('../views/LoginView.vue')
+const AdminUsers = () => import('../views/AdminUsers.vue')
+const AdminDistribution = () => import('../views/AdminDistribution.vue')
+const AdminCategories = () => import('../views/AdminCategories.vue')
+const AdminGroups = () => import('../views/AdminGroups.vue')
+const AdminAnnouncements = () => import('../views/AdminAnnouncements.vue')
+const AdminUsageDashboard = () => import('../views/AdminUsageDashboard.vue')
+const RecycleBinView = () => import('../views/RecycleBinView.vue')
+const ProjectsView = () => import('../views/ProjectsView.vue')
+const ProjectView = () => import('../views/ProjectView.vue')
+const ProjectPreview = () => import('../views/ProjectPreview.vue')
 
 const routes = [
   { path: '/login', name: 'login', component: LoginView, meta: { public: true } },

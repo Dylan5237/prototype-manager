@@ -52,7 +52,7 @@
 
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { Bell } from '@element-plus/icons-vue'
 import { useAnnouncementStore } from '../stores/announcements'
 import { useAuthStore } from '../stores/auth'

@@ -61,7 +61,8 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { Refresh, RefreshLeft, Delete } from '@element-plus/icons-vue'
 import PrototypeLayout from '@/components/PrototypeLayout.vue'
 import { useAuthStore } from '@/stores/auth'

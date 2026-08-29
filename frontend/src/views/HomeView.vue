@@ -192,7 +192,8 @@
 <script setup>
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { getPrototypes, getMyPrototypes, getSharedPrototypes, deletePrototype } from '../api/prototypes'
 import { getUsers, getMcpSessions, getAgentUpdates, createAgentUpdateIntent } from '../api/auth'
 import { getCategories } from '../api/prototypes'

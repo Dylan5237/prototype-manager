@@ -44,7 +44,7 @@
 
 <script setup>
 import { ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { createProject, updateProject } from '../api/projects'
 
 const props = defineProps({

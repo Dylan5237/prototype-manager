@@ -89,7 +89,8 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage } from 'element-plus/es/components/message/index.mjs'
+import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
 import { getGroups, getGroup, createGroup, updateGroup, deleteGroup } from '../api/groups'
 import { getUsers } from '../api/auth'
 import { Plus, Edit, Delete, Search } from '@element-plus/icons-vue'
