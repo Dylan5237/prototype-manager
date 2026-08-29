@@ -94,7 +94,7 @@ active_root="$(readlink -f "$PROJECT")"
 [[ -f "$active_root/backend/data/app.db" ]] || { echo 'Production database missing.' >&2; exit 3; }
 [[ -d "$active_root/backend/repos" && -d "$active_root/backend/uploads" ]] || { echo 'Persistent directory missing.' >&2; exit 3; }
 
-persistent_bytes="$(du -sb "$active_root/backend/data" "$active_root/backend/repos" "$active_root/backend/uploads" | awk '{s+=$1} END{print s}')"
+persistent_bytes="$(du -sbL "$active_root/backend/data" "$active_root/backend/repos" "$active_root/backend/uploads" | awk '{s+=$1} END{print s}')"
 archive_bytes="$(stat -c '%s' "$ARCHIVE")"
 free_bytes="$(df -PB1 "$ROOT" | awk 'NR==2 {print $4}')"
 required_bytes=$((persistent_bytes + archive_bytes * 3 + 536870912))
@@ -123,8 +123,10 @@ git -C "$active_root" status --porcelain > "$BACKUP/legacy-git-status.txt" 2>/de
 git -C "$active_root" diff -- backend/package-lock.json frontend/package-lock.json > "$BACKUP/legacy-lockfiles.diff" 2>/dev/null || true
 "$PM2_BIN" stop "$PM2_APP"
 STOPPED=true
-tar -czf "$BACKUP/persistent.tar.gz" -C "$active_root/backend" data repos uploads
+tar -czhf "$BACKUP/persistent.tar.gz" -C "$active_root/backend" data repos uploads
 tar -tzf "$BACKUP/persistent.tar.gz" >/dev/null
+tar -tzf "$BACKUP/persistent.tar.gz" | grep -qx 'data/app.db'
+tar -tvzf "$BACKUP/persistent.tar.gz" | awk '$1 ~ /^-/ {count++} END {exit count > 0 ? 0 : 1}'
 sha256sum "$BACKUP/persistent.tar.gz" > "$BACKUP/persistent.tar.gz.sha256"
 if [[ -f "$active_root/backend/.env" ]]; then cp -L "$active_root/backend/.env" "$BACKUP/backend.env"; fi
 

@@ -7,7 +7,7 @@ Do not mark a release complete without evidence for every item.
 - Health endpoint succeeds and current PM2 PID/release is recorded.
 - All production prototype IDs and key metadata are saved read-only.
 - Project bindings and active checkouts are saved read-only.
-- File-level backup includes `app.db`, `repos`, `uploads`, backend env, previous tree/release pointer, and checksums.
+- File-level backup follows the immutable release's `data`/`repos`/`uploads` symlinks and includes real `app.db`, repo and upload files—not only symlink entries—plus backend env, previous tree/release pointer, and checksums.
 - Backup is non-empty and the SQLite copy passes an integrity/readability check available on the host.
 
 ## Release checks

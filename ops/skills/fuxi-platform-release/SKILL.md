@@ -46,6 +46,7 @@ All PowerShell scripts expose help with `Get-Help <script> -Detailed` and fail c
 - `quick-deploy-test.ps1`: build the current local worktrees with the lightweight profile and immediately delegate deployment to isolated `16077`.
 - `deploy-production-from-gitlab.ps1`: fresh-clone the platform and Skill GitLab repositories at `main`, install dependencies, run the full build, and delegate the guarded production switch.
 - `probe-production.ps1`: execute bundled read-only Bash probe over pinned PuTTY SSH.
+- `preview-cleanup.ps1`: generate a read-only JSON inventory of local/test/production releases, backups, temporary artifacts, worktrees, and acceptance prototypes; it never deletes or switches anything.
 - `capture-production-baseline.ps1`: save authenticated prototype metadata and project bindings without production writes.
 - `deploy-release.ps1`: low-level production switch; require `-ConfirmProductionDeploy DEPLOY_FUXI_PRODUCTION`, upload archive/scripts, and execute backup/install/switch/health checks. Do not use it to build from a developer worktree.
 - `deploy-test.ps1`: require `-ConfirmTestDeploy DEPLOY_FUXI_TEST`, upload the same archive plus the data filter, and deploy to the isolated `16077` environment. Use `-InitData` only for first install to seed isolated data from the production snapshot.
