@@ -27,6 +27,13 @@ function Assert-Clean([string]$Root, [string]$Label) {
   if ($LASTEXITCODE -ne 0) { throw "$Label is not a Git repository: $Root" }
   if ($status) { throw "$Label worktree is not clean. Commit or remove task residue before packaging.`n$($status -join "`n")" }
 }
+function Get-BranchLabel([string]$Root) {
+  $branch = [string](& git -c 'core.excludesFile=' -C $Root branch --show-current)
+  if ($LASTEXITCODE -ne 0) { throw "Unable to resolve Git branch for $Root" }
+  $branch = $branch.Trim()
+  if ([string]::IsNullOrWhiteSpace($branch)) { return '(detached)' }
+  return $branch
+}
 
 $PlatformRoot = (Resolve-Path $PlatformRoot).Path
 $SkillsRepositoryRoot = (Resolve-Path $SkillsRepositoryRoot).Path
@@ -67,8 +74,8 @@ try {
     createdAt = (Get-Date).ToUniversalTime().ToString('o')
     platformCommit = $platformCommit
     skillCommit = $skillCommit
-    platformBranch = (& git -c 'core.excludesFile=' -C $PlatformRoot branch --show-current).Trim()
-    skillBranch = (& git -c 'core.excludesFile=' -C $SkillsRepositoryRoot branch --show-current).Trim()
+    platformBranch = Get-BranchLabel $PlatformRoot
+    skillBranch = Get-BranchLabel $SkillsRepositoryRoot
     releaseProfile = if ($Lightweight) { 'test-lightweight' } else { 'full' }
     verification = if ($Lightweight) { 'frontend-build+package-checksum+manual-test' } else { 'frontend-build+mcp-check+mcp-integration' }
     persistentPaths = @('backend/data','backend/repos','backend/uploads','backend/.env')

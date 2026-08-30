@@ -145,7 +145,7 @@ npm run test:remote-update
 
 发布规则：
 
-1. 测试环境使用 `ops/skills/fuxi-platform-release/quick-deploy-test.ps1`，走 `-Lightweight` 并部署到隔离的 16077。
+1. 测试环境使用 `ops/skills/fuxi-platform-release/scripts/quick-deploy-test.ps1`，走 `-Lightweight` 并部署到隔离的 16077。
 2. 生产环境只使用 `deploy-production-from-gitlab.ps1`，从两个仓库的 `main` 新鲜构建，完成完整 build/check/integration 门禁后才可切换 16088。
 3. 生产上传、切换、回滚和备份清理都需要当前会话的明确确认；不要运行旧的 `update-intranet.sh`。
 
