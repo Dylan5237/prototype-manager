@@ -28,9 +28,10 @@ function Assert-Clean([string]$Root, [string]$Label) {
   if ($status) { throw "$Label worktree is not clean. Commit or remove task residue before packaging.`n$($status -join "`n")" }
 }
 function Get-BranchLabel([string]$Root) {
-  $branch = [string](& git -c 'core.excludesFile=' -C $Root branch --show-current)
+  $branchOutput = @(& git -c 'core.excludesFile=' -C $Root branch --show-current)
   if ($LASTEXITCODE -ne 0) { throw "Unable to resolve Git branch for $Root" }
-  $branch = $branch.Trim()
+  if ($branchOutput.Count -eq 0) { return '(detached)' }
+  $branch = ([string]$branchOutput[0]).Trim()
   if ([string]::IsNullOrWhiteSpace($branch)) { return '(detached)' }
   return $branch
 }
