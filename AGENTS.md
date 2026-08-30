@@ -49,14 +49,14 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 ## 当前状态和下一步
 
 - 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`，GitHub `origin` 不作为生产来源。
-- 阶段 20 已从 `codex/phase20-backlog-baseline` 快进到本地 `main`，本地领先 `zoesoftgitlab/main` 6 个提交；尚未推送 GitLab 或部署 16077/16088，推送和部署仍需当前会话单独确认。
-- 生产入口 `http://192.168.2.145:16088`（Nginx）；16077 测试入口与 16088 生产入口当前健康和页面可达，完整业务验收以发布证据和用户确认记录为准。
+- 阶段 20 已快进到本地 `main` 并完成 16077 release `20260830-092500-adf7ea7f` 验收；尚未推送 GitLab 或部署 16088，推送和生产发布仍需当前会话单独确认。
+- 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 测试入口已完成本轮 manifest、PM2/Nginx、认证 API、包分发和真实页面验收。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
 - 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
 - 不写凭证、密码或长期 token 进仓库或文档。
 - 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；GitLab Provider 真实环境验收已废弃，默认继续使用无 Git 轻协作，详见 `docs/BACKLOG.md`。
 - 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
-- 阶段 20 已完成本地实现与主要回归；BL-003/004 仍待 16077，BL-006 已完成只读预览并等待人工处置决策，详见 `docs/PHASE20_EVIDENCE.md`。
+- 阶段 20 已完成；BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。下一实施入口为阶段 21 仓库治理，详见 `docs/PHASE20_EVIDENCE.md` 和 `docs/NEXT_ITERATION_PLAN.md`。
 - 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
 
 ## 测试环境部署约定

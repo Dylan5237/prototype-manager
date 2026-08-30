@@ -582,7 +582,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 20: Backlog 与性能基线收口
 
-状态: `in-progress / local-verified`（2026-08-28 启动；2026-08-29 完成本地实现和主要回归，16077 验收待执行）
+状态: `done`（2026-08-28 启动；2026-08-30 完成 16077 发布与命名验收）
 
 目标: 关闭已完成或废弃的历史事项，实施前端主包拆分和 Linux 日志修复，生成发布现场清理预览，并为 MCP 接入、更新、生成与上传建立可诊断的性能/质量基线。
 
@@ -591,7 +591,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 当前边界:
 
 - BL-001 已完成，BL-002 已废弃并以无 Git 轻协作为默认路径。
-- BL-003、BL-004 已完成本地实现和回归，等待 16077 命名环境验收；BL-005 明确不做；BL-006 已生成只读清理预览，任何删除仍需单独确认。
+- BL-003、BL-004 已完成本地与 16077 验收并关闭；BL-005 明确不做；BL-006 已完成只读清理评估，任何实际删除仍需单独确认。
 - 本阶段平台代码改动不改变 `fuxi-prototype` 的 API、MCP、ZIP、profile 或安装契约，Skill 仓库只做兼容性回归，不做无依据修改。
 - 性能优化先建立分阶段基线；没有同环境前后对比的改动不计为性能成果。
 
@@ -599,15 +599,15 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ## 7. 当前工作区事实
 
-截至 2026-08-29：
+截至 2026-08-30：
 
-- **FuxiPlatform** 阶段 20 开始前本地 `main` 与 `zoesoftgitlab/main` 均为 `c1edcab`；本轮修改已从 `codex/phase20-backlog-baseline` 快进到本地 `main`，当前领先 GitLab 6 个提交，尚未推送或部署。GitHub 不作为生产来源。
+- **FuxiPlatform** 阶段 20 开始前本地 `main` 与 `zoesoftgitlab/main` 均为 `c1edcab`；本轮修改已快进本地 `main` 并部署 16077，尚未推送 GitLab/GitHub 或部署 16088。
 - 当前生产 release 为 `20260828-185117-c1edcab0`。2026-08-29 只读探针确认 PM2 有运行 PID、health `200`、bootstrap 未授权 `401`、持久化目录存在；这不是本轮阶段 20 的生产验收。
 - 本文档位于 `docs/TECHNICAL_DESIGN.md`，由 `.gitignore` 明确放行并作为体系持续事实入口。
 - `prototype-manager-skills` 是独立 Git 仓库；当前 `main` @ `20d9d69`。
-- 2026-08-26 复核 16088 `/api/health=200`、`/api/admin/usage-stats=401`（未登录路由存在）、前端资源包含“再次使用与来源/再次使用用户”，旧待办文案缺失；16077 保持测试版本。
+- 16077 当前 release 为 `20260830-092500-adf7ea7f`，platform commit `adf7ea7`、Skill commit `20d9d69`；manifest、PM2/Nginx、认证 API、Skill/MCP 包和真实浏览器页面均已验收。
 - 阶段 17 无 Git 轻协作 MVP 已完成代码和验收；阶段 18 MCP/Skill 延后更新已由用户确认验收。
-- 阶段 20 已完成本地实现和主要回归；BL-003/004 仍待 16077，BL-006 待人工处置决策，详见 [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md) 和 [BACKLOG.md](BACKLOG.md)。
+- 阶段 20 已完成；BL-003/004 已关闭，BL-006 只保留实际处置决策，详见 [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md) 和 [BACKLOG.md](BACKLOG.md)。
 
 ## 更新规则
 
