@@ -96,6 +96,7 @@ test('supports project list scope, pending filter, and pagination', () => {
   const participating = getProjectsPage({ memberOf: 2, page: 1, pageSize: 12 });
   assert.equal(participating.total, 1);
   assert.equal(participating.list[0].id, 'project-2');
+  assert.equal(participating.list[0].member_count, 2);
 
   const pending = getProjectsPage({ pendingOnly: true, page: 1, pageSize: 12 });
   assert.equal(pending.total, 1);

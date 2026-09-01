@@ -49,7 +49,7 @@ function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingO
   const selectSql = `
     SELECT p.*, u.nickname as creator_name,
       (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id) AS prototype_count,
-      (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
+      (1 + (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id)) AS member_count,
       (SELECT COUNT(*) FROM prototype_changes c
         WHERE c.project_id = p.id AND c.status = 'ready') AS pending_candidate_count,
       COALESCE(
