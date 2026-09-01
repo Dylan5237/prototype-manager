@@ -8,7 +8,7 @@
 >
 > Skill 仓库：`D:\_projects\skills\prototype-manager-skills`
 >
-> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成只读仓库治理；GitLab 推送、BL-006 实际清理和 16088 发布仍需独立确认
+> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成仓库治理与安全同步；BL-006 实际清理和 16088 发布仍需独立确认
 >
 > 需求增补：2026-09-01 纳入 BL-007「管理员全量原型只读预览」，计划在阶段 22 实施；当前尚未实现或验收
 
@@ -28,12 +28,12 @@
 
 ### 2.1 仓库状态
 
-- FuxiPlatform 本地 `main` 跟踪 `zoesoftgitlab/main` @ `c1edcab`；阶段 20/21 的本地提交尚未推送，本阶段审计采样时领先 11 个提交。
-- GitHub `origin/master` @ `3809a00`、`origin/feature/project-collaboration` @ `aaa0d5b`，与 GitLab 主线分开保留，不自动同步。
-- `prototype-manager-skills` 本地 `main` 已设置 upstream 跟踪 `zoesoftgitlab/main`；审计采样时双方均为 `20d9d69`，随后本地规则修正提交尚未推送；本地 `master` 仍为同一历史提交的兼容别名。
+- FuxiPlatform 本地 `main` 跟踪 `zoesoftgitlab/main`；安全同步后 GitLab `main` 与 GitHub `origin/main` 均已更新到本地主线，GitHub `master` 与协作分支也已完成无强制快进。
+- GitHub `origin/master` @ `3809a00`、`origin/feature/project-collaboration` @ `ed14aaf`，与 GitLab 协作分支保持对应；本地 `codex/*` 未发布为远端分支。
+- `prototype-manager-skills` 本地 `main` 已设置 upstream 跟踪 `zoesoftgitlab/main`，安全同步后双方一致；本地 `master` 保留为兼容别名。
 - GitHub `origin` 不是伏羲生产源码来源，与 GitLab 主线存在历史分叉，不自动同步或合并。
 - GitLab 仍存在历史 `feature/project-collaboration` 分支；它不再是当前轻协作主线，处置前需要刷新引用并生成清理预览。
-- 平台工作区存在未跟踪的 `linux-server-ops-behavior-report.md`，需要判断归档位置，不能未经确认直接删除或提交。
+- `linux-server-ops-behavior-report.md` 已按用户确认删除；两个主 worktree 均无未解释的未跟踪文件。
 
 ### 2.2 当前验证基线
 
@@ -137,7 +137,7 @@
 
 ## 5. 阶段 21：本地与远程仓库治理
 
-状态：`done`（2026-09-01；只读审计、远端刷新、分支/文件处置预览；未删除、未推送、未部署）
+状态：`done`（2026-09-01；只读审计、远端刷新、分支/文件处置预览、用户确认的报告删除和安全同步；未删除分支/worktree、未强制推送、未部署）
 
 执行证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)。
 
@@ -170,16 +170,14 @@
 - [x] Skill 本地 `main` 明确跟踪其 `zoesoftgitlab/main`。
 - [x] 每个本地/远端分支和 tag 都有保留、归档、删除候选或待判断结论。
 - [x] 不存在把 GitHub 历史分支自动合并或推送到 GitLab `main` 的操作。
-- [x] 本阶段未执行删除；任何后续删除都必须有用户针对清单的明确确认，并记录删除对象和可恢复性。
-- [x] 未跟踪报告、detached worktree 和忽略目录均已解释；无无法解释的临时产物。
+- [x] 仅删除用户明确确认的 `linux-server-ops-behavior-report.md`；未删除分支/worktree，后续清理仍需针对清单单独确认。
+- [x] detached worktree 和忽略目录均已解释；删除后两个主 worktree 无无法解释的临时产物。
 - [x] README、AGENTS 和技术文档中的主线/远端说明与实际仓库一致。
 
 ### 5.5 人工决策点
 
-- 是否将本地 `main` 的 11 个提交推送到 `zoesoftgitlab/main`。
 - GitHub `origin` 是继续保留为历史只读、迁移为镜像，还是后续移除。
 - 历史协作、测试部署、生产发布分支、detached worktree 和 Skill `master` 是否归档/删除。
-- 未跟踪行为报告的最终归档位置。
 
 ## 6. 阶段 22：伏羲平台项目模块 2.0
 
