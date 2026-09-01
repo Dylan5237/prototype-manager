@@ -28,6 +28,9 @@ function previewRecoveryScript() {
   return `<script data-fuxi-preview-recovery>
 (function () {
   var shown = false;
+  function isBenignResizeObserverError(message) {
+    return /ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i.test(String(message || ''));
+  }
   function show(message) {
     if (shown) return;
     shown = true;
@@ -43,11 +46,14 @@ function previewRecoveryScript() {
     var target = event && event.target;
     if (target && target !== window && !/^(SCRIPT|LINK)$/i.test(target.tagName || '')) return;
     var message = event && event.error && event.error.message ? event.error.message : (event && event.message);
+    if (isBenignResizeObserverError(message)) return;
     show(message ? '页面运行时出现问题：' + String(message).slice(0, 240) : '页面运行时出现问题');
   }, true);
   window.addEventListener('unhandledrejection', function (event) {
     var reason = event && event.reason;
-    show('页面异步加载失败：' + String(reason && reason.message ? reason.message : (reason || '未知错误')).slice(0, 240));
+    var message = reason && reason.message ? reason.message : (reason || '未知错误');
+    if (isBenignResizeObserverError(message)) return;
+    show('页面异步加载失败：' + String(message).slice(0, 240));
   });
   window.addEventListener('load', function () {
     window.setTimeout(function () {

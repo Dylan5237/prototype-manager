@@ -139,6 +139,8 @@ test('管理员可发现并只读预览全部有效原型，回收站对象不�
   const currentPreview = await request('GET', '/preview/bl007-private/index.html', adminToken);
   assert.equal(currentPreview.status, 200);
   assert.match(currentPreview.body, /bl007-private/);
+  assert.match(currentPreview.body, /isBenignResizeObserverError/);
+  assert.match(currentPreview.body, /ResizeObserver loop/);
 
   const historicalPreview = await request('GET', '/preview/bl007-private/versions/1.0.0/index.html', adminToken);
   assert.equal(historicalPreview.status, 200);
