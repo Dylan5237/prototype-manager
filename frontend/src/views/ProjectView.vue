@@ -1,54 +1,25 @@
 <template>
   <div class="project-portal">
-    <div class="portal-header">
-      <div class="header-left">
-        <el-button text @click="$router.push('/projects')">
-          <el-icon><ArrowLeft /></el-icon>
-        </el-button>
-        <div class="title-block">
-          <h1>{{ project.name }}</h1>
-          <p class="sub">{{ project.description || '暂无描述' }}</p>
-        </div>
-      </div>
-      <div class="header-actions">
-        <el-tag v-if="roleLabel" size="small" effect="plain" type="info">{{ roleLabel }}</el-tag>
-        <el-button v-if="canManage" text @click="showMenuDialog = true">
-          <el-icon><Edit /></el-icon>
-          管理菜单
-        </el-button>
-        <el-button v-if="canManage" text @click="openSnapshotDialog">
-          <el-icon><Camera /></el-icon>
-          快照
-        </el-button>
-        <el-button v-if="canManage" text @click="openMembersDialog">
-          <el-icon><User /></el-icon>
-          成员
-        </el-button>
-        <el-button type="success" @click="openFullPreview">
-          <el-icon><FullScreen /></el-icon>
-          全屏预览
-        </el-button>
-      </div>
-    </div>
+    <ProjectHeader
+      :project="project"
+      :role-label="roleLabel"
+      :can-manage="canManage"
+      @back="router.push('/projects')"
+      @manage-menu="showMenuDialog = true"
+      @snapshots="openSnapshotDialog"
+      @members="openMembersDialog"
+      @full-preview="openFullPreview"
+    />
 
     <div class="portal-body">
-      <div class="portal-menu">
-        <div v-for="group in project.menu_config?.items" :key="group.key" class="menu-group">
-          <div class="group-label">{{ group.label }}</div>
-          <div
-            v-for="item in group.children"
-            :key="item.key"
-            :class="['menu-item', { active: isActive(group, item) }]"
-            @click="selectMenu(group, item)"
-          >
-            <span class="item-label">{{ item.label }}</span>
-            <el-tag v-if="getCheckoutStatus(group, item)" :type="getCheckoutStatus(group, item).type" size="small" effect="dark">
-              {{ getCheckoutStatus(group, item).text }}
-            </el-tag>
-          </div>
-        </div>
-        <el-empty v-if="!hasMenu" description="暂无菜单配置" />
-      </div>
+      <ProjectNavigation
+        :menu-config="project.menu_config"
+        :has-menu="hasMenu"
+        :active-group="activeGroup"
+        :active-item="activeItem"
+        :get-checkout-status="getCheckoutStatus"
+        @select="selectMenu"
+      />
 
       <div class="portal-content">
         <div v-if="!activeItem" class="empty-content">
@@ -350,9 +321,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
-import {
-  ArrowLeft, Edit, Camera, Link, User, FullScreen
-} from '@element-plus/icons-vue'
+import { Link } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
@@ -367,6 +336,8 @@ import {
   adoptProjectChange, rejectProjectChange
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
+import ProjectHeader from '../components/project/ProjectHeader.vue'
+import ProjectNavigation from '../components/project/ProjectNavigation.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -1001,79 +972,10 @@ function formatDate(row, col, val) {
   height: calc(100vh - 56px);
   background: #f5f7fa;
 }
-.portal-header {
-  height: 60px;
-  background: #fff;
-  border-bottom: 1px solid #e4e7ed;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-}
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.title-block h1 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a202c;
-}
-.title-block .sub {
-  font-size: 12px;
-  color: #718096;
-}
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 .portal-body {
   flex: 1;
   display: flex;
   overflow: hidden;
-}
-.portal-menu {
-  width: 240px;
-  background: #fff;
-  border-right: 1px solid #e4e7ed;
-  overflow-y: auto;
-  padding: 12px 0;
-}
-.menu-group {
-  margin-bottom: 8px;
-}
-.group-label {
-  padding: 8px 16px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #909399;
-  text-transform: uppercase;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px 10px 28px;
-  font-size: 14px;
-  color: #303133;
-  cursor: pointer;
-  transition: background 0.2s;
-}
-.menu-item:hover {
-  background: #f5f7fa;
-}
-.menu-item.active {
-  background: #ecf5ff;
-  color: #409eff;
-  font-weight: 600;
-}
-.item-label {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .portal-content {
   flex: 1;
