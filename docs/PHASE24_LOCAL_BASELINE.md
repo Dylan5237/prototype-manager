@@ -24,3 +24,9 @@
 - 当前本地最慢阶段是大文件 `packProjectIncludingFirstZipValidation`，80 MB p95 为 `7,696.72 ms`；优化前后对比尚未建立，不能写成“已提速”。
 - 现有流程整体读入内存并同步压缩/校验；下一步是否流式化或 worker 化，需要结合真实环境内存峰值和事件循环指标决定。
 - 本报告只证明本地打包链路；MCP 接入、Skill/MCP 更新、AI 生成质量、真实上传/解压/版本回读和 16077 端到端仍为 `UNVERIFIED`。
+
+## 随后落地的稳定性改造
+
+- `deliver_project` 现在返回 `timingsMs`，可以区分校验、签出门禁、上传和各个回读阶段；结构化失败也保留当前阶段和耗时。
+- Node 19.8+ 上传使用 `fs.openAsBlob` 惰性 Blob，Node 18 保留 Buffer 回退；MCP integration 已确认版本、README、预览、幂等和部分失败门禁不变。
+- 16077 只读链路的 10 次基线见 [PHASE24_16077_BASELINE.md](PHASE24_16077_BASELINE.md)；写入型上传仍需单独授权和真实样本，不能用本地压包结果替代。
