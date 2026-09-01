@@ -792,6 +792,31 @@ async function deliverProject(args) {
       throw new ToolError('VALIDATION_FAILED', validation.errors.join('; ') || 'ZIP validation failed');
     }
 
+    // 项目绑定更新先验证项目绑定和签出，再读取原型详情。
+    // 项目成员可能有项目访问权但没有独立原型读取权；此时应先返回
+    // CHECKOUT_REQUIRED，而不是被原型详情接口提前拦截为 PERMISSION_DENIED。
+    if (mode === 'project-bound-update') {
+      stage = 'VERIFY_PROJECT_CHECKOUT';
+      const [project, me] = await Promise.all([
+        authed(`/api/projects/${encodeURIComponent(args.projectId)}`),
+        authed('/api/auth/me')
+      ]);
+      const binding = (project.data.prototypes || []).find(item => item.id === args.projectPrototypeId);
+      if (!binding || binding.prototype_id !== prototypeId) {
+        throw new ToolError('TARGET_MISMATCH', 'Project binding does not match the requested prototype', {
+          projectId: args.projectId,
+          projectPrototypeId: args.projectPrototypeId,
+          prototypeId
+        });
+      }
+      if (!binding.checkout || binding.checkout.user_id !== me.data.id) {
+        throw new ToolError('CHECKOUT_REQUIRED', 'The project prototype must be actively checked out by the current user', {
+          projectId: args.projectId,
+          projectPrototypeId: args.projectPrototypeId
+        });
+      }
+    }
+
     if (mode === 'create') {
       stage = 'SNAPSHOT_EXISTING';
       const before = await authed('/api/prototypes?scope=all&pageSize=10000');
@@ -817,28 +842,6 @@ async function deliverProject(args) {
         throw new ToolError('ENTRY_FILE_MISMATCH', 'Prototype entry file changed before delivery', {
           expectedEntryFile: args.expectedEntryFile,
           actualEntryFile: before.data.entry_file || null
-        });
-      }
-    }
-
-    if (mode === 'project-bound-update') {
-      stage = 'VERIFY_PROJECT_CHECKOUT';
-      const [project, me] = await Promise.all([
-        authed(`/api/projects/${encodeURIComponent(args.projectId)}`),
-        authed('/api/auth/me')
-      ]);
-      const binding = (project.data.prototypes || []).find(item => item.id === args.projectPrototypeId);
-      if (!binding || binding.prototype_id !== prototypeId) {
-        throw new ToolError('TARGET_MISMATCH', 'Project binding does not match the requested prototype', {
-          projectId: args.projectId,
-          projectPrototypeId: args.projectPrototypeId,
-          prototypeId
-        });
-      }
-      if (!binding.checkout || binding.checkout.user_id !== me.data.id) {
-        throw new ToolError('CHECKOUT_REQUIRED', 'The project prototype must be actively checked out by the current user', {
-          projectId: args.projectId,
-          projectPrototypeId: args.projectPrototypeId
         });
       }
     }
@@ -896,7 +899,7 @@ async function deliverProject(args) {
       projectId: args.projectId || null,
       projectPrototypeId: args.projectPrototypeId || null,
       validation,
-      stages: ['VALIDATE', mode === 'create' ? 'CREATE_TARGET' : 'READ_BEFORE', 'UPLOAD', 'READBACK_DETAIL', 'READBACK_README', 'READBACK_PREVIEW']
+      stages: ['VALIDATE', mode === 'project-bound-update' ? 'VERIFY_PROJECT_CHECKOUT' : null, mode === 'create' ? 'CREATE_TARGET' : 'READ_BEFORE', 'UPLOAD', 'READBACK_DETAIL', 'READBACK_README', 'READBACK_PREVIEW'].filter(Boolean)
     };
     deliveryCache.set(args.idempotencyKey, { fingerprint, result });
     return result;
