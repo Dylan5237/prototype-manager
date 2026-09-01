@@ -8,7 +8,7 @@
 >
 > Skill 仓库：`D:\_projects\skills\prototype-manager-skills`
 >
-> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成仓库治理与安全同步；BL-007 主目标已完成，阶段 22.1 项目模块低保真 IA 草案待确认；BL-006 实际清理和 16088 发布仍需独立确认
+> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成仓库治理与安全同步；BL-007 主目标已完成，阶段 22.1 项目模块高保真原型待确认；BL-006 实际清理和 16088 发布仍需独立确认
 >
 > 需求增补：2026-09-01 纳入 BL-007「管理员全量原型只读预览」；平台实现、本地/API 回归和 16077 跨用户真实复核已完成，项目绑定夹具补充验证单独记录
 
@@ -441,4 +441,4 @@
 5. 建立性能/质量基线脚本和报告格式。
 6. 完成阶段 20 总体验收，再决定是否进入阶段 21。
 
-阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；BL-007 主目标已收口，下一实施入口为阶段 22.1 项目模块低保真 IA，草案见 [PHASE22_PROJECT_MODULE_IA.md](PHASE22_PROJECT_MODULE_IA.md)。
+阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；BL-007 主目标已收口，下一实施入口为阶段 22.1 项目模块高保真原型，设计说明见 [PHASE22_PROJECT_MODULE_IA.md](PHASE22_PROJECT_MODULE_IA.md)，可点击稿见 [project-module-2-0/index.html](prototypes/project-module-2-0/index.html)。

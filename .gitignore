@@ -36,6 +36,8 @@ docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/**
 !docs/prototypes/lightweight-collaboration-mvp/
 !docs/prototypes/lightweight-collaboration-mvp/**
+!docs/prototypes/project-module-2-0/
+!docs/prototypes/project-module-2-0/**
 
 # Local env files
 .env

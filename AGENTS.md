@@ -56,7 +56,7 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 - 不写凭证、密码或长期 token 进仓库或文档。
 - 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；GitLab Provider 真实环境验收已废弃，默认继续使用无 Git 轻协作，详见 `docs/BACKLOG.md`。
 - 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
-- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；项目绑定夹具保留补充验证，阶段 22.1 低保真 IA 待确认，详见 `docs/NEXT_ITERATION_PLAN.md` 和 `docs/PHASE22_PROJECT_MODULE_IA.md`。
+- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；项目绑定夹具保留补充验证，阶段 22.1 高保真原型待确认，详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md` 和 `docs/prototypes/project-module-2-0/index.html`。
 - 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
 
 ## 测试环境部署约定

@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>伏羲项目工作台 · 阶段 22.1 高保真原型</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --navy: #14213d;
+      --navy-2: #1d2f54;
+      --ink: #1a2438;
+      --muted: #72809a;
+      --subtle: #9ba7bb;
+      --line: #e7ebf2;
+      --line-strong: #d7deeb;
+      --canvas: #f6f8fc;
+      --card: #ffffff;
+      --blue: #3c6ff2;
+      --blue-dark: #2958d5;
+      --blue-soft: #edf2ff;
+      --green: #11966c;
+      --green-soft: #eaf8f2;
+      --orange: #c47a16;
+      --orange-soft: #fff6e5;
+      --red: #c95050;
+      --red-soft: #fff0f0;
+      --shadow: 0 18px 50px rgba(24, 40, 75, .08);
+      --shadow-small: 0 4px 16px rgba(24, 40, 75, .07);
+      font-family: Inter, "SF Pro Display", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); font: 14px/1.5 var(--font, Inter, "Microsoft YaHei", sans-serif); }
+    button, input { font: inherit; }
+    button { border: 0; cursor: pointer; }
+    button:focus-visible, input:focus-visible { outline: 3px solid #a9c2ff; outline-offset: 2px; }
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: 232px minmax(0, 1fr); }
+    .sidebar { display: flex; flex-direction: column; color: #dfe8fb; background: var(--navy); padding: 22px 14px 16px; }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 12px 22px; font-weight: 800; letter-spacing: -.03em; font-size: 18px; color: #fff; }
+    .brand-mark { display: grid; place-items: center; width: 29px; height: 29px; border-radius: 9px; background: linear-gradient(145deg, #87a9ff, #4776f5); color: #fff; font-size: 15px; box-shadow: 0 7px 16px rgba(74, 117, 245, .3); }
+    .brand small { color: #97a8c7; letter-spacing: .12em; font-size: 9px; font-weight: 700; }
+    .workspace-switcher { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid #314365; border-radius: 10px; padding: 11px 12px; color: #f8fbff; background: rgba(255,255,255,.06); margin: 0 4px 24px; }
+    .workspace-switcher span { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .workspace-switcher small { display: block; color: #91a3c5; margin-top: 2px; font-size: 11px; }
+    .workspace-switcher b { color: #91a3c5; font-size: 14px; }
+    .nav-label { color: #7d90b3; font-size: 11px; font-weight: 700; letter-spacing: .1em; padding: 0 12px 8px; text-transform: uppercase; }
+    .nav-list { display: grid; gap: 4px; }
+    .nav-link { display: flex; align-items: center; gap: 10px; width: 100%; border-radius: 9px; padding: 10px 12px; color: #aabbd9; background: transparent; text-align: left; transition: .18s ease; }
+    .nav-link:hover { color: #fff; background: rgba(255,255,255,.08); }
+    .nav-link.active { color: #fff; background: #29416d; box-shadow: inset 3px 0 0 #7aa0ff; }
+    .nav-icon { width: 18px; text-align: center; opacity: .9; font-size: 16px; }
+    .nav-badge { margin-left: auto; min-width: 21px; border-radius: 99px; padding: 1px 6px; color: #ffd49c; background: rgba(255, 190, 92, .16); text-align: center; font-size: 11px; }
+    .sidebar-spacer { flex: 1; }
+    .sidebar-note { border: 1px solid #2f4265; border-radius: 10px; padding: 11px 12px; margin: 16px 4px; color: #a8b8d6; background: rgba(255,255,255,.04); font-size: 12px; }
+    .sidebar-note strong { color: #fff; display: block; margin-bottom: 2px; }
+    .profile { display: flex; align-items: center; gap: 9px; padding: 10px 10px 0; border-top: 1px solid #2d4062; }
+    .avatar { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; color: #fff; background: linear-gradient(145deg, #d08a71, #98536e); font-size: 12px; font-weight: 800; }
+    .profile strong { display: block; color: #fff; font-size: 12px; }
+    .profile small { color: #8ea1c3; font-size: 11px; }
+    .main { min-width: 0; display: grid; grid-template-rows: 64px minmax(0, 1fr); }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 0 34px; border-bottom: 1px solid var(--line); background: rgba(255,255,255,.86); backdrop-filter: blur(12px); }
+    .breadcrumb { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+    .breadcrumb strong { color: var(--ink); font-weight: 700; }
+    .topbar-actions { display: flex; align-items: center; gap: 15px; }
+    .topbar-link { color: var(--muted); background: transparent; padding: 6px; }
+    .topbar-link:hover { color: var(--blue); }
+    .notification { position: relative; font-size: 17px; }
+    .notification i { position: absolute; top: 1px; right: -2px; width: 6px; height: 6px; border: 2px solid #fff; border-radius: 50%; background: #e66b55; }
+    .avatar.top-avatar { width: 29px; height: 29px; border-radius: 50%; }
+    .screen { display: none; min-width: 0; overflow: auto; padding: 34px; }
+    .screen.active { display: block; }
+    .page-wrap { max-width: 1420px; margin: 0 auto; }
+    .eyebrow { color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .page-title { margin: 6px 0 5px; font-size: 28px; letter-spacing: -.035em; line-height: 1.2; }
+    .page-description { margin: 0; color: var(--muted); font-size: 13px; }
+    .page-header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 26px; }
+    .button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 36px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 13px; color: #51617c; background: #fff; transition: .18s ease; }
+    .button:hover { border-color: #aec1e8; color: var(--blue-dark); background: #fbfcff; }
+    .button.primary { border-color: var(--blue); color: #fff; background: var(--blue); box-shadow: 0 5px 13px rgba(60,111,242,.18); }
+    .button.primary:hover { border-color: var(--blue-dark); background: var(--blue-dark); }
+    .button.ghost { border-color: transparent; background: transparent; }
+    .button.ghost:hover { background: var(--blue-soft); }
+    .button.danger { border-color: #f0cccc; color: var(--red); background: #fff; }
+    .button.small { min-height: 30px; padding: 0 10px; font-size: 12px; }
+    .overview-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 25px; }
+    .metric-card { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 13px; padding: 17px 18px; background: var(--card); box-shadow: var(--shadow-small); }
+    .metric-card:after { content: ""; position: absolute; right: -18px; bottom: -25px; width: 80px; height: 80px; border-radius: 50%; background: var(--blue-soft); }
+    .metric-card:nth-child(2):after { background: var(--orange-soft); }
+    .metric-card:nth-child(3):after { background: var(--green-soft); }
+    .metric-card:nth-child(4):after { background: #f1edff; }
+    .metric-label { position: relative; z-index: 1; color: var(--muted); font-size: 12px; }
+    .metric-value { position: relative; z-index: 1; display: block; margin-top: 7px; color: var(--ink); font-size: 25px; font-weight: 750; letter-spacing: -.04em; }
+    .metric-delta { position: relative; z-index: 1; display: block; margin-top: 2px; color: var(--green); font-size: 11px; }
+    .toolbar-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 15px; }
+    .filter-tabs { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 9px; background: #eef1f7; }
+    .filter-tab { border-radius: 7px; padding: 7px 13px; color: var(--muted); background: transparent; font-size: 12px; }
+    .filter-tab.active { color: var(--ink); background: #fff; box-shadow: 0 2px 6px rgba(31,49,87,.09); font-weight: 700; }
+    .search-box { display: flex; align-items: center; gap: 8px; width: 248px; border: 1px solid var(--line-strong); border-radius: 8px; padding: 0 11px; background: #fff; color: var(--subtle); }
+    .search-box input { width: 100%; height: 34px; border: 0; outline: 0; color: var(--ink); background: transparent; font-size: 12px; }
+    .project-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
+    .project-card { display: flex; flex-direction: column; min-height: 243px; border: 1px solid var(--line); border-radius: 14px; padding: 19px; background: #fff; box-shadow: var(--shadow-small); transition: .2s ease; }
+    .project-card:hover { border-color: #b9c9ec; box-shadow: var(--shadow); transform: translateY(-2px); }
+    .project-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .project-icon { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 11px; color: #fff; background: linear-gradient(145deg, #6e92fb, #3664df); font-size: 17px; font-weight: 800; }
+    .project-icon.orange { background: linear-gradient(145deg, #e7ae60, #c77c2c); }
+    .project-icon.green { background: linear-gradient(145deg, #5fc7a3, #13936b); }
+    .project-icon.purple { background: linear-gradient(145deg, #aa9af5, #7160d5); }
+    .project-card-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .project-card-title h3 { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 16px; letter-spacing: -.02em; }
+    .more-button { width: 27px; height: 27px; border-radius: 7px; color: var(--subtle); background: transparent; font-size: 19px; }
+    .more-button:hover { color: var(--blue); background: var(--blue-soft); }
+    .project-card-description { min-height: 42px; margin: 17px 0 17px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+    .status-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 99px; padding: 4px 8px; color: var(--green); background: var(--green-soft); font-size: 11px; font-weight: 700; }
+    .status-chip:before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .status-chip.attention { color: var(--orange); background: var(--orange-soft); }
+    .status-chip.neutral { color: var(--muted); background: #f0f2f6; }
+    .card-stats { display: flex; gap: 19px; padding: 12px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .card-stat { display: grid; gap: 2px; }
+    .card-stat b { font-size: 15px; letter-spacing: -.02em; }
+    .card-stat span { color: var(--muted); font-size: 11px; }
+    .project-card-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: auto; padding-top: 14px; }
+    .owner { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+    .owner .avatar { width: 22px; height: 22px; border-radius: 7px; font-size: 9px; }
+    .activity { color: var(--subtle); font-size: 11px; }
+    .empty-card { display: grid; place-items: center; min-height: 243px; border: 1px dashed var(--line-strong); border-radius: 14px; color: var(--muted); background: rgba(255,255,255,.6); text-align: center; }
+    .empty-card strong { display: block; color: var(--ink); margin-bottom: 5px; }
+
+    /* Workbench */
+    .workbench-screen { padding: 0; overflow: hidden; }
+    .workbench { min-height: calc(100vh - 64px); display: grid; grid-template-rows: auto minmax(0, 1fr); }
+    .workbench-head { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 23px 30px 20px; border-bottom: 1px solid var(--line); background: #fff; }
+    .back-link { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 8px; padding: 0; color: var(--muted); background: transparent; font-size: 12px; }
+    .back-link:hover { color: var(--blue); }
+    .workbench-title-row { display: flex; align-items: center; gap: 12px; }
+    .workbench-title { margin: 0; font-size: 23px; letter-spacing: -.04em; }
+    .role-chip { border: 1px solid #cfdcff; border-radius: 99px; padding: 4px 8px; color: var(--blue-dark); background: var(--blue-soft); font-size: 11px; font-weight: 700; }
+    .workbench-sub { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .workbench-actions { display: flex; align-items: center; gap: 8px; }
+    .workbench-body { min-height: 0; display: grid; grid-template-columns: 228px minmax(500px, 1fr) 320px; background: var(--canvas); }
+    .module-nav { min-height: 0; overflow: auto; padding: 20px 14px; border-right: 1px solid var(--line); background: #fff; }
+    .module-nav-head { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 12px; }
+    .module-nav-head strong { font-size: 12px; }
+    .module-nav-head button { color: var(--blue); background: transparent; font-size: 11px; }
+    .module-group { margin: 12px 0 18px; }
+    .module-group-title { display: flex; align-items: center; gap: 6px; padding: 0 8px 6px; color: var(--subtle); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .module-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; border-radius: 8px; padding: 9px 9px; color: #5e6c85; background: transparent; text-align: left; font-size: 12px; }
+    .module-item:hover { color: var(--blue-dark); background: #f4f7ff; }
+    .module-item.active { color: var(--blue-dark); background: var(--blue-soft); font-weight: 700; }
+    .module-item-label { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .module-dot { width: 7px; height: 7px; border: 1.5px solid #89a1d6; border-radius: 3px; background: #fff; }
+    .module-item.active .module-dot { border-color: var(--blue); background: var(--blue); }
+    .module-state { border-radius: 99px; padding: 2px 5px; color: var(--green); background: var(--green-soft); font-size: 9px; }
+    .module-state.warn { color: var(--orange); background: var(--orange-soft); }
+    .module-state.empty { color: var(--subtle); background: #f1f3f6; }
+    .nav-footnote { margin: 22px 5px 0; border: 1px solid #e0e7f6; border-radius: 9px; padding: 10px; color: var(--muted); background: #f6f8ff; font-size: 11px; line-height: 1.55; }
+    .nav-footnote strong { display: block; color: var(--blue-dark); margin-bottom: 3px; }
+    .workspace { min-width: 0; min-height: 0; overflow: auto; padding: 22px 24px 30px; }
+    .workspace-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+    .workspace-kicker { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 11px; }
+    .workspace-kicker .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px var(--green-soft); }
+    .workspace-heading { margin: 4px 0 0; font-size: 19px; letter-spacing: -.03em; }
+    .workspace-meta { color: var(--muted); font-size: 11px; }
+    .toolbar-actions { display: flex; align-items: center; gap: 7px; }
+    .preview-card { overflow: hidden; border: 1px solid var(--line-strong); border-radius: 13px; background: #fff; box-shadow: var(--shadow); }
+    .preview-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 15px; border-bottom: 1px solid var(--line); }
+    .preview-version { display: flex; align-items: center; gap: 9px; }
+    .preview-version strong { font-size: 12px; }
+    .version-chip { border-radius: 99px; padding: 3px 7px; color: var(--green); background: var(--green-soft); font-size: 10px; font-weight: 700; }
+    .preview-head-actions { display: flex; align-items: center; gap: 5px; }
+    .preview-head-actions button { color: var(--muted); background: transparent; font-size: 12px; }
+    .preview-head-actions button:hover { color: var(--blue); }
+    .prototype-frame { min-height: 485px; padding: 19px; background: #eef2f8; }
+    .prototype-window { min-height: 447px; overflow: hidden; border: 1px solid #d8dfeb; border-radius: 9px; background: #fff; box-shadow: 0 11px 28px rgba(26,39,69,.11); }
+    .prototype-window-bar { display: flex; align-items: center; gap: 6px; height: 31px; padding: 0 11px; border-bottom: 1px solid #e9edf3; background: #f9fafc; }
+    .window-dot { width: 7px; height: 7px; border-radius: 50%; background: #d7dce7; }
+    .window-url { width: 240px; margin-left: 8px; border-radius: 99px; padding: 3px 10px; color: #8794a9; background: #eef1f6; font-size: 9px; }
+    .prototype-app { display: grid; grid-template-columns: 144px minmax(0, 1fr); min-height: 415px; }
+    .prototype-app-nav { padding: 16px 10px; border-right: 1px solid #ebeff5; background: #fbfcfe; }
+    .fake-brand { display: flex; align-items: center; gap: 6px; margin: 0 6px 21px; color: #2c3b56; font-weight: 800; font-size: 11px; }
+    .fake-brand span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; color: #fff; background: #567cf0; font-size: 9px; }
+    .fake-nav-item { display: flex; align-items: center; gap: 7px; margin: 2px 0; border-radius: 6px; padding: 7px 8px; color: #7b879c; font-size: 10px; }
+    .fake-nav-item.active { color: #335bd4; background: #edf2ff; font-weight: 700; }
+    .fake-content { padding: 20px 22px; }
+    .fake-content-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 15px; margin-bottom: 19px; }
+    .fake-content h3 { margin: 0 0 4px; color: #24314b; font-size: 16px; letter-spacing: -.03em; }
+    .fake-content p { margin: 0; color: #9aa5b7; font-size: 9px; }
+    .fake-button { border-radius: 5px; padding: 6px 9px; color: #fff; background: #5278e8; font-size: 9px; }
+    .fake-search-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 13px; }
+    .fake-input { display: flex; align-items: center; width: 160px; border: 1px solid #e4e8f0; border-radius: 5px; padding: 5px 8px; color: #bdc4d0; font-size: 9px; }
+    .fake-filters { display: flex; gap: 5px; }
+    .fake-filter { border: 1px solid #e4e8f0; border-radius: 5px; padding: 5px 7px; color: #8995a9; background: #fff; font-size: 9px; }
+    .fake-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+    .fake-table th { padding: 8px 7px; border-top: 1px solid #eff1f5; border-bottom: 1px solid #eff1f5; color: #9aa5b7; text-align: left; font-weight: 600; }
+    .fake-table td { padding: 11px 7px; border-bottom: 1px solid #f0f2f6; color: #59667d; }
+    .fake-customer { display: flex; align-items: center; gap: 6px; color: #2d3a52; font-weight: 650; }
+    .fake-customer .mini-face { display: grid; place-items: center; width: 19px; height: 19px; border-radius: 6px; color: #4963a3; background: #e7edff; font-size: 8px; }
+    .fake-tag { border-radius: 99px; padding: 3px 6px; color: #2b8a68; background: #e8f7f0; font-size: 8px; }
+    .fake-tag.gray { color: #778398; background: #f1f3f6; }
+    .fake-pager { display: flex; justify-content: flex-end; gap: 6px; margin-top: 15px; color: #a1aaba; font-size: 9px; }
+    .context { min-height: 0; overflow: auto; border-left: 1px solid var(--line); padding: 20px 17px; background: #fff; }
+    .context-tabs { display: flex; align-items: center; gap: 14px; border-bottom: 1px solid var(--line); margin-bottom: 16px; }
+    .context-tab { position: relative; padding: 0 0 10px; color: var(--muted); background: transparent; font-size: 12px; }
+    .context-tab.active { color: var(--ink); font-weight: 750; }
+    .context-tab.active:after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px 2px 0 0; background: var(--blue); }
+    .attention-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid #e1e8fb; border-radius: 10px; padding: 11px; background: #f7f9ff; }
+    .attention-card strong { display: block; color: #2e4c9d; font-size: 12px; }
+    .attention-card span { color: var(--muted); font-size: 10px; }
+    .attention-count { display: grid; place-items: center; width: 33px; height: 33px; border-radius: 50%; color: var(--blue-dark); background: #e0e9ff; font-weight: 800; }
+    .context-section { margin-top: 21px; }
+    .context-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .context-section-head strong { font-size: 12px; }
+    .context-section-head button { color: var(--blue); background: transparent; font-size: 10px; }
+    .candidate { display: grid; gap: 8px; border: 1px solid var(--line); border-radius: 9px; padding: 11px; margin-bottom: 8px; transition: .18s ease; }
+    .candidate:hover { border-color: #b9c9ec; box-shadow: 0 3px 10px rgba(57, 89, 158, .08); }
+    .candidate-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+    .candidate-title { color: #32415d; font-size: 11px; font-weight: 700; }
+    .candidate-meta { color: var(--muted); font-size: 10px; }
+    .candidate-status { border-radius: 99px; padding: 3px 6px; color: var(--orange); background: var(--orange-soft); font-size: 9px; font-weight: 700; white-space: nowrap; }
+    .candidate-actions { display: flex; justify-content: flex-end; gap: 5px; }
+    .activity-list { display: grid; gap: 0; }
+    .activity-item { position: relative; display: grid; grid-template-columns: 17px 1fr; gap: 9px; padding-bottom: 15px; }
+    .activity-item:not(:last-child):before { content: ""; position: absolute; top: 17px; bottom: 0; left: 7px; width: 1px; background: #e6ebf3; }
+    .activity-dot { position: relative; z-index: 1; width: 15px; height: 15px; border: 3px solid #dfe8ff; border-radius: 50%; background: var(--blue); }
+    .activity-dot.green { border-color: #d8f1e7; background: var(--green); }
+    .activity-dot.orange { border-color: #ffefcd; background: #dfa049; }
+    .activity-copy strong { display: block; color: #3c4b66; font-size: 11px; }
+    .activity-copy span { display: block; margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .context-empty { border: 1px dashed var(--line-strong); border-radius: 9px; padding: 25px 12px; color: var(--muted); text-align: center; font-size: 11px; }
+    .context-empty strong { display: block; color: var(--ink); margin-bottom: 4px; }
+    .unbound-panel { display: grid; place-items: center; min-height: 485px; border: 1px dashed #bdc9e4; border-radius: 13px; padding: 40px; background: linear-gradient(145deg, #fafbff, #f4f7ff); text-align: center; }
+    .unbound-icon { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 16px; color: #7a8bb0; background: #e9eefb; font-size: 24px; }
+    .unbound-panel h3 { margin: 16px 0 6px; font-size: 17px; }
+    .unbound-panel p { max-width: 360px; margin: 0 auto 18px; color: var(--muted); font-size: 12px; }
+    .prototype-picker { max-width: 380px; width: 100%; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; box-shadow: var(--shadow-small); text-align: left; }
+    .prototype-picker h4 { margin: 0 0 9px; font-size: 12px; }
+    .prototype-option { display: flex; align-items: center; justify-content: space-between; gap: 10px; border-radius: 7px; padding: 8px; color: #56647c; background: #fafbfe; font-size: 11px; }
+    .prototype-option + .prototype-option { margin-top: 5px; }
+    .prototype-option:hover { color: var(--blue-dark); background: var(--blue-soft); }
+    .prototype-option span { color: var(--muted); font-size: 10px; }
+
+    /* Overlay and modal */
+    .overlay { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 30px; background: rgba(18,31,58,.48); backdrop-filter: blur(5px); }
+    .modal { width: min(720px, 100%); max-height: calc(100vh - 60px); overflow: auto; border: 1px solid rgba(255,255,255,.7); border-radius: 15px; background: #fff; box-shadow: 0 26px 90px rgba(11,24,53,.28); }
+    .modal.large { width: min(1080px, 100%); }
+    .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+    .modal-head h3 { margin: 0; font-size: 17px; }
+    .modal-head p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+    .close-button { width: 28px; height: 28px; border-radius: 7px; color: var(--muted); background: #f4f6fa; font-size: 18px; }
+    .close-button:hover { color: var(--red); background: var(--red-soft); }
+    .modal-body { padding: 22px; }
+    .review-grid { display: grid; grid-template-columns: 235px minmax(0, 1fr); gap: 17px; }
+    .review-summary { border: 1px solid var(--line); border-radius: 10px; padding: 15px; background: #fafbfe; }
+    .review-summary h4 { margin: 0 0 12px; font-size: 12px; }
+    .summary-row { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--line); color: var(--muted); font-size: 10px; }
+    .summary-row:last-child { border-bottom: 0; }
+    .summary-row strong { color: var(--ink); font-weight: 650; text-align: right; }
+    .candidate-preview { min-height: 315px; border: 1px solid #d8dfeb; border-radius: 9px; padding: 14px; background: #eef2f8; }
+    .candidate-screen { min-height: 285px; border-radius: 7px; padding: 17px; background: #fff; box-shadow: 0 7px 20px rgba(35,54,88,.08); }
+    .candidate-screen .diff-line { display: flex; align-items: center; gap: 8px; margin: 12px 0; padding: 8px; border-radius: 6px; color: #356b54; background: #ebf8f1; font-size: 10px; }
+    .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--line); background: #fbfcfe; }
+    .drawer-list { display: grid; gap: 9px; }
+    .member-row, .snapshot-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 11px; }
+    .member-main { display: flex; align-items: center; gap: 8px; }
+    .member-main strong { display: block; font-size: 11px; }
+    .member-main span { display: block; color: var(--muted); font-size: 10px; }
+    .member-role { color: var(--muted); font-size: 10px; }
+    .snapshot-row { display: grid; grid-template-columns: 1fr auto; }
+    .snapshot-row strong { display: block; font-size: 11px; }
+    .snapshot-row span { color: var(--muted); font-size: 10px; }
+    .toast { position: fixed; z-index: 40; right: 28px; bottom: 28px; display: flex; align-items: center; gap: 8px; border: 1px solid #bde8d4; border-radius: 10px; padding: 11px 14px; color: #147354; background: #effbf5; box-shadow: var(--shadow); font-size: 12px; transform: translateY(12px); opacity: 0; pointer-events: none; transition: .25s ease; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .prototype-label { position: fixed; z-index: 8; right: 20px; bottom: 17px; border: 1px solid #cad6f4; border-radius: 99px; padding: 6px 10px; color: #6380cb; background: rgba(246,248,252,.9); font-size: 10px; box-shadow: 0 3px 12px rgba(53,77,126,.08); }
+    @media (max-width: 1040px) { .workbench-body { grid-template-columns: 210px minmax(460px, 1fr); } .context { display: none; } .project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+    @media (max-width: 850px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .topbar { padding: 0 17px; } .screen { padding: 24px 17px; } .overview-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page-header { align-items: flex-start; flex-direction: column; } .toolbar-row { align-items: flex-start; flex-direction: column; } .search-box { width: 100%; } .project-grid { grid-template-columns: 1fr; } .workbench-head { align-items: flex-start; flex-direction: column; padding: 18px; } .workbench-actions { width: 100%; flex-wrap: wrap; } .workbench-body { grid-template-columns: 190px minmax(0, 1fr); } .workspace { padding: 18px 15px; } .prototype-frame { padding: 10px; } .prototype-app { grid-template-columns: 105px minmax(0,1fr); } .prototype-app-nav { padding: 12px 7px; } .fake-content { padding: 14px; } .fake-filters { display: none; } .fake-table th:nth-child(n+4), .fake-table td:nth-child(n+4) { display: none; } .review-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 570px) { .overview-strip { grid-template-columns: 1fr 1fr; gap: 9px; } .metric-card { padding: 13px; } .metric-value { font-size: 21px; } .workbench-body { grid-template-columns: 1fr; } .module-nav { display: none; } .workspace-heading { font-size: 17px; } .prototype-window-bar { display: none; } .prototype-app { grid-template-columns: 1fr; } .prototype-app-nav { display: none; } .prototype-frame { min-height: 410px; } .prototype-window { min-height: 390px; } .fake-content-head { margin-bottom: 11px; } .fake-content h3 { font-size: 14px; } .modal-foot { flex-wrap: wrap; } }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><span class="brand-mark">伏</span><span>伏羲 <small>FUXI</small></span></div>
+      <button class="workspace-switcher" type="button" aria-label="切换工作空间" data-toast="工作空间切换器将在正式实现中接入">
+        <span><b>伏羲产品中心</b><small>平台工作空间</small></span><b>⌄</b>
+      </button>
+      <div class="nav-label">工作区</div>
+      <nav class="nav-list">
+        <button class="nav-link active" type="button" data-screen="projects"><span class="nav-icon">▦</span>项目<span class="nav-badge">8</span></button>
+        <button class="nav-link" type="button" data-toast="原型入口保留在全局导航，当前先从项目工作台进入"><span class="nav-icon">◇</span>原型</button>
+        <button class="nav-link" type="button" data-toast="待处理聚合将在项目摘要确认后接入"><span class="nav-icon">◷</span>待处理<span class="nav-badge">2</span></button>
+      </nav>
+      <div class="nav-label" style="margin-top:25px">管理</div>
+      <nav class="nav-list">
+        <button class="nav-link" type="button" data-toast="成员与权限将按项目进入"><span class="nav-icon">♙</span>成员与权限</button>
+        <button class="nav-link" type="button" data-toast="平台设置暂不在阶段22.1改造范围"><span class="nav-icon">⚙</span>平台设置</button>
+      </nav>
+      <div class="sidebar-spacer"></div>
+      <div class="sidebar-note"><strong>阶段 22.1 原型</strong>结构已冻结，点击项目卡片查看工作台。</div>
+      <div class="profile"><span class="avatar">吴</span><span><strong>吴胜志</strong><small>平台管理员</small></span><button class="topbar-link" style="margin-left:auto" type="button" aria-label="更多账户操作">⋯</button></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumb" id="breadcrumb"><span>伏羲产品中心</span><b>›</b><strong>项目</strong></div>
+        <div class="topbar-actions"><button class="topbar-link" type="button" data-toast="帮助中心将在正式实现中接入">帮助</button><button class="topbar-link notification" type="button" aria-label="通知" data-toast="你有 2 条待处理候选"><span>♢</span><i></i></button><span class="avatar top-avatar">吴</span></div>
+      </header>
+
+      <section class="screen active" id="projects-screen" aria-labelledby="projects-title">
+        <div class="page-wrap">
+          <div class="page-header">
+            <div><div class="eyebrow">Project workspace</div><h1 class="page-title" id="projects-title">项目</h1><p class="page-description">按业务系统组织原型，把需要决策的状态放在一起。</p></div>
+            <button class="button primary" type="button" data-toast="创建项目表单将在下一版接入">＋ 创建项目</button>
+          </div>
+          <div class="overview-strip" aria-label="项目概览">
+            <div class="metric-card"><span class="metric-label">我参与的项目</span><strong class="metric-value">12</strong><span class="metric-delta">↑ 2 个本周有更新</span></div>
+            <div class="metric-card"><span class="metric-label">待处理候选</span><strong class="metric-value">08</strong><span class="metric-delta" style="color:var(--orange)">需要负责人确认</span></div>
+            <div class="metric-card"><span class="metric-label">稳定运行原型</span><strong class="metric-value">31</strong><span class="metric-delta">97% 入口校验通过</span></div>
+            <div class="metric-card"><span class="metric-label">最近活动</span><strong class="metric-value">24</strong><span class="metric-delta" style="color:#7160d5">过去 7 天</span></div>
+          </div>
+          <div class="toolbar-row"><div class="filter-tabs" role="tablist" aria-label="项目范围"><button class="filter-tab active" type="button" data-filter="all">全部项目</button><button class="filter-tab" type="button" data-filter="mine">我负责</button><button class="filter-tab" type="button" data-filter="attention">有待处理</button></div><label class="search-box"><span>⌕</span><input id="project-search" type="search" placeholder="搜索项目名称或描述" aria-label="搜索项目"></label></div>
+          <div class="project-grid" id="project-grid"></div>
+        </div>
+      </section>
+
+      <section class="screen workbench-screen" id="workbench-screen" aria-labelledby="workbench-title">
+        <div class="workbench">
+          <div class="workbench-head"><div><button class="back-link" type="button" data-screen="projects">← 返回项目列表</button><div class="workbench-title-row"><h1 class="workbench-title" id="workbench-title">客户服务平台</h1><span class="role-chip">项目负责人</span></div><p class="workbench-sub">统一客户服务门户 · 最近更新 8 分钟前</p></div><div class="workbench-actions"><button class="button small" type="button" data-modal="members">♙ 成员 <span style="color:var(--subtle)">6</span></button><button class="button small" type="button" data-modal="snapshots">◫ 快照</button><button class="button small primary" type="button" data-modal="fullscreen">⛶ 全屏预览</button></div></div>
+          <div class="workbench-body">
+            <aside class="module-nav" aria-label="项目模块导航">
+              <div class="module-nav-head"><strong>项目导航</strong><button type="button" data-toast="菜单管理将在下一步进入真实接口">管理菜单</button></div>
+              <div class="module-group"><div class="module-group-title"><span>⌄</span>业务模块</div><button class="module-item active" type="button" data-menu="customers"><span class="module-item-label"><i class="module-dot"></i>客户列表</span><span class="module-state">稳定</span></button><button class="module-item" type="button" data-menu="orders"><span class="module-item-label"><i class="module-dot"></i>服务工单</span><span class="module-state warn">待确认 2</span></button><button class="module-item" type="button" data-menu="reports"><span class="module-item-label"><i class="module-dot"></i>数据报表</span><span class="module-state">稳定</span></button></div>
+              <div class="module-group"><div class="module-group-title"><span>⌄</span>系统设置</div><button class="module-item" type="button" data-menu="users"><span class="module-item-label"><i class="module-dot"></i>用户权限</span><span class="module-state empty">未绑定</span></button><button class="module-item" type="button" data-menu="notice"><span class="module-item-label"><i class="module-dot"></i>通知配置</span><span class="module-state">稳定</span></button></div>
+              <div class="nav-footnote"><strong>项目结构提示</strong>左侧只放稳定的业务入口；任务、成员和快照在右侧上下文区展开。</div>
+            </aside>
+
+            <section class="workspace" aria-label="当前原型工作区">
+              <div class="workspace-toolbar"><div><div class="workspace-kicker"><span class="live-dot"></span><span id="workspace-kicker-text">正式版本 · 入口可用</span></div><h2 class="workspace-heading" id="workspace-heading">客户列表</h2><span class="workspace-meta" id="workspace-meta">客户服务平台 / 业务模块 / 客户列表</span></div><div class="toolbar-actions"><button class="button small ghost" type="button" data-toast="原型详情将在正式页面打开">↗ 原型详情</button><button class="button small primary" type="button" data-modal="request">✦ 让 AI 修改</button></div></div>
+              <div id="preview-state"></div>
+            </section>
+
+            <aside class="context" aria-label="项目上下文">
+              <div class="context-tabs" role="tablist"><button class="context-tab active" type="button" data-context="attention">待处理 <span style="color:var(--orange)">2</span></button><button class="context-tab" type="button" data-context="activity">最近活动</button></div>
+              <div id="context-content"></div>
+            </aside>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="prototype-label">高保真原型 · 阶段 22.1</div>
+  <div class="overlay" id="overlay" hidden><div class="modal" id="modal"></div></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"><span>✓</span><span id="toast-text">已完成</span></div>
+
+  <script>
+    const projectData = [
+      { id: 'customer', name: '客户服务平台', desc: '统一客户、工单与服务跟进入口，当前由产品与交付团队协作维护。', status: 'stable', statusLabel: '稳定运行', prototypes: 6, pending: 2, activity: '8 分钟前', owner: '吴胜志', avatar: '吴', icon: '客', iconClass: '', mine: true },
+      { id: 'fuxi-admin', name: '伏羲管理后台', desc: '平台账户、权限与原型资产管理，近期正在整理管理员工作台。', status: 'attention', statusLabel: '需要关注', prototypes: 9, pending: 4, activity: '42 分钟前', owner: '谢永伟', avatar: '谢', icon: '伏', iconClass: 'orange', mine: false },
+      { id: 'asset', name: '前端资产配置中心', desc: '面向研发团队的通用前端资产配置和交付门户。', status: 'stable', statusLabel: '稳定运行', prototypes: 4, pending: 0, activity: '昨天 18:22', owner: '刘生环', avatar: '刘', icon: '资', iconClass: 'green', mine: false },
+      { id: 'release', name: '版本发布中心', desc: '追踪原型交付、环境发布和版本回读结果。', status: 'stable', statusLabel: '稳定运行', prototypes: 3, pending: 0, activity: '昨天 15:08', owner: '林聪', avatar: '林', icon: '发', iconClass: 'purple', mine: true },
+      { id: 'ops', name: 'Linux 运维控制台', desc: '服务器操作、健康检查和发布门禁的统一入口。', status: 'attention', statusLabel: '需要关注', prototypes: 2, pending: 1, activity: '周一 11:40', owner: '蔡宇航', avatar: '蔡', icon: '运', iconClass: 'orange', mine: true }
+    ];
+    const menuData = {
+      customers: { title: '客户列表', kicker: '正式版本 · 入口可用', meta: '客户服务平台 / 业务模块 / 客户列表', version: 'v12', preview: 'customers' },
+      orders: { title: '服务工单', kicker: '有 2 个候选待确认', meta: '客户服务平台 / 业务模块 / 服务工单', version: 'v7', preview: 'orders' },
+      reports: { title: '数据报表', kicker: '正式版本 · 入口可用', meta: '客户服务平台 / 业务模块 / 数据报表', version: 'v5', preview: 'reports' },
+      users: { title: '用户权限', kicker: '尚未绑定原型', meta: '客户服务平台 / 系统设置 / 用户权限', version: '', preview: 'empty' },
+      notice: { title: '通知配置', kicker: '正式版本 · 入口可用', meta: '客户服务平台 / 系统设置 / 通知配置', version: 'v3', preview: 'notice' }
+    };
+    let activeFilter = 'all';
+    let activeMenu = 'customers';
+    let contextMode = 'attention';
+    let toastTimer;
+
+    const $ = selector => document.querySelector(selector);
+    const $$ = selector => [...document.querySelectorAll(selector)];
+
+    function renderProjects() {
+      const keyword = ($('#project-search')?.value || '').trim().toLowerCase();
+      const visible = projectData.filter(project => {
+        const matchesFilter = activeFilter === 'all' || (activeFilter === 'mine' && project.mine) || (activeFilter === 'attention' && project.pending > 0);
+        const matchesKeyword = !keyword || `${project.name} ${project.desc}`.toLowerCase().includes(keyword);
+        return matchesFilter && matchesKeyword;
+      });
+      $('#project-grid').innerHTML = visible.length ? visible.map(project => `
+        <article class="project-card">
+          <div class="project-card-head"><div class="project-card-title"><span class="project-icon ${project.iconClass}">${project.icon}</span><h3>${project.name}</h3></div><button class="more-button" type="button" aria-label="${project.name} 更多操作" data-toast="项目操作菜单将在正式实现中接入">⋯</button></div>
+          <p class="project-card-description">${project.desc}</p>
+          <div><span class="status-chip ${project.status === 'attention' ? 'attention' : ''}">${project.statusLabel}</span></div>
+          <div class="card-stats"><div class="card-stat"><b>${project.prototypes}</b><span>绑定原型</span></div><div class="card-stat"><b style="color:${project.pending ? 'var(--orange)' : 'var(--ink)'}">${project.pending}</b><span>待确认候选</span></div></div>
+          <div class="project-card-footer"><span class="owner"><span class="avatar">${project.avatar}</span>${project.owner}</span><span class="activity">${project.activity}</span><button class="button small" type="button" data-open-project="${project.id}">进入工作台&nbsp;→</button></div>
+        </article>
+      `).join('') : '<div class="empty-card"><div><strong>没有找到匹配项目</strong><span>换个关键词或清除筛选条件</span></div></div>';
+    }
+
+    function showScreen(screen) {
+      $$('.screen').forEach(node => node.classList.toggle('active', node.id === `${screen}-screen`));
+      $$('.nav-link').forEach(node => node.classList.toggle('active', node.dataset.screen === screen));
+      $('#breadcrumb').innerHTML = screen === 'projects' ? '<span>伏羲产品中心</span><b>›</b><strong>项目</strong>' : '<span>伏羲产品中心</span><b>›</b><span>项目</span><b>›</b><strong>客户服务平台</strong>';
+      if (screen === 'workbench') { renderWorkspace(); renderContext(); }
+    }
+
+    function renderWorkspace() {
+      const menu = menuData[activeMenu];
+      $('#workspace-kicker-text').textContent = menu.kicker;
+      $('#workspace-heading').textContent = menu.title;
+      $('#workspace-meta').textContent = menu.meta;
+      $$('.module-item').forEach(node => node.classList.toggle('active', node.dataset.menu === activeMenu));
+      if (menu.preview === 'empty') {
+        $('#preview-state').innerHTML = `<div class="unbound-panel"><div><div class="unbound-icon">○</div><h3>该菜单项尚未绑定原型</h3><p>将一个有效原型绑定到「${menu.title}」，成员就能从项目门户直接进入。</p><button class="button primary" type="button" data-modal="picker">＋ 选择原型绑定</button></div></div>`;
+      } else {
+        const heading = menu.preview === 'orders' ? '服务工单' : menu.preview === 'reports' ? '数据报表' : menu.preview === 'notice' ? '通知配置' : '客户列表';
+        const version = menu.version;
+        $('#preview-state').innerHTML = `<div class="preview-card"><div class="preview-card-head"><div class="preview-version"><strong>${heading}</strong><span class="version-chip">正式 ${version}</span></div><div class="preview-head-actions"><button type="button" data-toast="预览刷新完成">↻ 刷新</button><button type="button" data-modal="fullscreen">⛶</button></div></div><div class="prototype-frame">${fakePrototype(menu.preview, heading)}</div></div>`;
+      }
+    }
+
+    function fakePrototype(type, heading) {
+      if (type === 'reports') return `<div class="prototype-window"><div class="prototype-window-bar"><i class="window-dot"></i><i class="window-dot"></i><i class="window-dot"></i><span class="window-url">preview / reports / v5</span></div><div class="prototype-app"><div class="prototype-app-nav"><div class="fake-brand"><span>客</span>客户服务</div><div class="fake-nav-item">概览</div><div class="fake-nav-item active">数据报表</div><div class="fake-nav-item">服务工单</div><div class="fake-nav-item">设置</div></div><div class="fake-content"><div class="fake-content-head"><div><h3>${heading}</h3><p>本月服务质量与客户响应趋势</p></div><button class="fake-button">导出报表</button></div><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:16px"><div style="padding:11px;border:1px solid #edf0f5;border-radius:6px"><span style="font-size:9px;color:#9aa5b7">服务完成率</span><b style="display:block;margin-top:5px;font-size:17px;color:#2b3a56">96.4%</b></div><div style="padding:11px;border:1px solid #edf0f5;border-radius:6px"><span style="font-size:9px;color:#9aa5b7">平均响应</span><b style="display:block;margin-top:5px;font-size:17px;color:#2b3a56">18m</b></div><div style="padding:11px;border:1px solid #edf0f5;border-radius:6px"><span style="font-size:9px;color:#9aa5b7">满意度</span><b style="display:block;margin-top:5px;font-size:17px;color:#2b3a56">4.8</b></div></div><div style="height:155px;border:1px solid #edf0f5;border-radius:6px;padding:14px;background:linear-gradient(180deg,#fff,#fafbfe)"><div style="font-size:10px;color:#56647c;font-weight:700">近 7 天响应趋势</div><div style="height:103px;margin-top:13px;background:linear-gradient(165deg,transparent 0 11%,#e9efff 11% 12%,transparent 12% 25%,#e9efff 25% 26%,transparent 26% 43%,#e9efff 43% 44%,transparent 44% 63%,#e9efff 63% 64%,transparent 64% 80%,#e9efff 80% 81%,transparent 81%),linear-gradient(170deg,transparent 0 40%,#6687ed 40% 42%,transparent 42% 55%,#6687ed 55% 57%,transparent 57% 74%,#6687ed 74% 76%,transparent 76%);border-bottom:1px solid #e8ecf4"></div></div></div></div></div>`;
+      if (type === 'notice') return `<div class="prototype-window"><div class="prototype-window-bar"><i class="window-dot"></i><i class="window-dot"></i><i class="window-dot"></i><span class="window-url">preview / notice / v3</span></div><div class="prototype-app"><div class="prototype-app-nav"><div class="fake-brand"><span>客</span>客户服务</div><div class="fake-nav-item">概览</div><div class="fake-nav-item">数据报表</div><div class="fake-nav-item active">通知配置</div><div class="fake-nav-item">设置</div></div><div class="fake-content"><div class="fake-content-head"><div><h3>${heading}</h3><p>配置项目成员收到哪些提醒</p></div><button class="fake-button">保存配置</button></div><div style="display:grid;gap:10px;max-width:480px"><div style="display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid #edf0f5;border-radius:6px"><span style="font-size:10px;color:#56647c;font-weight:700">候选准备好时提醒我</span><span style="width:30px;height:17px;border-radius:99px;background:#5d80ed;position:relative"><i style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff"></i></span></div><div style="display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid #edf0f5;border-radius:6px"><span style="font-size:10px;color:#56647c;font-weight:700">签出即将超时时提醒我</span><span style="width:30px;height:17px;border-radius:99px;background:#5d80ed;position:relative"><i style="position:absolute;right:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff"></i></span></div><div style="display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid #edf0f5;border-radius:6px"><span style="font-size:10px;color:#56647c;font-weight:700">项目被恢复时提醒我</span><span style="width:30px;height:17px;border-radius:99px;background:#e6eaf1;position:relative"><i style="position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff"></i></span></div></div></div></div></div>`;
+      const orderMode = type === 'orders';
+      const rows = orderMode ? [['工单 #2038','华东客户 · 退款咨询','处理中','今天 10:18'],['工单 #2037','北方客户 · 账号解冻','待分配','昨天 17:42'],['工单 #2036','华南客户 · 合同补发','已完成','昨天 15:06']] : [['星河科技','张经理','重点客户','今天 09:42'],['远山零售','李女士','跟进中','昨天 16:20'],['云杉制造','王工','已完成','周一 11:32'],['北辰物流','赵总','跟进中','周一 10:05']];
+      return `<div class="prototype-window"><div class="prototype-window-bar"><i class="window-dot"></i><i class="window-dot"></i><i class="window-dot"></i><span class="window-url">preview / ${orderMode ? 'orders' : 'customers'} / ${orderMode ? 'v7' : 'v12'}</span></div><div class="prototype-app"><div class="prototype-app-nav"><div class="fake-brand"><span>客</span>客户服务</div><div class="fake-nav-item active">${orderMode ? '服务工单' : '客户列表'}</div><div class="fake-nav-item">${orderMode ? '客户列表' : '服务工单'}</div><div class="fake-nav-item">数据报表</div><div class="fake-nav-item">设置</div></div><div class="fake-content"><div class="fake-content-head"><div><h3>${heading}</h3><p>${orderMode ? '跟踪客户服务请求和处理进度' : '管理客户关系与最近一次跟进'}</p></div><button class="fake-button">${orderMode ? '新建工单' : '新增客户'}</button></div><div class="fake-search-row"><div class="fake-input">⌕&nbsp; 搜索${orderMode ? '工单编号或客户' : '客户名称'}</div><div class="fake-filters"><span class="fake-filter">${orderMode ? '处理状态' : '客户分组'}⌄</span><span class="fake-filter">最近更新⌄</span></div></div><table class="fake-table"><thead><tr><th>${orderMode ? '工单' : '客户'}</th><th>${orderMode ? '摘要' : '联系人'}</th><th>状态</th><th>最近更新</th></tr></thead><tbody>${rows.map(row => `<tr><td><span class="fake-customer"><i class="mini-face">${row[0].slice(0,1)}</i>${row[0]}</span></td><td>${row[1]}</td><td><span class="fake-tag ${row[2] === '已完成' ? 'gray' : ''}">${row[2]}</span></td><td>${row[3]}</td></tr>`).join('')}</tbody></table><div class="fake-pager">共 ${rows.length * 7} 条&nbsp; 1 2 3 ›</div></div></div></div>`;
+    }
+
+    function renderContext() {
+      $$('.context-tab').forEach(node => node.classList.toggle('active', node.dataset.context === contextMode));
+      if (contextMode === 'activity') {
+        $('#context-content').innerHTML = `<div class="context-section" style="margin-top:0"><div class="context-section-head"><strong>最近活动</strong><button type="button" data-toast="活动记录支持按时间筛选">查看全部</button></div><div class="activity-list"><div class="activity-item"><i class="activity-dot green"></i><div class="activity-copy"><strong>林聪采用了候选版本</strong><span>服务工单 · 正式版本从 v6 更新为 v7 · 8 分钟前</span></div></div><div class="activity-item"><i class="activity-dot"></i><div class="activity-copy"><strong>AI 任务已生成</strong><span>增加工单优先级筛选 · 吴胜志 · 32 分钟前</span></div></div><div class="activity-item"><i class="activity-dot orange"></i><div class="activity-copy"><strong>原型签出即将超时</strong><span>数据报表 · 张晓 · 1 小时前</span></div></div><div class="activity-item"><i class="activity-dot green"></i><div class="activity-copy"><strong>成员加入项目</strong><span>赵敏已加入，角色为查看者 · 昨天</span></div></div></div></div>`;
+      } else {
+        $('#context-content').innerHTML = `<div class="attention-card"><div><strong>需要你的决定</strong><span>正式版本不会自动被候选覆盖</span></div><span class="attention-count">2</span></div><div class="context-section"><div class="context-section-head"><strong>待确认候选</strong><button type="button" data-toast="候选列表已是当前项目范围">筛选⌄</button></div><article class="candidate"><div class="candidate-head"><div><div class="candidate-title">增加工单优先级筛选</div><div class="candidate-meta">张晓 · 基于 v6 · 预览通过</div></div><span class="candidate-status">待确认</span></div><div class="candidate-actions"><button class="button small" type="button" data-modal="candidate">查看效果</button><button class="button small primary" type="button" data-adopt>采用</button></div></article><article class="candidate"><div class="candidate-head"><div><div class="candidate-title">客户列表增加跟进时间</div><div class="candidate-meta">吴胜志 · 基于 v11 · 预览通过</div></div><span class="candidate-status">待确认</span></div><div class="candidate-actions"><button class="button small" type="button" data-modal="candidate">查看效果</button><button class="button small primary" type="button" data-adopt>采用</button></div></article></div><div class="context-section"><div class="context-section-head"><strong>项目状态</strong><button type="button" data-modal="snapshots">查看快照</button></div><div class="summary-row"><span>当前正式版本</span><strong>6 个原型</strong></div><div class="summary-row"><span>活跃签出</span><strong>1 个</strong></div><div class="summary-row"><span>最近活动</span><strong>8 分钟前</strong></div></div>`;
+      }
+    }
+
+    function showToast(message) { $('#toast-text').textContent = message; $('#toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('#toast').classList.remove('show'), 2600); }
+
+    function openModal(type) {
+      const modal = $('#modal');
+      const commonHead = (title, description) => `<div class="modal-head"><div><h3>${title}</h3><p>${description}</p></div><button class="close-button" type="button" data-close-modal aria-label="关闭">×</button></div>`;
+      if (type === 'candidate') {
+        modal.className = 'modal large'; modal.innerHTML = `${commonHead('候选：增加工单优先级筛选', '当前正式版本仍为 v6 · 先看结果，再决定是否成为正式版本。')}<div class="modal-body"><div class="review-grid"><div class="review-summary"><h4>候选信息</h4><div class="summary-row"><span>状态</span><strong style="color:var(--orange)">待确认</strong></div><div class="summary-row"><span>发起人</span><strong>张晓</strong></div><div class="summary-row"><span>基础版本</span><strong>v6</strong></div><div class="summary-row"><span>入口校验</span><strong style="color:var(--green)">通过</strong></div><div class="summary-row"><span>采用后</span><strong>正式 v7</strong></div><p style="margin:15px 0 0;color:var(--muted);font-size:10px;line-height:1.6">采用后，仍基于 v6 的其他候选会变为“已过期”，当前正式版本不会被静默覆盖。</p></div><div class="candidate-preview"><div class="candidate-screen"><div style="display:flex;align-items:center;justify-content:space-between"><div><h4 style="margin:0;color:#24314b;font-size:13px">服务工单</h4><span style="color:#9aa5b7;font-size:9px">候选预览 · 已增加优先级筛选</span></div><span class="fake-button">新建工单</span></div><div class="diff-line">✦ 新增筛选：优先级&nbsp;&nbsp; <span style="margin-left:auto;border:1px solid #bfe5d1;border-radius:4px;padding:3px 6px;background:#fff;color:#328360">高 · 中 · 低</span></div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><div style="height:102px;border:1px solid #edf0f5;border-radius:6px;background:linear-gradient(180deg,#f9fbff 0 23%,#fff 23% 31%,#f4f6fa 31% 34%,#fff 34% 47%,#f4f6fa 47% 50%,#fff 50% 65%,#f4f6fa 65% 68%,#fff 68%)"></div><div style="height:102px;border:1px solid #edf0f5;border-radius:6px;background:linear-gradient(180deg,#f9fbff 0 23%,#fff 23% 31%,#f4f6fa 31% 34%,#fff 34% 47%,#f4f6fa 47% 50%,#fff 50% 65%,#f4f6fa 65% 68%,#fff 68%)"></div></div></div></div></div></div><div class="modal-foot"><button class="button" type="button" data-close-modal>暂不处理</button><button class="button danger" type="button" data-reject>退回候选</button><button class="button primary" type="button" data-adopt>采用候选</button></div>`;
+      } else if (type === 'members') {
+        modal.className = 'modal'; modal.innerHTML = `${commonHead('项目成员', '6 位成员 · 权限按钮与后端授权保持一致')}<div class="modal-body"><div class="drawer-list"><div class="member-row"><div class="member-main"><span class="avatar">吴</span><span><strong>吴胜志</strong><span>创建者 · wushengzhi</span></span></div><span class="member-role">owner</span></div><div class="member-row"><div class="member-main"><span class="avatar" style="background:linear-gradient(145deg,#e7ae60,#c77c2c)">张</span><span><strong>张晓</strong><span>编辑者 · zhangxiao</span></span></div><span class="member-role">editor</span></div><div class="member-row"><div class="member-main"><span class="avatar" style="background:linear-gradient(145deg,#6fc2bd,#328e91)">林</span><span><strong>林聪</strong><span>管理员 · lincong</span></span></div><span class="member-role">admin</span></div><div class="member-row"><div class="member-main"><span class="avatar" style="background:linear-gradient(145deg,#aa9af5,#7160d5)">赵</span><span><strong>赵敏</strong><span>查看者 · zhaomin</span></span></div><span class="member-role">viewer</span></div></div></div><div class="modal-foot"><button class="button" type="button" data-close-modal>关闭</button><button class="button primary" type="button" data-toast="成员邀请表单将在正式实现中接入">＋ 邀请成员</button></div>`;
+      } else if (type === 'snapshots') {
+        modal.className = 'modal'; modal.innerHTML = `${commonHead('项目快照', '保存菜单、绑定和正式版本关系，恢复前会明确影响范围')}<div class="modal-body"><div class="drawer-list"><div class="snapshot-row"><div><strong>v1.4 交付基线</strong><span>吴胜志 · 今天 09:40 · 6 个原型</span></div><button class="button small" type="button" data-toast="恢复前会弹出影响确认">恢复</button></div><div class="snapshot-row"><div><strong>服务工单改版前</strong><span>林聪 · 昨天 15:06 · 6 个原型</span></div><button class="button small" type="button" data-toast="恢复前会弹出影响确认">恢复</button></div><div class="snapshot-row"><div><strong>初始门户结构</strong><span>吴胜志 · 8 月 28 日 · 4 个原型</span></div><button class="button small" type="button" data-toast="恢复前会弹出影响确认">恢复</button></div></div></div><div class="modal-foot"><button class="button" type="button" data-close-modal>关闭</button><button class="button primary" type="button" data-toast="快照名称表单将在正式实现中接入">＋ 创建快照</button></div>`;
+      } else if (type === 'request') {
+        modal.className = 'modal'; modal.innerHTML = `${commonHead('让 AI 修改“客户列表”', '描述想看到的结果，不需要填写仓库、分支或技术参数。')}<div class="modal-body"><label style="display:block;margin-bottom:6px;font-size:12px;font-weight:700" for="requirement">修改目标</label><textarea id="requirement" style="width:100%;min-height:120px;border:1px solid var(--line-strong);border-radius:8px;padding:10px;resize:vertical" placeholder="例如：增加最近跟进时间列，并支持按跟进状态筛选。">增加最近跟进时间列，并支持按跟进状态筛选。</textarea><div style="margin-top:12px;border-radius:8px;padding:10px 12px;color:var(--muted);background:#f7f9fc;font-size:11px">Agent 将从当前正式版本 v12 开始。候选完成后仍需负责人采用，不会直接覆盖正式原型。</div></div><div class="modal-foot"><button class="button" type="button" data-close-modal>取消</button><button class="button primary" type="button" data-generate-task>生成 AI 任务</button></div>`;
+      } else if (type === 'picker') {
+        modal.className = 'modal'; modal.innerHTML = `${commonHead('绑定原型到“用户权限”', '仅显示当前项目可绑定的有效原型；正式实现应改为服务端搜索分页。')}<div class="modal-body"><label class="search-box" style="width:100%;margin-bottom:12px"><span>⌕</span><input type="search" placeholder="搜索原型名称或创建者" aria-label="搜索原型"></label><div class="drawer-list"><button class="prototype-option" type="button" data-bind-prototype><span><b>用户权限中心</b><br><span>李生环 · v8 · 最近更新今天</span></span><strong>绑定 →</strong></button><button class="prototype-option" type="button" data-bind-prototype><span><b>成员权限配置</b><br><span>吴胜志 · v3 · 最近更新昨天</span></span><strong>绑定 →</strong></button></div></div><div class="modal-foot"><button class="button" type="button" data-close-modal>取消</button></div>`;
+      } else if (type === 'fullscreen') {
+        modal.className = 'modal large'; modal.innerHTML = `${commonHead('全屏预览 · 客户列表', '当前正式版本 v12 · 只读预览，不影响项目数据')}<div class="modal-body" style="padding:14px;background:#eef2f8"><div style="min-height:540px;border:1px solid #d8dfeb;border-radius:9px;background:#fff;box-shadow:0 8px 22px rgba(26,39,69,.09)">${fakePrototype('customers','客户列表')}</div></div><div class="modal-foot"><button class="button" type="button" data-close-modal>关闭预览</button><button class="button primary" type="button" data-toast="预览地址已复制">复制预览地址</button></div>`;
+      }
+      $('#overlay').hidden = false;
+    }
+
+    document.addEventListener('click', event => {
+      const target = event.target.closest('button');
+      if (!target) return;
+      if (target.dataset.screen) { showScreen(target.dataset.screen); return; }
+      if (target.dataset.openProject) { showScreen('workbench'); return; }
+      if (target.dataset.filter) { activeFilter = target.dataset.filter; $$('.filter-tab').forEach(node => node.classList.toggle('active', node.dataset.filter === activeFilter)); renderProjects(); return; }
+      if (target.dataset.menu) { activeMenu = target.dataset.menu; renderWorkspace(); return; }
+      if (target.dataset.context) { contextMode = target.dataset.context; renderContext(); return; }
+      if (target.dataset.modal) { openModal(target.dataset.modal); return; }
+      if ('closeModal' in target.dataset) { $('#overlay').hidden = true; return; }
+      if ('adopt' in target.dataset) { $('#overlay').hidden = true; showToast('候选已采用，正式版本将更新为 v7'); return; }
+      if ('reject' in target.dataset) { $('#overlay').hidden = true; showToast('候选已退回，当前正式版本保持不变'); return; }
+      if ('generateTask' in target.dataset) { $('#overlay').hidden = true; showToast('AI 任务已生成，任务码 10 分钟内有效'); return; }
+      if ('bindPrototype' in target.dataset) { $('#overlay').hidden = true; activeMenu = 'users'; menuData.users.preview = 'customers'; menuData.users.kicker = '正式版本 · 入口可用'; menuData.users.version = 'v8'; renderWorkspace(); showToast('原型已绑定到“用户权限”'); return; }
+      if (target.dataset.toast) { showToast(target.dataset.toast); }
+    });
+    $('#project-search').addEventListener('input', renderProjects);
+    $('#overlay').addEventListener('click', event => { if (event.target === $('#overlay')) $('#overlay').hidden = true; });
+    renderProjects();
+    renderWorkspace();
+    renderContext();
+  </script>
+</body>
+</html>
