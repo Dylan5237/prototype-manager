@@ -127,6 +127,12 @@
 5. **状态词典**：前后端共用任务、候选、签出、预览和权限状态的显示映射，错误码保留机器可读值。
 6. **可访问性**：菜单树、抽屉、预览 iframe、状态标签提供键盘焦点、可读名称和非颜色提示；不以色彩作为唯一状态信息。
 
+### 6.1 已落地的首批增量（2026-09-01）
+
+- 项目工作台和全屏项目预览已统一为：无有效深链接时，固定打开菜单配置顺序中的第一个已绑定菜单；有效 `prototypeId/menuPath` 深链接优先。
+- 项目列表 API 已返回 `prototype_count`、`pending_candidate_count`（仅 `ready`）和 `last_activity_at`，卡片展示绑定原型、待确认候选和最近活动。
+- 配套 `prototype-manager-skills` 未修改；以上字段和默认入口不改变 Skill、ZIP、runtime/profile 或 MCP 契约。
+
 ## 7. 跨仓边界
 
 本阶段只改 FuxiPlatform 的页面、API 聚合和测试。`prototype-manager-skills` 暂不修改，理由是当前 IA 不改变 Skill 入口、生成规范、runtime/profile、ZIP 分发、安装流程或 MCP 工具 schema。若后续把“项目任务字段、项目上下文或时间线”写入 Skill/MCP 请求契约，必须停止单仓实现，重新做两仓设计、分别提交和绑定验收证据。

@@ -47,7 +47,15 @@ function createProject({ name, description, menuConfig, createdBy }) {
 
 function getProjects({ keyword, createdBy } = {}) {
   let sql = `
-    SELECT p.*, u.nickname as creator_name
+    SELECT p.*, u.nickname as creator_name,
+      (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id) AS prototype_count,
+      (SELECT COUNT(*) FROM prototype_changes c
+        WHERE c.project_id = p.id AND c.status = 'ready') AS pending_candidate_count,
+      COALESCE(
+        (SELECT MAX(e.occurred_at) FROM usage_events e
+          WHERE e.resource_type = 'project' AND e.resource_id = p.id),
+        p.updated_at
+      ) AS last_activity_at
     FROM projects p
     LEFT JOIN users u ON p.created_by = u.id
     WHERE p.deleted_at IS NULL

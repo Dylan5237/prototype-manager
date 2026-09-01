@@ -50,7 +50,11 @@
         <p class="card-desc">{{ project.description || '暂无描述' }}</p>
         <div class="card-meta">
           <span>创建者：{{ project.creator_name || project.created_by }}</span>
-          <span>{{ formatDate(project.created_at) }}</span>
+          <span class="card-summary">
+            <span>原型 {{ project.prototype_count ?? 0 }}</span>
+            <span :class="{ 'has-pending': project.pending_candidate_count > 0 }">待确认 {{ project.pending_candidate_count ?? 0 }}</span>
+          </span>
+          <span>最近活动：{{ formatDate(project.last_activity_at || project.updated_at) }}</span>
         </div>
         <div class="card-actions">
           <el-button type="primary" @click="goProject(project.id)">进入项目</el-button>
@@ -206,6 +210,14 @@ function formatDate(str) {
   font-size: 12px;
   color: #718096;
   margin-bottom: 16px;
+}
+.card-summary {
+  display: flex;
+  gap: 12px;
+}
+.card-summary .has-pending {
+  color: #b7791f;
+  font-weight: 600;
 }
 .card-actions {
   display: flex;
