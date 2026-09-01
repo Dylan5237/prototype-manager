@@ -8,14 +8,14 @@
 
 | 项目 | 值 |
 |---|---|
-| Platform release source | `31004aa56fcd950a38c2cd0ae456cf304bdf0573` |
+| Platform release source | `3b37e2d915e976a3eaa59178181af74ee0ca9986` |
 | MCP 行为修复 | `d2c368f`（项目绑定更新先校验签出） |
 | 项目列表分页/筛选 | `b4d5d0f` |
 | 绑定选择器服务端搜索 | `5b52785`、`80ac1f9` |
 | Skill HEAD | `20973174e0c05fbd6ee6ffada808c80a0f5ccfa4`（本阶段未修改） |
-| 16077 release | `20260901-174116-31004aa5` |
-| release SHA-256 | `363b58bfed60ef2832ff2085e079e89aed5a7a1cfa29765ce0ccbda648aacae9` |
-| 16077 备份 | `20260901-174255-pre-test-20260901-174116-31004aa5` |
+| 16077 release | `20260901-174956-3b37e2d9` |
+| release SHA-256 | `cda1aa7ae94cc0a65ce994abaf96273b04e7d4f34ee39cb91a3bd1de0fe0a91e` |
+| 16077 备份 | `20260901-175120-pre-test-20260901-174956-3b37e2d9` |
 
 ## 2. 本地自动化门禁
 
