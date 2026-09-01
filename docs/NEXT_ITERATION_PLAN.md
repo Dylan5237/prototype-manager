@@ -441,4 +441,4 @@
 5. 建立性能/质量基线脚本和报告格式。
 6. 完成阶段 20 总体验收，再决定是否进入阶段 21。
 
-阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；下一实施入口为阶段 22 项目模块 2.0（包含 BL-007 管理员全量原型只读预览）。
+阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；BL-007 主目标已收口，下一实施入口为阶段 22.1 项目模块低保真 IA，草案见 [PHASE22_PROJECT_MODULE_IA.md](PHASE22_PROJECT_MODULE_IA.md)。
