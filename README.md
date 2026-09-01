@@ -157,6 +157,7 @@ npm run test:remote-update
 - [`docs/NEXT_ITERATION_PLAN.md`](docs/NEXT_ITERATION_PLAN.md)：阶段 20～24 的实施范围、跨仓边界、验收条件和人工决策点。
 - [`docs/PHASE20_EVIDENCE.md`](docs/PHASE20_EVIDENCE.md)：阶段 20 的实现、测试、性能、16077 发布与真实页面验收证据。
 - [`docs/PHASE21_EVIDENCE.md`](docs/PHASE21_EVIDENCE.md)：阶段 21 的双仓远端、分支、tag、worktree 与残留治理证据。
+- [`docs/PHASE24_LOCAL_UPLOAD_BASELINE.md`](docs/PHASE24_LOCAL_UPLOAD_BASELINE.md)：本地临时 SQLite/Express 写入型上传预备基线的运行方式与验收边界。
 - [`mcp-server/README.md`](mcp-server/README.md)：MCP 配置、30 个工具、统一结果和本地验证。
 - [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)：平台边界、数据模型、交付与运行约束。
 - [`docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md`](docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md)：当前轻协作 MVP 的产品决策和验收边界。

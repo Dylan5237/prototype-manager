@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 
 const DATA_FILE = path.join(__dirname, '../data/prototypes.json');
-const REPOS_DIR = path.join(__dirname, '../repos');
-const UPLOADS_DIR = path.join(__dirname, '../uploads');
+// 默认仍使用后端工作目录；隔离测试可显式覆盖，避免测试写入真实 repos/uploads。
+const REPOS_DIR = path.resolve(process.env.FUXI_REPOS_DIR || path.join(__dirname, '../repos'));
+const UPLOADS_DIR = path.resolve(process.env.FUXI_UPLOADS_DIR || path.join(__dirname, '../uploads'));
 
 function loadPrototypes() {
   if (!fs.existsSync(DATA_FILE)) {

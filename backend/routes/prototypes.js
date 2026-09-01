@@ -17,7 +17,7 @@ const {
   createShareLink, getShareLinkByCode, findShareLink
 } = require('../services/db-prototypes');
 const { getPrototypeProjectBinding } = require('../services/db-projects');
-const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
+const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, REPOS_DIR, UPLOADS_DIR,
   saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions, moveDirectory
 } = require('../services/storage');
 
@@ -277,10 +277,20 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
   if (!req.body.versionNote || !req.body.versionNote.trim()) {
     return res.status(400).json({ success: false, message: '版本描述不能为空' });
   }
+
+  // 先确认请求体确实是可读取的 ZIP。否则旧流程会先保存当前版本，
+  // 再在解压时失败，留下没有对应新内容的正式版本记录。
+  try {
+    const uploadedZip = new AdmZip(req.file.path);
+    uploadedZip.getEntries();
+  } catch (error) {
+    try { fs.unlinkSync(req.file.path); } catch (cleanupError) { /* 临时文件会由后续清理处理 */ }
+    return res.status(400).json({ success: false, message: `ZIP 文件无效: ${error.message}` });
+  }
   
   try {
     // 保存当前版本到历史
-    const repoDir = path.join(__dirname, '../repos', prototype.id);
+    const repoDir = path.join(REPOS_DIR, prototype.id);
     let versionsBackupDir = null;
     if (fs.existsSync(repoDir)) {
       const latestVersion = getLatestVersionNumber(prototype.id);
@@ -302,7 +312,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
       // 备份versions目录，防止removeRepoDir删除它
       const versionsDir = path.join(repoDir, 'versions');
       if (fs.existsSync(versionsDir)) {
-        versionsBackupDir = path.join(__dirname, '../uploads', `versions_backup_${prototype.id}_${Date.now()}`);
+        versionsBackupDir = path.join(UPLOADS_DIR, `versions_backup_${prototype.id}_${Date.now()}`);
         moveDirectory(versionsDir, versionsBackupDir);
       }
     }
@@ -325,7 +335,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
     let items = fs.readdirSync(repoDir, { withFileTypes: true });
     if (items.length === 1 && items[0].isDirectory()) {
       const nestedDir = path.join(repoDir, items[0].name);
-      const tempDir = path.join(__dirname, '../uploads', `temp_${prototype.id}`);
+      const tempDir = path.join(UPLOADS_DIR, `temp_${prototype.id}`);
       fs.renameSync(nestedDir, tempDir);
       fs.rmSync(repoDir, { recursive: true });
       fs.renameSync(tempDir, repoDir);
@@ -336,7 +346,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
           const subDir = path.join(repoDir, item.name);
           if (findEntryFile(subDir)) {
             // 将该子目录的内容提升到repoDir（构建产物优先覆盖根目录文件）
-            const tempDir = path.join(__dirname, '../uploads', `temp_flat_${Date.now()}`);
+            const tempDir = path.join(UPLOADS_DIR, `temp_flat_${Date.now()}`);
             fs.mkdirSync(tempDir, { recursive: true });
             // 先移动根目录的其他文件（除要提升的子目录外）
             for (const other of items) {
