@@ -50,13 +50,13 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 
 - 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`，GitHub `origin` 不作为生产来源。
 - 阶段 20 已快进到本地 `main` 并完成 16077 release `20260830-092500-adf7ea7f` 验收；阶段 21 安全同步已完成，阶段 22 项目模块首批增量已部署测试环境，尚未部署 16088。
-- 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 当前测试 release 为 `20260901-182503-da787bef`，健康 200、bootstrap 未授权 401、认证 API 回读和 10 次只读基线通过。
+- 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 当前测试 release 为 `20260901-190258-3d81476a`，健康 200、bootstrap 未授权 401、认证 API 回读和预览 iframe 浏览器复测通过。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
 - 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
 - 不写凭证、密码或长期 token 进仓库或文档。
 - 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；GitLab Provider 真实环境验收已废弃，默认继续使用无 Git 轻协作，详见 `docs/BACKLOG.md`。
 - 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
-- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选、绑定选择器服务端搜索分页和 MCP 签出门禁修复；真实浏览器验收、组件拆分和端到端性能样本仍待完成，详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/prototypes/project-module-2-0/index.html`。
+- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选、绑定选择器服务端搜索分页、MCP 签出门禁和预览 ResizeObserver 误报修复；目标项目的真实浏览器入口/iframe 复测已通过，完整角色路径、组件拆分和端到端性能样本仍待完成，详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/prototypes/project-module-2-0/index.html`。
 - 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
 
 ## 测试环境部署约定
