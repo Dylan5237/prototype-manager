@@ -4,7 +4,7 @@ const AdmZip = require('adm-zip');
 const path = require('path');
 const fs = require('fs');
 const router = express.Router();
-const { requireAuth, requireRole, generateShareToken } = require('../middleware/auth');
+const { requireAuth, requireRole, generateShareToken, isAdminUser } = require('../middleware/auth');
 const { findUserByUsername, initGuestUser } = require('../services/db-users');
 const crypto = require('crypto');
 const {
@@ -29,7 +29,7 @@ const { recordUsageEvent, normalizeSource } = require('../services/usage-events'
 
 // 辅助函数：判断当前用户是否为管理员
 function isAdmin(req) {
-  return req.user.roles && req.user.roles.includes('admin');
+  return isAdminUser(req.user);
 }
 
 function requestSource(req) {
@@ -38,14 +38,14 @@ function requestSource(req) {
 
 // 判断用户是否为原型的协作者（拥有读写权限）
 function isCollaborator(req, prototypeId) {
-  return getSharedUserIds(prototypeId).includes(req.user.id);
+  return getSharedUserIds(prototypeId).some(userId => Number(userId) === Number(req.user.id));
 }
 
 // 是否有权访问原型（查看/预览/下载/统计）
 function canAccessPrototype(req, prototype) {
-  if (isAdmin(req) || prototype.created_by === req.user.id || isCollaborator(req, prototype.id)) return true;
-  // 已登录的普通用户（viewer/uploader）可通过分享链接访问任意原型
-  return req.user.roles.some(r => ['viewer', 'uploader'].includes(r));
+  if (!req.user || !prototype || prototype.deleted_at) return false;
+  if (isAdmin(req) || Number(prototype.created_by) === Number(req.user.id) || isCollaborator(req, prototype.id)) return true;
+  return false;
 }
 
 // 是否有权编辑原型（修改/上传/版本管理/删除/协作）
@@ -395,6 +395,9 @@ router.get('/:id/versions', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
   const versions = getVersions(req.params.id);
   res.json({ success: true, data: versions });
 });
@@ -667,6 +670,9 @@ router.get('/:id/content/*', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
   
   const filePath = req.params[0];
   const fullPath = path.join(__dirname, '../repos', prototype.id, filePath);
@@ -694,6 +700,9 @@ router.get('/:id/readme', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
   }
   
   const readme = getReadme(prototype.id);
@@ -840,6 +849,9 @@ router.get('/:id/comments', requireAuth, (req, res) => {
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
   }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
   const comments = getComments(req.params.id);
   res.json({ success: true, data: comments });
 });
@@ -849,6 +861,9 @@ router.post('/:id/comments', requireAuth, (req, res) => {
   const prototype = getPrototypeById(req.params.id);
   if (!prototype) {
     return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
   }
   const { content, images, parentId } = req.body;
   if (!content || content.trim() === '') {
@@ -902,6 +917,13 @@ router.delete('/:id/comments/:commentId', requireAuth, (req, res) => {
 
 // 上传评论图片
 router.post('/:id/comments/images', requireAuth, commentImageUpload.single('file'), (req, res) => {
+  const prototype = getPrototypeById(req.params.id);
+  if (!prototype) {
+    return res.status(404).json({ success: false, message: '原型不存在' });
+  }
+  if (!canAccessPrototype(req, prototype)) {
+    return res.status(403).json({ success: false, message: '无权访问该原型' });
+  }
   if (!req.file) {
     return res.status(400).json({ success: false, message: '没有上传图片' });
   }

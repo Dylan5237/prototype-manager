@@ -3,16 +3,32 @@ const jwt = require('jsonwebtoken');
 const JWT_SECRET = process.env.JWT_SECRET || 'nvwa-secret-key-change-in-production';
 const PREVIEW_COOKIE_NAME = 'fuxi_token';
 
-function generateToken(user, options = {}) {
-  // user.role 可能是 JSON 数组字符串或普通字符串
-  let roles = user.role;
-  if (typeof roles === 'string') {
+function normalizeRoles(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === 'string') {
     try {
-      roles = JSON.parse(roles);
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : (typeof parsed === 'string' ? [parsed] : [value]);
     } catch (e) {
-      roles = [roles];
+      return [value];
     }
   }
+  return [];
+}
+
+function getUserRoles(user) {
+  if (!user) return [];
+  const roles = normalizeRoles(user.roles);
+  return roles.length > 0 ? roles : normalizeRoles(user.role);
+}
+
+function isAdminUser(user) {
+  return getUserRoles(user).some(role => role === 'admin' || role === 'platform_admin');
+}
+
+function generateToken(user, options = {}) {
+  const roles = getUserRoles(user);
   return jwt.sign(
     { id: user.id, username: user.username, roles },
     JWT_SECRET,
@@ -22,14 +38,7 @@ function generateToken(user, options = {}) {
 
 // 生成长期有效的分享 token（用于免登录查看链接）
 function generateShareToken(user) {
-  let roles = user.role;
-  if (typeof roles === 'string') {
-    try {
-      roles = JSON.parse(roles);
-    } catch (e) {
-      roles = [roles];
-    }
-  }
+  const roles = getUserRoles(user);
   return jwt.sign(
     { id: user.id, username: user.username, roles },
     JWT_SECRET,
@@ -104,10 +113,8 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ success: false, message: '登录已过期' });
   }
 
-  // 兼容旧 token：如果没有 roles 字段，从 role 字段构造
-  if (!decoded.roles) {
-    decoded.roles = decoded.role ? [decoded.role] : [];
-  }
+  // 兼容旧 token，并把历史单值 roles 统一为数组，避免字符串 includes 造成误判。
+  decoded.roles = getUserRoles(decoded);
   // 保留 role 字段作为第一个角色（向后兼容）
   decoded.role = decoded.roles[0] || '';
 
@@ -141,7 +148,7 @@ function requireRole(roles) {
     if (!req.user) {
       return res.status(401).json({ success: false, message: '未登录' });
     }
-    const userRoles = req.user.roles || [req.user.role];
+    const userRoles = getUserRoles(req.user);
     const hasRole = roles.some(r => userRoles.includes(r));
     if (!hasRole) {
       return res.status(403).json({ success: false, message: '权限不足' });
@@ -156,6 +163,8 @@ module.exports = {
   verifyToken,
   requireAuth,
   requireRole,
+  normalizeRoles,
+  isAdminUser,
   serializeCookie,
   PREVIEW_COOKIE_NAME
 };

@@ -32,17 +32,28 @@ export const useAuthStore = defineStore('auth', () => {
   const token = ref(localStorage.getItem('token') || '')
   const user = ref(null)
   const isLoggedIn = computed(() => !!token.value)
-  // role 现在是数组，检查是否包含对应角色
+  function normalizeRoles(value) {
+    if (Array.isArray(value)) return value
+    if (!value) return []
+    if (typeof value === 'string') {
+      try {
+        const parsed = JSON.parse(value)
+        if (Array.isArray(parsed)) return parsed
+        if (typeof parsed === 'string') return [parsed]
+      } catch (e) {
+        return [value]
+      }
+    }
+    return []
+  }
+
   const isAdmin = computed(() => {
-    const roles = user.value?.role
-    if (!roles) return false
-    return Array.isArray(roles) ? roles.includes('admin') : roles === 'admin'
+    const roles = normalizeRoles(user.value?.role)
+    return roles.includes('admin') || roles.includes('platform_admin')
   })
   const isEditor = computed(() => {
-    const roles = user.value?.role
-    if (!roles) return false
-    const roleArr = Array.isArray(roles) ? roles : [roles]
-    return roleArr.includes('editor') || roleArr.includes('uploader') || roleArr.includes('admin')
+    const roles = normalizeRoles(user.value?.role)
+    return roles.includes('editor') || roles.includes('uploader') || roles.includes('admin') || roles.includes('platform_admin')
   })
 
   async function login(username, password) {

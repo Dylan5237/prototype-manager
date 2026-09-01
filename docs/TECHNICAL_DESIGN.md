@@ -609,7 +609,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 阶段 17 无 Git 轻协作 MVP 已完成代码和验收；阶段 18 MCP/Skill 延后更新已由用户确认验收。
 - 阶段 20 已完成；BL-003/004 已关闭，BL-006 只保留实际处置决策，详见 [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md) 和 [BACKLOG.md](BACKLOG.md)。
 - 阶段 21 已完成仓库治理与安全同步：FuxiPlatform `main` 已更新 GitLab/GitHub 两端，协作分支与 tag 已按安全方案同步；Skill `main` 已更新 GitLab，两个主 worktree 无未跟踪文件。分支、tag、worktree 和残留处置证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)。
-- 阶段 21 未执行分支/worktree 删除、强制推送、合并或部署；下一实施入口为阶段 22 项目模块 2.0，BL-007 管理员全量原型只读预览尚未实现。
+- 阶段 21 未执行分支/worktree 删除、强制推送、合并或部署；阶段 22 BL-007 已完成平台侧权限实现和本地/API 回归，16077 真实页面验收待执行。
 
 ## 更新规则
 

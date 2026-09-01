@@ -2,7 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const fs = require('fs');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, isAdminUser } = require('../middleware/auth');
 const {
   createProject, getProjects, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
@@ -56,7 +56,7 @@ function sendLightweightError(res, error) {
 
 // 辅助函数
 function isAdmin(req) {
-  return req.user.roles && req.user.roles.includes('admin');
+  return isAdminUser(req.user);
 }
 
 function isProjectOwner(req, project) {

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { generateToken, requireAuth, requireRole } = require('../middleware/auth');
+const { generateToken, requireAuth, requireRole, isAdminUser } = require('../middleware/auth');
 const { createUser, findUserByUsername, findUserById, findUserByIdWithGroups, getAllUsers, updateUser, deleteUser, verifyPassword } = require('../services/db-users');
 const { setGroupMembers } = require('../services/db-groups');
 const { CONNECT_CODE_TTL_MS, createConnectCode, consumeConnectCode, createSession, rotateSession, revokeSession, listSessions } = require('../services/db-mcp-sessions');
@@ -264,14 +264,14 @@ router.post('/mcp/heartbeat', requireAuth, (req, res) => {
 
 // 查看 MCP 连接情况：admin 看全部，普通用户只看自己的。
 router.get('/mcp/sessions', requireAuth, (req, res) => {
-  const isAdmin = (req.user.roles || []).includes('admin');
+  const isAdmin = isAdminUser(req.user);
   const sessions = listSessions(isAdmin ? null : req.user.id);
   res.json({ success: true, data: sessions });
 });
 
 // 撤销一条 MCP 会话：admin 可撤销任意，普通用户只能撤销自己的。
 router.delete('/mcp/sessions/:id', requireAuth, (req, res) => {
-  const isAdmin = (req.user.roles || []).includes('admin');
+  const isAdmin = isAdminUser(req.user);
   const result = revokeSession(req.params.id, isAdmin ? null : req.user.id);
   if (!result.ok) {
     return res.status(result.reason === 'SESSION_NOT_FOUND' ? 404 : 403).json({

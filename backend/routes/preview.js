@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { getPrototypeById, getSharedUserIds } = require('../services/db-prototypes');
 const { recordVisit } = require('../services/db-stats');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, isAdminUser } = require('../middleware/auth');
 const { ACTIONS, AuthorizationService } = require('../services/authorization');
 const {
   DEFAULT_CANDIDATES_ROOT,
@@ -18,9 +18,10 @@ const router = express.Router();
 // 检查当前登录用户是否有权访问原型
 function canAccessPrototype(prototype, user) {
   if (!user) return false;
-  if (user.role === 'admin') return true;
-  if (prototype.created_by === user.id) return true;
-  return getSharedUserIds(prototype.id).includes(user.id);
+  if (!prototype || prototype.deleted_at) return false;
+  if (isAdminUser(user)) return true;
+  if (Number(prototype.created_by) === Number(user.id)) return true;
+  return getSharedUserIds(prototype.id).some(userId => Number(userId) === Number(user.id));
 }
 
 function previewRecoveryScript() {
@@ -149,8 +150,7 @@ function directCandidateDirectory(change) {
 
 function canViewDirectChange(change, user) {
   if (!change || !user) return false;
-  const roles = Array.isArray(user.roles) ? user.roles : [user.role];
-  return roles.includes('admin') || Number(change.created_by) === Number(user.id);
+  return isAdminUser(user) || Number(change.created_by) === Number(user.id);
 }
 
 // 独立原型修改候选预览：仅任务创建者/管理员可见，校验通过后保留为正式版本切换证据。
@@ -224,7 +224,7 @@ router.get('/:id/versions/:v/*.html', requireAuth, (req, res) => {
 // 历史版本静态资源（不需要认证，HTML入口已校验权限）
 router.use('/:id/versions/:v', (req, res, next) => {
   const prototype = getPrototypeById(req.params.id);
-  if (!prototype) {
+  if (!prototype || prototype.deleted_at) {
     return res.status(404).send('原型不存在');
   }
   const versionDir = path.join(__dirname, '../repos', prototype.id, 'versions', req.params.v);
@@ -278,7 +278,7 @@ router.get('/:id/*.html', requireAuth, (req, res) => {
 // 其他静态文件直接服务（不需要认证，HTML入口已校验权限）
 router.use('/:id', (req, res, next) => {
   const prototype = getPrototypeById(req.params.id);
-  if (!prototype) {
+  if (!prototype || prototype.deleted_at) {
     return res.status(404).send('原型不存在');
   }
   express.static(path.join(__dirname, '../repos', prototype.id))(req, res, next);
