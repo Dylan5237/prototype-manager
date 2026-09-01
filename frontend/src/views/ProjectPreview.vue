@@ -52,7 +52,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAuthStore } from '../stores/auth'
 import { getProjectPortal } from '../api/projects'
-import { findFirstBoundMenu } from '../utils/project-menu'
+import { findFirstBoundMenu, normalizeMenuConfigForBindings } from '../utils/project-menu'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -70,7 +70,10 @@ async function loadProject() {
   loading.value = true
   try {
     const res = await getProjectPortal(route.params.id)
-    project.value = res.data.data
+    project.value = {
+      ...res.data.data,
+      menu_config: normalizeMenuConfigForBindings(res.data.data.menu_config, res.data.data.prototypes)
+    }
     // 默认固定选中菜单顺序中的第一个已绑定菜单，避免打开即落到空白菜单。
     const firstBound = findFirstBoundMenu(project.value.menu_config, project.value.prototypes)
     if (firstBound) selectMenu(firstBound.group, firstBound.item)

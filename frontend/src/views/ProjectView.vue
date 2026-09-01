@@ -344,7 +344,7 @@ import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
-import { findFirstBoundMenu } from '../utils/project-menu'
+import { findFirstBoundMenu, normalizeMenuConfigForBindings } from '../utils/project-menu'
 import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
@@ -412,8 +412,11 @@ async function loadProject() {
   loading.value = true
   try {
     const res = await getProject(route.params.id)
-    project.value = res.data.data
-    role.value = res.data.data.role
+    project.value = {
+      ...res.data.data,
+      menu_config: normalizeMenuConfigForBindings(res.data.data.menu_config, res.data.data.prototypes)
+    }
+    role.value = project.value.role
     selectRequestedMenu()
   } catch (err) {
     ElMessage.error('加载项目失败')

@@ -130,6 +130,7 @@
 ### 6.1 已落地的首批增量（2026-09-01）
 
 - 项目工作台和全屏项目预览已统一为：无有效深链接时，固定打开菜单配置顺序中的第一个已绑定菜单；有效 `prototypeId/menuPath` 深链接优先。
+- 对历史项目“已有绑定但 `menu_config` 没有对应路径”的情况，前端仅在内存中补出只读菜单项，再进入第一个绑定；不回写或重排项目数据。
 - 项目列表 API 已返回 `prototype_count`、`pending_candidate_count`（仅 `ready`）和 `last_activity_at`，卡片展示绑定原型、待确认候选和最近活动。
 - 配套 `prototype-manager-skills` 未修改；以上字段和默认入口不改变 Skill、ZIP、runtime/profile 或 MCP 契约。
 
