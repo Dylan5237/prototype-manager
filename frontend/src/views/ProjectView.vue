@@ -65,8 +65,11 @@
             <el-select
               v-model="selectedPrototypeId"
               filterable
+              remote
+              reserve-keyword
               placeholder="选择原型"
               style="width: 320px"
+              :remote-method="handlePrototypeSearch"
               :loading="prototypesLoading"
             >
               <el-option
@@ -78,6 +81,16 @@
             </el-select>
             <el-button type="primary" @click="handleBind" :loading="binding">绑定</el-button>
           </div>
+          <el-pagination
+            v-if="prototypesTotal > prototypesPageSize"
+            class="prototype-pagination"
+            small
+            layout="prev, pager, next"
+            :current-page="prototypesPage"
+            :page-size="prototypesPageSize"
+            :total="prototypesTotal"
+            @current-change="handlePrototypePageChange"
+          />
         </div>
         <div v-else class="preview-panel">
           <div class="preview-toolbar">
@@ -370,8 +383,13 @@ const showMenuDialog = ref(false)
 
 const prototypes = ref([])
 const prototypesLoading = ref(false)
+const prototypesTotal = ref(0)
+const prototypesPage = ref(1)
+const prototypesPageSize = 20
+const prototypeKeyword = ref('')
 const selectedPrototypeId = ref('')
 const binding = ref(false)
+let prototypeSearchTimer = null
 
 const snapshotVisible = ref(false)
 const snapshots = ref([])
@@ -425,16 +443,38 @@ async function loadProject() {
   }
 }
 
-async function loadPrototypes() {
+async function loadPrototypes({ keyword = prototypeKeyword.value, page = prototypesPage.value } = {}) {
   prototypesLoading.value = true
   try {
-    const res = await getPrototypes({})
+    const res = await getPrototypes({
+      keyword,
+      page,
+      pageSize: prototypesPageSize,
+      scope: authStore.isAdmin ? 'all' : 'my'
+    })
     prototypes.value = res.data.data || []
+    prototypesTotal.value = Number(res.data.total || prototypes.value.length)
+    prototypesPage.value = page
+    prototypeKeyword.value = keyword
   } catch (err) {
     ElMessage.error('加载原型列表失败')
   } finally {
     prototypesLoading.value = false
   }
+}
+
+function handlePrototypeSearch(keyword) {
+  const normalized = String(keyword || '').trim()
+  prototypeKeyword.value = normalized
+  prototypesPage.value = 1
+  if (prototypeSearchTimer) clearTimeout(prototypeSearchTimer)
+  prototypeSearchTimer = setTimeout(() => {
+    loadPrototypes({ keyword: normalized, page: 1 })
+  }, 180)
+}
+
+function handlePrototypePageChange(page) {
+  loadPrototypes({ keyword: prototypeKeyword.value, page })
 }
 
 const hasMenu = computed(() => {
@@ -1058,6 +1098,9 @@ function formatDate(row, col, val) {
   display: flex;
   gap: 10px;
   margin-top: 16px;
+}
+.prototype-pagination {
+  margin-top: 14px;
 }
 .preview-panel {
   flex: 1;
