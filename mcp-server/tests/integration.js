@@ -256,6 +256,9 @@ async function main() {
     assert.equal(deliveredCreate.body.status, 'COMPLETE');
     assert.equal(deliveredCreate.body.versionBefore, null);
     assert.equal(deliveredCreate.body.affectedScope, 'target-prototype-only');
+    assert(Object.keys(deliveredCreate.body.timingsMs || {}).includes('VALIDATE'));
+    assert(Object.keys(deliveredCreate.body.timingsMs || {}).includes('UPLOAD'));
+    assert(Object.values(deliveredCreate.body.timingsMs || {}).every(value => Number.isFinite(value) && value >= 0));
     const deliveredCreateReplay = await callTool(mcp, 'deliver_project', {
       mode: 'create',
       idempotencyKey: 'integration-create-0001',
@@ -624,6 +627,8 @@ async function main() {
     });
     assert.equal(projectBoundDelivery.body.affectedScope, 'target-project-binding-only');
     assert(projectBoundDelivery.body.versionAfter > projectBoundDelivery.body.versionBefore);
+    assert(Object.keys(projectBoundDelivery.body.timingsMs || {}).includes('VERIFY_PROJECT_CHECKOUT'));
+    assert(Object.values(projectBoundDelivery.body.timingsMs || {}).every(value => Number.isFinite(value) && value >= 0));
 
     const registerResponse = await fetch(`${apiUrl}/api/auth/register`, {
       method: 'POST',

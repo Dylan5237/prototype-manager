@@ -18,7 +18,7 @@ const {
 } = require('../services/db-prototypes');
 const { getPrototypeProjectBinding } = require('../services/db-projects');
 const { generateId, ensureRepoDir, removeRepoDir, scanFiles, findEntryFile, UPLOADS_DIR,
-  saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions
+  saveCurrentVersion, getDirSizeKb, rollbackVersion, removeVersionDir, cleanupOldVersions, moveDirectory
 } = require('../services/storage');
 
 const { extractReadme } = require('../services/readme-extractor');
@@ -303,7 +303,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
       const versionsDir = path.join(repoDir, 'versions');
       if (fs.existsSync(versionsDir)) {
         versionsBackupDir = path.join(__dirname, '../uploads', `versions_backup_${prototype.id}_${Date.now()}`);
-        fs.renameSync(versionsDir, versionsBackupDir);
+        moveDirectory(versionsDir, versionsBackupDir);
       }
     }
     
@@ -314,7 +314,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
     if (versionsBackupDir && fs.existsSync(versionsBackupDir)) {
       const versionsDest = path.join(newRepoDir, 'versions');
       fs.mkdirSync(path.dirname(versionsDest), { recursive: true });
-      fs.renameSync(versionsBackupDir, versionsDest);
+      moveDirectory(versionsBackupDir, versionsDest);
     }
     
     const zip = new AdmZip(req.file.path);

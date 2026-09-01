@@ -44,6 +44,32 @@ function removeRepoDir(prototypeId) {
   }
 }
 
+// Windows/跨文件系统下目录 rename 可能返回 EPERM/EXDEV；先复制到唯一目标，
+// 再尽力清理源目录，避免版本备份阶段因瞬时文件句柄导致整次上传失败。
+function moveDirectory(source, target) {
+  try {
+    fs.renameSync(source, target);
+    return { method: 'rename', sourceRemoved: true };
+  } catch (error) {
+    if (!['EPERM', 'EXDEV', 'EACCES'].includes(error.code)) throw error;
+    if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+    try {
+      fs.cpSync(source, target, { recursive: true, force: true });
+    } catch (copyError) {
+      if (fs.existsSync(target)) fs.rmSync(target, { recursive: true, force: true });
+      throw copyError;
+    }
+    let sourceRemoved = true;
+    try {
+      fs.rmSync(source, { recursive: true, force: true });
+    } catch (removeError) {
+      // 调用方通常会随后移除整个旧仓库；保留副本比在备份成功后抛错更安全。
+      sourceRemoved = false;
+    }
+    return { method: 'copy', sourceRemoved };
+  }
+}
+
 function scanFiles(dir, basePath = '') {
   const files = [];
   const items = fs.readdirSync(dir, { withFileTypes: true });
@@ -220,6 +246,7 @@ module.exports = {
   getRepoPath,
   ensureRepoDir,
   removeRepoDir,
+  moveDirectory,
   scanFiles,
   findEntryFile,
   copyDirSync,

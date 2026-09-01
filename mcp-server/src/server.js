@@ -3,6 +3,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { performance } = require('node:perf_hooks');
 const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
 
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
@@ -786,6 +787,13 @@ async function deliverProject(args) {
   let uploadApplied = false;
   let validation;
   let existingSnapshot = null;
+  let stageStartedAt = performance.now();
+  const timingsMs = {};
+  const setStage = nextStage => {
+    timingsMs[stage] = Number((performance.now() - stageStartedAt).toFixed(2));
+    stage = nextStage;
+    stageStartedAt = performance.now();
+  };
   try {
     validation = validateZipFile(path.resolve(args.zipPath));
     if (!validation.ok) {
@@ -796,7 +804,7 @@ async function deliverProject(args) {
     // 项目成员可能有项目访问权但没有独立原型读取权；此时应先返回
     // CHECKOUT_REQUIRED，而不是被原型详情接口提前拦截为 PERMISSION_DENIED。
     if (mode === 'project-bound-update') {
-      stage = 'VERIFY_PROJECT_CHECKOUT';
+      setStage('VERIFY_PROJECT_CHECKOUT');
       const [project, me] = await Promise.all([
         authed(`/api/projects/${encodeURIComponent(args.projectId)}`),
         authed('/api/auth/me')
@@ -818,10 +826,10 @@ async function deliverProject(args) {
     }
 
     if (mode === 'create') {
-      stage = 'SNAPSHOT_EXISTING';
+      setStage('SNAPSHOT_EXISTING');
       const before = await authed('/api/prototypes?scope=all&pageSize=10000');
       existingSnapshot = new Map((before.data || []).map(item => [item.id, item.version ?? item.version_number ?? null]));
-      stage = 'CREATE_TARGET';
+      setStage('CREATE_TARGET');
       const created = await authed('/api/prototypes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -829,7 +837,7 @@ async function deliverProject(args) {
       });
       prototypeId = created.data.id;
     } else {
-      stage = 'READ_BEFORE';
+      setStage('READ_BEFORE');
       const before = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}`);
       versionBefore = deliveryVersion(before);
       if (args.expectedVersion !== undefined && versionBefore !== args.expectedVersion) {
@@ -846,7 +854,7 @@ async function deliverProject(args) {
       }
     }
 
-    stage = 'UPLOAD';
+    setStage('UPLOAD');
     const upload = await uploadValidatedZip(prototypeId, args);
     uploadApplied = true;
     validation = upload.validation;
@@ -854,7 +862,7 @@ async function deliverProject(args) {
       throw new ToolError('TEST_READBACK_FAILURE', 'Injected readback failure for integration testing');
     }
 
-    stage = 'READBACK_DETAIL';
+    setStage('READBACK_DETAIL');
     const detail = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}`);
     const versionAfter = deliveryVersion(detail);
     if (mode !== 'create' && (versionAfter === null || versionBefore === null || versionAfter <= versionBefore)) {
@@ -864,16 +872,16 @@ async function deliverProject(args) {
       throw new ToolError('ENTRY_FILE_MISSING', 'Upload readback has no entry file');
     }
 
-    stage = 'READBACK_README';
+    setStage('READBACK_README');
     const readme = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/readme`);
     if (!readme.data) throw new ToolError('README_MISSING', 'Upload readback has no README');
 
-    stage = 'READBACK_PREVIEW';
+    setStage('READBACK_PREVIEW');
     const share = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/public-link`);
     const previewUrl = new URL(share.data.url, `${API_URL}/`).toString();
 
     if (mode === 'create') {
-      stage = 'VERIFY_EXISTING_UNCHANGED';
+      setStage('VERIFY_EXISTING_UNCHANGED');
       const after = await authed('/api/prototypes?scope=all&pageSize=10000');
       const afterMap = new Map((after.data || []).map(item => [item.id, item.version ?? item.version_number ?? null]));
       for (const [id, version] of existingSnapshot) {
@@ -899,6 +907,10 @@ async function deliverProject(args) {
       projectId: args.projectId || null,
       projectPrototypeId: args.projectPrototypeId || null,
       validation,
+      timingsMs: {
+        ...timingsMs,
+        [stage]: Number((performance.now() - stageStartedAt).toFixed(2))
+      },
       stages: ['VALIDATE', mode === 'project-bound-update' ? 'VERIFY_PROJECT_CHECKOUT' : null, mode === 'create' ? 'CREATE_TARGET' : 'READ_BEFORE', 'UPLOAD', 'READBACK_DETAIL', 'READBACK_README', 'READBACK_PREVIEW'].filter(Boolean)
     };
     deliveryCache.set(args.idempotencyKey, { fingerprint, result });
@@ -911,12 +923,26 @@ async function deliverProject(args) {
         prototypeId,
         versionBefore,
         uploadApplied: true,
+        timingsMs: {
+          ...timingsMs,
+          [stage]: Number((performance.now() - stageStartedAt).toFixed(2))
+        },
         causeCode: error.code || 'INTERNAL_ERROR',
         recovery: 'Read back this exact prototypeId before retrying with a new idempotency key'
       });
     }
     if (error instanceof ToolError) {
-      error.details = { stage, mode, prototypeId, uploadApplied: false, ...error.details };
+      error.details = {
+        stage,
+        mode,
+        prototypeId,
+        uploadApplied: false,
+        timingsMs: {
+          ...timingsMs,
+          [stage]: Number((performance.now() - stageStartedAt).toFixed(2))
+        },
+        ...error.details
+      };
     }
     throw error;
   }
