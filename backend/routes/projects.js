@@ -4,7 +4,7 @@ const fs = require('fs');
 const router = express.Router();
 const { requireAuth, isAdminUser } = require('../middleware/auth');
 const {
-  createProject, getProjects, getProjectById, updateProject, softDeleteProject,
+  createProject, getProjectsPage, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
   PrototypeProjectConflictError,
   addProjectMember, getProjectMember, getProjectMembers, removeProjectMember,
@@ -340,15 +340,28 @@ router.post('/:id/changes/:changeId/reject', requireAuth, requireProjectRole('ow
 // 项目列表（自己创建或参与的 + admin 看全部）
 router.get('/', requireAuth, (req, res) => {
   const keyword = req.query.keyword || '';
-  let projects = getProjects({ keyword });
-  if (!isAdmin(req)) {
-    const memberRows = require('../database/db').query(`
-      SELECT project_id FROM project_members WHERE user_id = ?
-    `, [req.user.id]);
-    const memberProjectIds = new Set(memberRows.map(r => r.project_id));
-    projects = projects.filter(p => p.created_by === req.user.id || memberProjectIds.has(p.id));
-  }
-  res.json({ success: true, data: projects });
+  const scope = String(req.query.scope || 'all');
+  const status = String(req.query.status || 'all');
+  const admin = isAdmin(req);
+  const filters = { keyword };
+  if (scope === 'owned') filters.createdBy = req.user.id;
+  else if (scope === 'participating') filters.memberOf = req.user.id;
+  else if (!admin) filters.accessibleBy = req.user.id;
+  if (status === 'pending' || scope === 'pending') filters.pendingOnly = true;
+  const result = getProjectsPage({
+    ...filters,
+    page: req.query.page,
+    pageSize: req.query.pageSize
+  });
+  res.json({
+    success: true,
+    data: result.list,
+    total: result.total,
+    page: result.page,
+    pageSize: result.pageSize,
+    scope,
+    status
+  });
 });
 
 // 创建项目

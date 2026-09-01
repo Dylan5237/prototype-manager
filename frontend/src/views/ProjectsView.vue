@@ -12,12 +12,22 @@
             placeholder="搜索项目"
             clearable
             style="width: 300px"
-            @keyup.enter="loadProjects"
+            @keyup.enter="reloadProjects"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
             </template>
           </el-input>
+          <el-select v-model="scope" style="width: 120px" @change="reloadProjects">
+            <el-option label="全部项目" value="all" />
+            <el-option label="我负责" value="owned" />
+            <el-option label="我参与" value="participating" />
+            <el-option label="有待处理" value="pending" />
+          </el-select>
+          <el-select v-model="status" style="width: 110px" @change="reloadProjects">
+            <el-option label="全部状态" value="all" />
+            <el-option label="待确认" value="pending" />
+          </el-select>
           <el-button text @click="loadProjects">
             <el-icon><Refresh /></el-icon>
             刷新
@@ -64,6 +74,16 @@
       <el-empty v-if="!loading && projects.length === 0" description="暂无项目" />
     </div>
 
+    <el-pagination
+      v-if="total > pageSize"
+      class="projects-pagination"
+      layout="prev, pager, next, total"
+      :current-page="page"
+      :page-size="pageSize"
+      :total="total"
+      @current-change="handlePageChange"
+    />
+
     <ProjectFormDialog v-model:visible="dialogVisible" :project="editingProject" @saved="loadProjects" />
   </div>
 </template>
@@ -81,6 +101,11 @@ const router = useRouter()
 const projects = ref([])
 const loading = ref(false)
 const keyword = ref('')
+const scope = ref('all')
+const status = ref('all')
+const page = ref(1)
+const pageSize = 12
+const total = ref(0)
 const dialogVisible = ref(false)
 const editingProject = ref(null)
 
@@ -89,8 +114,16 @@ onMounted(loadProjects)
 async function loadProjects() {
   loading.value = true
   try {
-    const res = await getProjects({ keyword: keyword.value })
+    const res = await getProjects({
+      keyword: keyword.value,
+      scope: scope.value,
+      status: status.value,
+      page: page.value,
+      pageSize
+    })
     projects.value = res.data.data || []
+    total.value = Number(res.data.total || projects.value.length)
+    page.value = Number(res.data.page || page.value)
   } catch (err) {
     ElMessage.error('加载项目失败')
   } finally {
@@ -175,6 +208,10 @@ function formatDate(str) {
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
 }
+.projects-pagination {
+  justify-content: center;
+  margin-top: 24px;
+}
 .project-card {
   border-radius: 12px;
   transition: transform 0.2s;
@@ -210,6 +247,16 @@ function formatDate(str) {
   font-size: 12px;
   color: #718096;
   margin-bottom: 16px;
+}
+
+function reloadProjects() {
+  page.value = 1
+  loadProjects()
+}
+
+function handlePageChange(nextPage) {
+  page.value = nextPage
+  loadProjects()
 }
 .card-summary {
   display: flex;

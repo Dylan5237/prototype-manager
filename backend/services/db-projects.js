@@ -45,10 +45,11 @@ function createProject({ name, description, menuConfig, createdBy }) {
   return getProjectById(id);
 }
 
-function getProjects({ keyword, createdBy } = {}) {
-  let sql = `
+function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingOnly } = {}) {
+  const selectSql = `
     SELECT p.*, u.nickname as creator_name,
       (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id) AS prototype_count,
+      (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id) AS member_count,
       (SELECT COUNT(*) FROM prototype_changes c
         WHERE c.project_id = p.id AND c.status = 'ready') AS pending_candidate_count,
       COALESCE(
@@ -60,17 +61,52 @@ function getProjects({ keyword, createdBy } = {}) {
     LEFT JOIN users u ON p.created_by = u.id
     WHERE p.deleted_at IS NULL
   `;
+  const countSql = `
+    SELECT COUNT(*) AS total
+    FROM projects p
+    WHERE p.deleted_at IS NULL
+  `;
+  let whereSql = '';
   const params = [];
   if (keyword) {
-    sql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
+    whereSql += ` AND (p.name LIKE ? OR p.description LIKE ?)`;
     params.push(`%${keyword}%`, `%${keyword}%`);
   }
   if (createdBy) {
-    sql += ` AND p.created_by = ?`;
+    whereSql += ` AND p.created_by = ?`;
     params.push(createdBy);
   }
-  sql += ` ORDER BY p.updated_at DESC`;
+  if (memberOf) {
+    whereSql += ` AND EXISTS (SELECT 1 FROM project_members pm_scope WHERE pm_scope.project_id = p.id AND pm_scope.user_id = ?)`;
+    params.push(memberOf);
+  }
+  if (accessibleBy) {
+    whereSql += ` AND (p.created_by = ? OR EXISTS (SELECT 1 FROM project_members pm_scope WHERE pm_scope.project_id = p.id AND pm_scope.user_id = ?))`;
+    params.push(accessibleBy, accessibleBy);
+  }
+  if (pendingOnly) {
+    whereSql += ` AND EXISTS (SELECT 1 FROM prototype_changes c_scope WHERE c_scope.project_id = p.id AND c_scope.status = 'ready')`;
+  }
+  return {
+    sql: `${selectSql}${whereSql} ORDER BY p.updated_at DESC`,
+    countSql: `${countSql}${whereSql}`,
+    params
+  };
+}
+
+function getProjects(options = {}) {
+  const { sql, params } = projectListQuery(options);
   return query(sql, params);
+}
+
+function getProjectsPage(options = {}) {
+  const { sql, countSql, params } = projectListQuery(options);
+  const countRow = queryOne(countSql, params);
+  const total = Number(countRow?.total || 0);
+  const page = Math.max(1, parseInt(options.page, 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(options.pageSize, 10) || 12));
+  const list = query(`${sql} LIMIT ? OFFSET ?`, [...params, pageSize, (page - 1) * pageSize]);
+  return { list, total, page, pageSize };
 }
 
 function getProjectById(id) {
@@ -414,6 +450,7 @@ function deleteSnapshot(snapshotId) {
 module.exports = {
   createProject,
   getProjects,
+  getProjectsPage,
   getProjectById,
   updateProject,
   softDeleteProject,

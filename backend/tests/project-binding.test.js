@@ -8,6 +8,7 @@ const database = require('../database/db');
 const {
   bindPrototype,
   getProjects,
+  getProjectsPage,
   getPrototypeProjectBinding,
   PrototypeProjectConflictError
 } = require('../services/db-projects');
@@ -71,4 +72,32 @@ test('returns project summary fields for the project list', () => {
   assert.equal(project.prototype_count, 1);
   assert.equal(project.pending_candidate_count, 1);
   assert.equal(project.last_activity_at, '2026-08-24T03:00:00.000Z');
+});
+
+test('supports project list scope, pending filter, and pagination', () => {
+  database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [2, 'member', 'hash', '参与者', '["uploader"]', '2026-08-24T00:00:00.000Z']);
+  database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
+    ['project-2', 2, 'editor', '2026-08-24T00:00:00.000Z']);
+  database.run(`
+    INSERT INTO prototype_changes
+      (id, project_id, prototype_id, title, requirement, created_by, branch_name, base_sha, status, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [
+    'pending-project-1', 'project-1', 'prototype-1', '待确认', '需求', 1,
+    'no-git/pending-project-1', 'base-sha', 'ready', '2026-08-24T01:00:00.000Z', '2026-08-24T01:00:00.000Z'
+  ]);
+
+  const paged = getProjectsPage({ createdBy: 1, page: 2, pageSize: 1 });
+  assert.equal(paged.total, 2);
+  assert.equal(paged.list.length, 1);
+  assert.equal(paged.page, 2);
+
+  const participating = getProjectsPage({ memberOf: 2, page: 1, pageSize: 12 });
+  assert.equal(participating.total, 1);
+  assert.equal(participating.list[0].id, 'project-2');
+
+  const pending = getProjectsPage({ pendingOnly: true, page: 1, pageSize: 12 });
+  assert.equal(pending.total, 1);
+  assert.equal(pending.list[0].id, 'project-1');
 });
