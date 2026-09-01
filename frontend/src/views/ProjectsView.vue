@@ -62,6 +62,7 @@
           <span>创建者：{{ project.creator_name || project.created_by }}</span>
           <span class="card-summary">
             <span>原型 {{ project.prototype_count ?? 0 }}</span>
+            <span>成员 {{ project.member_count ?? 0 }}</span>
             <span :class="{ 'has-pending': project.pending_candidate_count > 0 }">待确认 {{ project.pending_candidate_count ?? 0 }}</span>
           </span>
           <span>最近活动：{{ formatDate(project.last_activity_at || project.updated_at) }}</span>
