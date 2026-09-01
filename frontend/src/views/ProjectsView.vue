@@ -131,6 +131,16 @@ async function loadProjects() {
   }
 }
 
+function reloadProjects() {
+  page.value = 1
+  loadProjects()
+}
+
+function handlePageChange(nextPage) {
+  page.value = nextPage
+  loadProjects()
+}
+
 function openCreateDialog() {
   editingProject.value = null
   dialogVisible.value = true
@@ -249,15 +259,6 @@ function formatDate(str) {
   margin-bottom: 16px;
 }
 
-function reloadProjects() {
-  page.value = 1
-  loadProjects()
-}
-
-function handlePageChange(nextPage) {
-  page.value = nextPage
-  loadProjects()
-}
 .card-summary {
   display: flex;
   gap: 12px;
