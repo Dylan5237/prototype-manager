@@ -52,6 +52,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { useAuthStore } from '../stores/auth'
 import { getProjectPortal } from '../api/projects'
+import { findFirstBoundMenu } from '../utils/project-menu'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -70,12 +71,9 @@ async function loadProject() {
   try {
     const res = await getProjectPortal(route.params.id)
     project.value = res.data.data
-    // 默认选中第一个叶子菜单
-    const firstGroup = project.value.menu_config?.items?.[0]
-    const firstItem = firstGroup?.children?.[0]
-    if (firstGroup && firstItem) {
-      selectMenu(firstGroup, firstItem)
-    }
+    // 默认固定选中菜单顺序中的第一个已绑定菜单，避免打开即落到空白菜单。
+    const firstBound = findFirstBoundMenu(project.value.menu_config, project.value.prototypes)
+    if (firstBound) selectMenu(firstBound.group, firstBound.item)
   } catch (err) {
     ElMessage.error('加载项目失败')
   } finally {

@@ -344,6 +344,7 @@ import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
+import { findFirstBoundMenu } from '../utils/project-menu'
 import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
@@ -482,7 +483,15 @@ function selectRequestedMenu() {
     return Boolean(requestedPrototypeId || requestedMenuPath)
   })
   const target = findMenuByPath(requestedBinding?.menu_path || requestedMenuPath)
-  if (target) selectMenu(target.group, target.item)
+  if (target) {
+    selectMenu(target.group, target.item)
+    return
+  }
+
+  // 无有效深链接时固定打开菜单配置顺序中的第一个已绑定菜单。
+  // 深链接失效时也回退到同一默认入口，避免落在空白工作区。
+  const firstBound = findFirstBoundMenu(project.value.menu_config, project.value.prototypes)
+  if (firstBound) selectMenu(firstBound.group, firstBound.item)
 }
 
 const activePath = computed(() => {
