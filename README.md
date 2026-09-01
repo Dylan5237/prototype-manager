@@ -2,13 +2,14 @@
 
 伏羲是 AI 生成前端原型的托管、预览、版本和协作控制面，提供 Web 管理界面、后端 API 和面向 Agent 的 MCP Server。它不提供网页代码编辑器；修改由本地 IDE 或已接入的 AI Agent 完成，平台负责交付校验、候选预览、人工采用和版本保护。
 
-## 当前状态（2026-08-30）
+## 当前状态（2026-09-01）
 
 - 管理员使用统计 v1.0 已完成 16077 测试和 16088 正式环境 live verification；当前正式 release 为 `20260828-185117-c1edcab0`，GitHub `origin` 不作为生产来源。
-- 阶段 20 已快进到本地 `main` 并部署 16077 release `20260830-092500-adf7ea7f`；本地提交尚未推送 GitLab/GitHub，16088 仍运行既有生产 release，不包含本轮改动。
+- 阶段 20 已快进到本地 `main` 并部署 16077 release `20260830-092500-adf7ea7f`；阶段 21 已完成本地与远程仓库只读治理；本地 `main` 的阶段 20/21 提交尚未推送 GitLab/GitHub，16088 仍运行既有生产 release。
 - 16077 已完成 release/manifest、PM2/Nginx、认证 API、Skill/MCP 包和真实浏览器页面验收；16088 生产入口保持健康但未进行本轮发布。
 - 当前主流程是“创建/修改原型 → 校验并交付 → 预览/回读”；项目协作使用“任务码 → 候选 ZIP → 独立预览 → 负责人采用/退回 → 基础版本 CAS”闭环。
 - 阶段 20 已完成：BL-003 前端分包和 BL-004 Linux 日志修复已通过 16077 验收，BL-006 只读清理预览和性能基线已交付；实际清理、GitLab 推送和 16088 发布仍是独立人工门禁。
+- 下一实施入口为阶段 22 项目模块 2.0；BL-007 管理员全量原型只读预览已纳入计划，尚未实现。
 
 ## 快速访问
 
@@ -155,6 +156,7 @@ npm run test:remote-update
 
 - [`docs/NEXT_ITERATION_PLAN.md`](docs/NEXT_ITERATION_PLAN.md)：阶段 20～24 的实施范围、跨仓边界、验收条件和人工决策点。
 - [`docs/PHASE20_EVIDENCE.md`](docs/PHASE20_EVIDENCE.md)：阶段 20 的实现、测试、性能、16077 发布与真实页面验收证据。
+- [`docs/PHASE21_EVIDENCE.md`](docs/PHASE21_EVIDENCE.md)：阶段 21 的双仓远端、分支、tag、worktree 与残留治理证据。
 - [`mcp-server/README.md`](mcp-server/README.md)：MCP 配置、30 个工具、统一结果和本地验证。
 - [`docs/TECHNICAL_DESIGN.md`](docs/TECHNICAL_DESIGN.md)：平台边界、数据模型、交付与运行约束。
 - [`docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md`](docs/prototypes/lightweight-collaboration-mvp/DESIGN_SUMMARY.md)：当前轻协作 MVP 的产品决策和验收边界。

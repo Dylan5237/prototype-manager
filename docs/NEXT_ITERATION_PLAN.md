@@ -8,7 +8,7 @@
 >
 > Skill 仓库：`D:\_projects\skills\prototype-manager-skills`
 >
-> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；GitLab 推送、BL-006 实际清理和 16088 发布仍需独立确认
+> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成只读仓库治理；GitLab 推送、BL-006 实际清理和 16088 发布仍需独立确认
 >
 > 需求增补：2026-09-01 纳入 BL-007「管理员全量原型只读预览」，计划在阶段 22 实施；当前尚未实现或验收
 
@@ -28,8 +28,9 @@
 
 ### 2.1 仓库状态
 
-- FuxiPlatform 本地 `main` 与 `zoesoftgitlab/main` 均为 `c1edcab`，侧栏与项目页布局改版已经推送 GitLab。
-- `prototype-manager-skills` 本地 `main` 与 `zoesoftgitlab/main` 均为 `20d9d69`。
+- FuxiPlatform 本地 `main` 跟踪 `zoesoftgitlab/main` @ `c1edcab`；阶段 20/21 的本地提交尚未推送，本阶段审计采样时领先 11 个提交。
+- GitHub `origin/master` @ `3809a00`、`origin/feature/project-collaboration` @ `aaa0d5b`，与 GitLab 主线分开保留，不自动同步。
+- `prototype-manager-skills` 本地 `main` 与 `zoesoftgitlab/main` 均为 `20d9d69`，已设置 upstream 跟踪；本地 `master` 仅为同提交兼容别名。
 - GitHub `origin` 不是伏羲生产源码来源，与 GitLab 主线存在历史分叉，不自动同步或合并。
 - GitLab 仍存在历史 `feature/project-collaboration` 分支；它不再是当前轻协作主线，处置前需要刷新引用并生成清理预览。
 - 平台工作区存在未跟踪的 `linux-server-ops-behavior-report.md`，需要判断归档位置，不能未经确认直接删除或提交。
@@ -136,6 +137,10 @@
 
 ## 5. 阶段 21：本地与远程仓库治理
 
+状态：`done`（2026-09-01；只读审计、远端刷新、分支/文件处置预览；未删除、未推送、未部署）
+
+执行证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)。
+
 ### 5.1 阶段目标
 
 让平台和 Skill 两套仓库各自只有一个明确主线、一个明确生产来源和一份可解释的历史分支清单，不通过强制同步破坏历史。
@@ -160,19 +165,20 @@
 
 ### 5.4 验收条件
 
-- [ ] 两个仓库均已刷新远端引用，审计结果使用真实远端状态而非陈旧 remote-tracking 引用。
-- [ ] FuxiPlatform 本地 `main` 明确跟踪 `zoesoftgitlab/main`，不跟踪 GitHub `master`。
-- [ ] Skill 本地 `main` 明确跟踪其 `zoesoftgitlab/main`。
-- [ ] 每个本地/远端分支和 tag 都有保留、归档、删除候选或待判断结论。
-- [ ] 不存在把 GitHub 历史分支自动合并或推送到 GitLab `main` 的操作。
-- [ ] 所有实际删除都有用户针对清单的明确确认，并记录删除对象和可恢复性。
-- [ ] 两个仓库最终 `git status --short` 中没有无法解释的临时产物。
-- [ ] README、AGENTS 和技术文档中的主线/远端说明与实际仓库一致。
+- [x] 两个仓库均已刷新远端引用，审计结果使用 `git ls-remote` 核对真实远端状态。
+- [x] FuxiPlatform 本地 `main` 明确跟踪 `zoesoftgitlab/main`，不跟踪 GitHub `master`。
+- [x] Skill 本地 `main` 明确跟踪其 `zoesoftgitlab/main`。
+- [x] 每个本地/远端分支和 tag 都有保留、归档、删除候选或待判断结论。
+- [x] 不存在把 GitHub 历史分支自动合并或推送到 GitLab `main` 的操作。
+- [x] 本阶段未执行删除；任何后续删除都必须有用户针对清单的明确确认，并记录删除对象和可恢复性。
+- [x] 未跟踪报告、detached worktree 和忽略目录均已解释；无无法解释的临时产物。
+- [x] README、AGENTS 和技术文档中的主线/远端说明与实际仓库一致。
 
 ### 5.5 人工决策点
 
+- 是否将本地 `main` 的 11 个提交推送到 `zoesoftgitlab/main`。
 - GitHub `origin` 是继续保留为历史只读、迁移为镜像，还是后续移除。
-- 历史协作、测试部署和生产发布分支是否删除。
+- 历史协作、测试部署、生产发布分支、detached worktree 和 Skill `master` 是否归档/删除。
 - 未跟踪行为报告的最终归档位置。
 
 ## 6. 阶段 22：伏羲平台项目模块 2.0
@@ -435,3 +441,5 @@
 4. 生成 BL-006 清理预览，不删除。
 5. 建立性能/质量基线脚本和报告格式。
 6. 完成阶段 20 总体验收，再决定是否进入阶段 21。
+
+阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；下一实施入口为阶段 22 项目模块 2.0（包含 BL-007 管理员全量原型只读预览）。
