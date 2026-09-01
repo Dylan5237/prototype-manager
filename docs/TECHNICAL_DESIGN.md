@@ -608,7 +608,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 16077 当前 release 为 `20260830-092500-adf7ea7f`，platform commit `adf7ea7`、Skill commit `20d9d69`；manifest、PM2/Nginx、认证 API、Skill/MCP 包和真实浏览器页面均已验收。
 - 阶段 17 无 Git 轻协作 MVP 已完成代码和验收；阶段 18 MCP/Skill 延后更新已由用户确认验收。
 - 阶段 20 已完成；BL-003/004 已关闭，BL-006 只保留实际处置决策，详见 [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md) 和 [BACKLOG.md](BACKLOG.md)。
-- 阶段 21 已完成只读仓库治理：FuxiPlatform 本地 `main` 跟踪 GitLab `main` @ `c1edcab`（审计采样时领先 11 个提交）；Skill 本地 `main` @ `20d9d69` 与 GitLab `main` 同步并已设置 upstream。分支、tag、worktree 和残留处置预览见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)。
+- 阶段 21 已完成只读仓库治理：FuxiPlatform 本地 `main` 跟踪 GitLab `main` @ `c1edcab`（审计采样时领先 11 个提交）；Skill 本地 `main` 已设置 upstream 跟踪 GitLab `main`，审计采样时双方为 `20d9d69`，随后规则修正提交尚未推送。分支、tag、worktree 和残留处置预览见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)。
 - 阶段 21 未执行删除、合并、推送或部署；下一实施入口为阶段 22 项目模块 2.0，BL-007 管理员全量原型只读预览尚未实现。
 
 ## 更新规则

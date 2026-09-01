@@ -30,7 +30,7 @@
 
 - FuxiPlatform 本地 `main` 跟踪 `zoesoftgitlab/main` @ `c1edcab`；阶段 20/21 的本地提交尚未推送，本阶段审计采样时领先 11 个提交。
 - GitHub `origin/master` @ `3809a00`、`origin/feature/project-collaboration` @ `aaa0d5b`，与 GitLab 主线分开保留，不自动同步。
-- `prototype-manager-skills` 本地 `main` 与 `zoesoftgitlab/main` 均为 `20d9d69`，已设置 upstream 跟踪；本地 `master` 仅为同提交兼容别名。
+- `prototype-manager-skills` 本地 `main` 已设置 upstream 跟踪 `zoesoftgitlab/main`；审计采样时双方均为 `20d9d69`，随后本地规则修正提交尚未推送；本地 `master` 仍为同一历史提交的兼容别名。
 - GitHub `origin` 不是伏羲生产源码来源，与 GitLab 主线存在历史分叉，不自动同步或合并。
 - GitLab 仍存在历史 `feature/project-collaboration` 分支；它不再是当前轻协作主线，处置前需要刷新引用并生成清理预览。
 - 平台工作区存在未跟踪的 `linux-server-ops-behavior-report.md`，需要判断归档位置，不能未经确认直接删除或提交。
