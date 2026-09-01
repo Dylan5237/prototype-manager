@@ -745,9 +745,13 @@ async function uploadValidatedZip(prototypeId, args) {
   if (!validation.ok) {
     throw new ToolError('VALIDATION_FAILED', validation.errors.join('; ') || 'ZIP validation failed', { stage: 'VALIDATE' });
   }
-  const bytes = fs.readFileSync(zipPath);
   const form = new FormData();
-  form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+  // Node 19.8+ 可将文件作为惰性 Blob 交给 undici，避免上传前再次复制整份 ZIP；
+  // Node 18 保留原有 Blob(Buffer) 回退，维持当前最低运行时兼容性。
+  const fileBlob = typeof fs.openAsBlob === 'function'
+    ? await fs.openAsBlob(zipPath, { type: 'application/zip' })
+    : new Blob([fs.readFileSync(zipPath)], { type: 'application/zip' });
+  form.set('file', fileBlob, path.basename(zipPath));
   form.set('versionNote', args.versionNote);
   form.set('versionType', args.versionType || 'patch');
   const uploaded = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/upload`, {
