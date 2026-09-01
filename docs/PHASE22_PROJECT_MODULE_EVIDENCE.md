@@ -8,14 +8,14 @@
 
 | 项目 | 值 |
 |---|---|
-| Platform release source | `3b37e2d915e976a3eaa59178181af74ee0ca9986` |
+| Platform release source | `da787bef51c18e356c62c12653c3ba9c48f79ec9` |
 | MCP 行为修复 | `d2c368f`（项目绑定更新先校验签出） |
 | 项目列表分页/筛选 | `b4d5d0f` |
 | 绑定选择器服务端搜索 | `5b52785`、`80ac1f9` |
-| Skill HEAD | `20973174e0c05fbd6ee6ffada808c80a0f5ccfa4`（本阶段未修改） |
-| 16077 release | `20260901-174956-3b37e2d9` |
-| release SHA-256 | `cda1aa7ae94cc0a65ce994abaf96273b04e7d4f34ee39cb91a3bd1de0fe0a91e` |
-| 16077 备份 | `20260901-175120-pre-test-20260901-174956-3b37e2d9` |
+| Skill HEAD | `677200b4f4c721dccae9d14233d859591ca52cce`（质量门禁已纳入） |
+| 16077 release | `20260901-182503-da787bef` |
+| release SHA-256 | `aa93b0aeebaa58abd146eb273234fa1bc62c65d44d4a1ce770606cbbf48a1bfe` |
+| 16077 备份 | `20260901-182620-pre-test-20260901-182503-da787bef` |
 
 ## 2. 本地自动化门禁
 
@@ -34,6 +34,7 @@
 - 项目列表 `total/page/pageSize` 存在；原型列表 `scope=all&page=1&pageSize=20` 返回分页总数字段。
 - 项目详情均为 `200`；含菜单配置路径的项目计算出的第一个已绑定路径为 `group_1782383481579/item_1782383489815`。
 - 两个历史项目的原始 API `menu_config` 为空但存在 `menu_path=acceptance/lightweight` 绑定；前端内存兼容层会合成只读菜单项，不回写项目数据。
+- 工作台头部和左侧菜单已拆为 `ProjectHeader`/`ProjectNavigation`，菜单支持键盘焦点、Enter/Space 选择。
 
 ## 4. 尚未宣称完成的门
 

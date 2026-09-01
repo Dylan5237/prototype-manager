@@ -321,6 +321,12 @@
 - 上下文加载与缓存效率报告。
 - 项目任务到 Skill 交付的端到端验收记录。
 
+### 7.3.1 已完成的可测增量（2026-09-01）
+
+- Skill 新增 `scripts/quality-gate.cjs`，结构化检查 README/profile、入口、资源引用和部署路径；资源/契约问题返回 `FAIL`，缺少真实构建、视觉或组件证据返回 `UNVERIFIED`。
+- 质量门禁失败回放覆盖资源缺失、绝对路径、profile/spec 冲突和 implementation-proof 组件缺口；Skill 回归为 `55/55`，静态规范 `PASS`，能力缓存来源扩展到 17 项并 `CACHE_VALID`。
+- 该门禁不生成或伪造 AI 原型质量结果；Element Plus/SkyUI/静态 HTML 黄金样例和真实生成/截图/回读仍需真实 Agent 任务补齐。
+
 ### 7.4 验收条件
 
 - [ ] Element Plus、SkyUI、静态 HTML 至少各有一个可重复执行的黄金样例。
