@@ -327,6 +327,7 @@
 - 质量门禁失败回放覆盖资源缺失、绝对路径、profile/spec 冲突和 implementation-proof 组件缺口；Skill 回归为 `55/55`，静态规范 `PASS`，能力缓存来源扩展到 17 项并 `CACHE_VALID`。
 - 该门禁不生成或伪造 AI 原型质量结果；Element Plus/SkyUI/静态 HTML 黄金样例和真实生成/截图/回读仍需真实 Agent 任务补齐。
 - 已建立 `examples/golden/` 三个可重复结构样例和 `run-golden-samples.cjs` 批量报告；三例结构检查均 `PASS`，整体保留 `UNVERIFIED`（构建、视觉、真实 Agent 生成仍未执行）。
+- 阶段 22 另修复任务操作权限显示错配：非任务创建者的项目 admin/editor 不再看到后端会拒绝的编辑/删除动作，快照/成员管理动作增加 `canManage` 门禁；前端 `3/3`、后端 `55/55`。
 
 ### 7.4 验收条件
 

@@ -56,7 +56,7 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 - 不写凭证、密码或长期 token 进仓库或文档。
 - 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；GitLab Provider 真实环境验收已废弃，默认继续使用无 Git 轻协作，详见 `docs/BACKLOG.md`。
 - 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
-- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选、绑定选择器服务端搜索分页、MCP 签出门禁、预览 ResizeObserver 误报修复和 `ProjectWorkspace` 主内容拆分；目标项目的真实浏览器入口/iframe 复测已通过，完整角色路径、任务/成员/快照职责拆分和端到端性能样本仍待完成。阶段 24 已增加本地写入型 multipart 预备基线；详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/PHASE24_LOCAL_UPLOAD_BASELINE.md`。
+- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选、绑定选择器服务端搜索分页、MCP 签出门禁、预览 ResizeObserver 误报修复、`ProjectWorkspace` 主内容拆分和任务/成员/快照权限显示对齐；目标项目的真实浏览器入口/iframe 复测已通过，完整角色路径、任务/成员/快照职责拆分和端到端性能样本仍待完成。阶段 24 已增加本地写入型 multipart 预备基线；详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/PHASE24_LOCAL_UPLOAD_BASELINE.md`。
 - 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
 
 ## 测试环境部署约定
