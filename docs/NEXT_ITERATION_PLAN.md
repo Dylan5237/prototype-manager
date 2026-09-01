@@ -326,10 +326,11 @@
 - Skill 新增 `scripts/quality-gate.cjs`，结构化检查 README/profile、入口、资源引用和部署路径；资源/契约问题返回 `FAIL`，缺少真实构建、视觉或组件证据返回 `UNVERIFIED`。
 - 质量门禁失败回放覆盖资源缺失、绝对路径、profile/spec 冲突和 implementation-proof 组件缺口；Skill 回归为 `55/55`，静态规范 `PASS`，能力缓存来源扩展到 17 项并 `CACHE_VALID`。
 - 该门禁不生成或伪造 AI 原型质量结果；Element Plus/SkyUI/静态 HTML 黄金样例和真实生成/截图/回读仍需真实 Agent 任务补齐。
+- 已建立 `examples/golden/` 三个可重复结构样例和 `run-golden-samples.cjs` 批量报告；三例结构检查均 `PASS`，整体保留 `UNVERIFIED`（构建、视觉、真实 Agent 生成仍未执行）。
 
 ### 7.4 验收条件
 
-- [ ] Element Plus、SkyUI、静态 HTML 至少各有一个可重复执行的黄金样例。
+- [ ] Element Plus、SkyUI、静态 HTML 至少各有一个可重复执行且能代表真实业务的黄金样例（当前仅有结构预备样例）。
 - [ ] alignment 和 implementation-proof 均有独立验收，不混用质量口径。
 - [ ] 每个样例都保留需求、profile、构建、截图、质量检查、ZIP 校验和平台回读证据。
 - [ ] 质量门禁可以稳定发现资源缺失、入口错误、profile 冲突、布局溢出和交互控件不合规。
@@ -383,6 +384,7 @@
 - 本地打包基线已扩展为 1/20/80 MB 每档 10 次，共 30 次，报告 p50/p95/最大值/失败数；详情见 [PHASE24_LOCAL_BASELINE.md](PHASE24_LOCAL_BASELINE.md)。
 - 16077 已完成健康、项目列表、项目详情、原型分页和 MCP `check_connection` 各 10 次只读基线；详情见 [PHASE24_16077_BASELINE.md](PHASE24_16077_BASELINE.md)。
 - `deliver_project` 增加阶段耗时和结构化失败阶段；上传使用 `fs.openAsBlob`（旧 Node 回退 Buffer），并通过 MCP integration 回归。
+- 新增本地写入型 multipart 预备基线：临时 SQLite/Express 下 1/20/80 MB 各 3 次上传、版本回读和损坏 ZIP 无半成品断言通过；结果见 [PHASE24_LOCAL_UPLOAD_BASELINE.md](PHASE24_LOCAL_UPLOAD_BASELINE.md)，不替代 16077 端到端验收。
 - 上述结果是基线与稳定性改造证据，不代表已经完成生成质量、写入型上传、更新回滚或生产性能验收。
 
 ### 8.5 验收条件

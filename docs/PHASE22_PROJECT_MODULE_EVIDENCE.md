@@ -35,7 +35,7 @@
 - 项目列表 `total/page/pageSize` 存在；原型列表 `scope=all&page=1&pageSize=20` 返回分页总数字段。
 - 项目详情均为 `200`；含菜单配置路径的项目计算出的第一个已绑定路径为 `group_1782383481579/item_1782383489815`。
 - 两个历史项目的原始 API `menu_config` 为空但存在 `menu_path=acceptance/lightweight` 绑定；前端内存兼容层会合成只读菜单项，不回写项目数据。
-- 工作台头部和左侧菜单已拆为 `ProjectHeader`/`ProjectNavigation`，菜单支持键盘焦点、Enter/Space 选择。
+- 工作台头部、左侧菜单和主内容区已拆为 `ProjectHeader`/`ProjectNavigation`/`ProjectWorkspace`，菜单支持键盘焦点、Enter/Space 选择；任务、成员、快照状态仍由父页面维护，未宣称全部职责拆完。
 
 ## 4. 本轮真实浏览器验收与修复
 
