@@ -18,6 +18,8 @@ let service;
 const owner = { id: 1, username: 'owner', roles: ['viewer'] };
 const editor = { id: 2, username: 'editor', roles: ['viewer'] };
 const viewer = { id: 3, username: 'viewer', roles: ['viewer'] };
+const projectAdmin = { id: 4, username: 'project-admin', roles: ['viewer'] };
+const platformAdmin = { id: 5, username: 'platform-admin', roles: ['admin'] };
 
 function seed() {
   const timestamp = '2026-08-20T00:00:00.000Z';
@@ -27,12 +29,18 @@ function seed() {
     [2, 'editor', 'hash', '编辑者', '["viewer"]', timestamp]);
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
     [3, 'viewer', 'hash', '查看者', '["viewer"]', timestamp]);
+  database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [4, 'project-admin', 'hash', '项目管理员', '["viewer"]', timestamp]);
+  database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+    [5, 'platform-admin', 'hash', '平台管理员', '["admin"]', timestamp]);
   database.run(`INSERT INTO projects (id, name, description, menu_config, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ['project-1', '测试项目', '', '{"items":[]}', 1, timestamp, timestamp]);
   database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
     ['project-1', 2, 'editor', timestamp]);
   database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
     ['project-1', 3, 'viewer', timestamp]);
+  database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
+    ['project-1', 4, 'admin', timestamp]);
   database.run(`INSERT INTO prototypes (id, name, description, entry_file, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ['prototype-1', '测试原型', '', 'index.html', 1, timestamp, timestamp]);
   database.run(`INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at) VALUES (?, ?, ?, ?, ?)`,
@@ -256,6 +264,56 @@ test('only project administrators can review and rejecting does not change the p
   assert.equal(rejected.review_note, '交互不符合预期');
   assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /base/);
   assert.equal(database.queryOne(`SELECT COUNT(*) AS count FROM audit_events WHERE action = 'change.rejected'`).count, 1);
+});
+
+test('task edit ownership matches frontend action visibility for all administrator variants', () => {
+  const projectAdminTask = service.createChange({
+    actor: projectAdmin,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    requirement: '项目管理员自己的任务'
+  });
+  assert.equal(service.updateChange({
+    actor: projectAdmin,
+    projectId: 'project-1',
+    changeId: projectAdminTask.change.id,
+    requirement: '项目管理员可修改自己的任务'
+  }).change.requirement, '项目管理员可修改自己的任务');
+
+  const editorTask = service.createChange({
+    actor: editor,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    requirement: '编辑者的任务'
+  });
+  assert.throws(
+    () => service.updateChange({
+      actor: projectAdmin,
+      projectId: 'project-1',
+      changeId: editorTask.change.id,
+      requirement: '项目管理员不能修改他人任务'
+    }),
+    error => error.code === 'AUTHORIZATION_DENIED'
+  );
+  assert.equal(service.updateChange({
+    actor: owner,
+    projectId: 'project-1',
+    changeId: editorTask.change.id,
+    requirement: '项目负责人可修改项目内任务'
+  }).change.requirement, '项目负责人可修改项目内任务');
+
+  const anotherEditorTask = service.createChange({
+    actor: editor,
+    projectId: 'project-1',
+    prototypeId: 'prototype-1',
+    requirement: '另一个编辑者任务'
+  });
+  assert.equal(service.updateChange({
+    actor: platformAdmin,
+    projectId: 'project-1',
+    changeId: anotherEditorTask.change.id,
+    requirement: '平台管理员可修改项目内任务'
+  }).change.requirement, '平台管理员可修改项目内任务');
 });
 
 test('candidate without an entry remains editable and removes staging residue', () => {

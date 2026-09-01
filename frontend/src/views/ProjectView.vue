@@ -207,10 +207,10 @@
         <el-table-column prop="version_label" label="版本标签" />
         <el-table-column prop="creator_name" label="创建者" />
         <el-table-column prop="created_at" label="时间" :formatter="formatDate" />
-        <el-table-column label="操作" width="160">
+        <el-table-column v-if="canManage" label="操作" width="160">
           <template #default="{ row }">
             <el-button text type="primary" size="small" @click="handleRestoreSnapshot(row)">恢复</el-button>
-            <el-button v-if="canManage" text type="danger" size="small" @click="handleDeleteSnapshot(row)">删除</el-button>
+            <el-button text type="danger" size="small" @click="handleDeleteSnapshot(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -218,7 +218,7 @@
 
     <!-- 成员管理弹窗 -->
     <el-dialog v-model="membersVisible" title="项目成员" width="560px">
-      <div class="member-form">
+      <div v-if="canManage" class="member-form">
         <el-select
           v-model="memberUsername"
           filterable
@@ -250,7 +250,7 @@
             {{ row.role === 'editor' ? '编辑者' : '查看者' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="80">
+        <el-table-column v-if="canManage" label="操作" width="80">
           <template #default="{ row }">
             <el-button text type="danger" size="small" @click="handleRemoveMember(row.user_id)">移除</el-button>
           </template>
@@ -270,6 +270,11 @@ import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
 import { findFirstBoundMenu, normalizeMenuConfigForBindings } from '../utils/project-menu'
+import {
+  canEditProjectTask,
+  getProjectPermissions,
+  getProjectRoleLabel
+} from '../utils/project-permissions'
 import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
@@ -396,18 +401,10 @@ const hasMenu = computed(() => {
   return project.value.menu_config?.items?.some(g => g.children?.length > 0)
 })
 
-const canManage = computed(() => {
-  return role.value === 'owner' || role.value === 'admin'
-})
-
-const canEdit = computed(() => {
-  return role.value === 'owner' || role.value === 'admin' || role.value === 'editor'
-})
-
-const roleLabel = computed(() => {
-  const map = { owner: '创建者', admin: '管理员', editor: '编辑者', viewer: '查看者' }
-  return map[role.value] || ''
-})
+const projectPermissions = computed(() => getProjectPermissions(role.value))
+const canManage = computed(() => projectPermissions.value.canManage)
+const canEdit = computed(() => projectPermissions.value.canEdit)
+const roleLabel = computed(() => getProjectRoleLabel(role.value))
 
 function menuPath(group, item) {
   return `${group.key}/${item.key}`
@@ -557,7 +554,12 @@ function handoffStatusMeta(change) {
 }
 
 function canEditTask(change) {
-  return Boolean(change && canEdit.value && change.status === 'editing' && change.handoff_status !== 'redeemed')
+  return canEditProjectTask({
+    role: role.value,
+    isPlatformAdmin: authStore.isAdmin,
+    userId: authStore.user?.id,
+    change
+  })
 }
 
 async function loadChanges() {
