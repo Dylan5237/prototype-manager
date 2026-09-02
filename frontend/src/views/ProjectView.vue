@@ -12,49 +12,150 @@
     />
 
     <div class="portal-body">
-      <ProjectNavigation
-        :menu-config="project.menu_config"
-        :has-menu="hasMenu"
-        :active-group="activeGroup"
-        :active-item="activeItem"
-        :get-checkout-status="getCheckoutStatus"
-        :get-menu-state="getMenuState"
-        @select="selectMenu"
-      />
+      <aside class="portal-menu" aria-label="项目菜单">
+        <div v-for="group in project.menu_config?.items" :key="group.key" class="menu-group">
+          <div class="group-label">{{ group.label }}</div>
+          <div
+            v-for="item in group.children"
+            :key="item.key"
+            :class="['menu-item', { active: isActive(group, item) }]"
+            role="button"
+            tabindex="0"
+            :aria-current="isActive(group, item) ? 'page' : undefined"
+            @click="selectMenu(group, item)"
+            @keydown.enter="selectMenu(group, item)"
+            @keydown.space.prevent="selectMenu(group, item)"
+          >
+            <span class="item-label"><i class="menu-dot"></i>{{ item.label }}</span>
+            <span v-if="getMenuState(group, item)" class="menu-state" :class="getMenuState(group, item).tone">
+              {{ getMenuState(group, item).text }}
+            </span>
+          </div>
+        </div>
+        <el-empty v-if="!hasMenu" description="暂无菜单配置" />
+        <div v-else class="nav-footnote">
+          <strong>项目结构提示</strong>
+          左侧只放稳定的业务入口；进入原型工作台后，菜单与协作信息从覆盖抽屉展开。
+        </div>
+      </aside>
 
-      <ProjectWorkspace
-        :active-item="activeItem"
-        :current-binding="currentBinding"
-        :can-manage="canManage"
-        :can-edit="canEdit"
-        :active-path-label="activePathLabel"
-        :selected-prototype-id="selectedPrototypeId"
-        :available-prototypes="availablePrototypes"
-        :prototypes-loading="prototypesLoading"
-        :prototypes-total="prototypesTotal"
-        :prototypes-page="prototypesPage"
-        :prototypes-page-size="prototypesPageSize"
-        :binding="binding"
-        :pending-ready-count="pendingReadyCount"
-        :preview-url="previewUrl"
-        @update:selected-prototype-id="selectedPrototypeId = $event"
-        @prototype-search="handlePrototypeSearch"
-        @prototype-page-change="handlePrototypePageChange"
-        @bind="handleBind"
-        @open-changes="openChangesDialog"
-        @open-change-request="openChangeRequest"
-        @go-prototype="goPrototype"
-      />
+      <main class="portal-content">
+        <div v-if="!activeItem" class="empty-content">
+          <el-empty description="请从左侧选择一个菜单项" />
+        </div>
 
-      <ProjectContext
-        :project="project"
-        :changes="changes"
-        :active-path-label="activePathLabel"
-        :current-binding="currentBinding"
-        @open-changes="openChangesDialog"
-        @open-change="openChangeFromContext"
-        @open-snapshots="openSnapshotDialog"
-      />
+        <template v-else>
+          <section class="module-hero">
+            <div class="module-heading">
+              <p class="eyebrow">{{ activeGroup?.label || '当前功能模块' }}</p>
+              <h2>{{ activeItem.label }}</h2>
+              <p>查看该菜单节点的负责人、绑定原型、正式版本与协作状态。</p>
+            </div>
+            <div class="owner-card">
+              <span class="owner-avatar">{{ currentOwnerName.slice(0, 1).toUpperCase() }}</span>
+              <span class="owner-copy">
+                <small>当前节点负责人</small>
+                <strong>{{ currentOwnerName }}</strong>
+              </span>
+            </div>
+          </section>
+
+          <section class="portal-grid">
+            <article v-if="currentBinding" class="prototype-card">
+              <div class="card-kicker"><span>绑定原型</span><el-tag type="success" effect="light" size="small">正式版</el-tag></div>
+              <div class="prototype-card-body">
+                <div class="prototype-thumb" aria-hidden="true"><span></span><span></span><span></span></div>
+                <div class="prototype-card-copy">
+                  <div class="prototype-title-row">
+                    <h3>{{ currentBinding.prototype_name }}</h3>
+                    <el-tag type="info" effect="plain" size="small">v{{ currentBinding.version_label || currentBinding.version_number }}</el-tag>
+                  </div>
+                  <p>{{ currentBinding.prototype_description || '进入工作台查看并操作该菜单节点的原型。' }}</p>
+                  <div class="prototype-meta">
+                    <span>菜单路径：{{ activePathLabel }}</span>
+                    <span v-if="currentBinding.entry_file">入口：{{ currentBinding.entry_file }}</span>
+                  </div>
+                  <div class="card-actions">
+                    <el-button type="primary" @click="enterWorkspace">进入原型工作台</el-button>
+                    <el-button text @click="goPrototype(currentBinding.prototype_id)"><el-icon><Link /></el-icon>原型详情</el-button>
+                  </div>
+                </div>
+              </div>
+            </article>
+
+            <article v-else class="bind-card">
+              <div class="card-kicker"><span>绑定原型</span><el-tag type="warning" effect="light" size="small">未绑定</el-tag></div>
+              <div class="bind-card-body">
+                <el-empty description="该菜单项尚未绑定原型">
+                  <template #description>
+                    <p>该菜单项尚未绑定原型</p>
+                    <p v-if="canManage" class="bind-tip">选择一个原型绑定到「{{ activePathLabel }}」</p>
+                  </template>
+                </el-empty>
+                <div v-if="canManage" class="bind-form">
+                  <el-select
+                    v-model="selectedPrototypeId"
+                    filterable
+                    remote
+                    reserve-keyword
+                    placeholder="选择原型"
+                    style="width: min(320px, 100%)"
+                    :remote-method="handlePrototypeSearch"
+                    :loading="prototypesLoading"
+                  >
+                    <el-option v-for="prototype in availablePrototypes" :key="prototype.id" :label="prototype.name" :value="prototype.id" />
+                  </el-select>
+                  <el-button type="primary" @click="handleBind" :loading="binding">绑定</el-button>
+                </div>
+                <el-pagination
+                  v-if="prototypesTotal > prototypesPageSize"
+                  class="prototype-pagination"
+                  small
+                  layout="prev, pager, next"
+                  :current-page="prototypesPage"
+                  :page-size="prototypesPageSize"
+                  :total="prototypesTotal"
+                  @current-change="handlePrototypePageChange"
+                />
+              </div>
+            </article>
+
+            <aside class="collab-card">
+              <div class="card-kicker"><span>模块协作</span><el-tag v-if="pendingReadyCount" type="warning" effect="light" size="small">待处理</el-tag></div>
+              <div class="metric-list">
+                <div><span>当前负责人</span><strong>{{ currentOwnerName }}</strong></div>
+                <div><span>待处理候选</span><strong :class="{ 'metric-warning': pendingReadyCount }">{{ pendingReadyCount }}</strong></div>
+                <div><span>绑定状态</span><strong>{{ currentBinding ? '已绑定' : '未绑定' }}</strong></div>
+                <div v-if="currentBinding"><span>签出状态</span><strong>{{ currentCheckoutLabel }}</strong></div>
+              </div>
+              <div class="collab-actions">
+                <el-button v-if="currentBinding && canEdit && !currentBinding.checkout" text type="primary" @click="handleCheckout">签出原型</el-button>
+                <el-button v-if="currentBinding && isMyCheckout" text type="success" @click="handleCheckin">签入</el-button>
+                <el-button v-if="currentBinding && canManage && currentBinding.checkout && !isMyCheckout" text type="warning" @click="handleForceRelease">释放签出</el-button>
+                <el-button v-if="currentBinding && (canEdit || pendingReadyCount)" text type="primary" @click="openChangesDialog">查看协作任务</el-button>
+              </div>
+            </aside>
+          </section>
+
+          <section class="activity-section">
+            <div class="section-heading">
+              <div><p class="eyebrow">协作动态</p><h3>围绕当前菜单节点</h3></div>
+              <el-button v-if="canEdit && currentBinding" text type="primary" @click="openChangeRequest">让 AI 修改</el-button>
+            </div>
+            <div v-if="changes.length" class="activity-list">
+              <div v-for="change in changes.slice(0, 4)" :key="change.id" class="activity-item">
+                <span class="activity-dot" :class="`status-${change.status}`"></span>
+                <div class="activity-copy">
+                  <strong>{{ change.title }}</strong>
+                  <p>{{ change.creator_name || change.creator_username || '协作者' }} · {{ changeStatusMeta(change.status).label }} · 基于 v{{ change.base_version_number }}</p>
+                </div>
+                <el-button text type="primary" size="small" @click="openChangesDialog">查看</el-button>
+              </div>
+            </div>
+            <el-empty v-else description="当前菜单暂无协作任务" :image-size="72" />
+          </section>
+        </template>
+      </main>
     </div>
 
     <!-- 管理菜单弹窗 -->
@@ -276,6 +377,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { ElMessageBox } from 'element-plus/es/components/message-box/index.mjs'
+import { Link } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
@@ -296,9 +398,6 @@ import {
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
 import ProjectHeader from '../components/project/ProjectHeader.vue'
-import ProjectNavigation from '../components/project/ProjectNavigation.vue'
-import ProjectWorkspace from '../components/project/ProjectWorkspace.vue'
-import ProjectContext from '../components/project/ProjectContext.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -474,6 +573,18 @@ const activePathLabel = computed(() => {
 const currentBinding = computed(() => {
   if (!activePath.value) return null
   return project.value.prototypes?.find(pp => pp.menu_path === activePath.value) || null
+})
+
+const currentOwnerName = computed(() => {
+  const owner = project.value.members?.find(member => member.role === 'owner')
+  return owner?.nickname || owner?.username || project.value.creator_name || '未配置'
+})
+
+const currentCheckoutLabel = computed(() => {
+  const checkout = currentBinding.value?.checkout
+  if (!checkout) return '未签出'
+  if (checkout.user_id === authStore.user?.id) return `我签出 · ${expireTip.value}`
+  return `${checkout.nickname || checkout.username || '其他成员'} 签出`
 })
 
 const availablePrototypes = computed(() => {
@@ -797,6 +908,14 @@ function openFullPreview() {
   window.open(`/project/${route.params.id}/preview`, '_blank')
 }
 
+function enterWorkspace() {
+  router.push({
+    name: 'project-preview',
+    params: { id: route.params.id },
+    query: activePath.value ? { menuPath: activePath.value } : {}
+  })
+}
+
 async function openSnapshotDialog() {
   snapshotVisible.value = true
   snapshotName.value = ''
@@ -950,9 +1069,76 @@ function formatDate(row, col, val) {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 228px minmax(0, 1fr) 320px;
+  grid-template-columns: 228px minmax(0, 1fr);
   overflow: hidden;
 }
+.portal-menu {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 14px;
+  border-right: 1px solid #e7ebf2;
+  background: #fff;
+}
+.menu-group { margin: 12px 0 18px; }
+.group-label {
+  padding: 0 8px 6px;
+  color: #9ba7bb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  padding: 9px;
+  color: #5e6c85;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition: .18s ease;
+}
+.menu-item:hover,
+.menu-item:focus-visible { color: #2958d5; background: #f4f7ff; outline: none; }
+.menu-item.active { color: #2958d5; background: #edf2ff; font-weight: 700; }
+.item-label { display: flex; min-width: 0; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu-dot { width: 7px; height: 7px; flex: 0 0 auto; border: 1.5px solid #89a1d6; border-radius: 3px; background: #fff; }
+.menu-item.active .menu-dot { border-color: #3c6ff2; background: #3c6ff2; }
+.menu-state { border-radius: 99px; padding: 2px 5px; color: #11966c; background: #eaf8f2; font-size: 9px; white-space: nowrap; }
+.menu-state.warn { color: #c47a16; background: #fff6e5; }
+.menu-state.empty { color: #9ba7bb; background: #f1f3f6; }
+.nav-footnote { margin: 22px 5px 0; border: 1px solid #e0e7f6; border-radius: 9px; padding: 10px; color: #72809a; background: #f6f8ff; font-size: 11px; line-height: 1.55; }
+.nav-footnote strong { display: block; margin-bottom: 3px; color: #2958d5; }
+.portal-content { min-width: 0; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 24px; padding: 30px clamp(22px, 4vw, 56px) 42px; }
+.empty-content,
+.bind-card-body { display: flex; min-height: 420px; flex: 1; flex-direction: column; align-items: center; justify-content: center; }
+.eyebrow { margin: 0 0 5px; color: #8290a5; font-size: 12px; font-weight: 600; letter-spacing: .04em; }
+.module-hero { display: flex; width: min(1180px, 100%); align-items: center; justify-content: space-between; gap: 24px; margin: 0 auto; }
+.module-heading { min-width: 0; }
+.module-heading h2 { margin: 0; color: #111827; font-size: clamp(24px, 3vw, 32px); font-weight: 650; letter-spacing: -.02em; }
+.module-heading > p:last-child { margin: 9px 0 0; color: #66758b; font-size: 14px; }
+.owner-card { display: flex; min-width: 210px; align-items: center; gap: 11px; border: 1px solid #dfe6ef; border-radius: 10px; background: #fff; padding: 11px 14px; box-shadow: 0 1px 2px rgb(15 23 42 / 3%); }
+.owner-avatar { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 50%; color: #2563eb; background: #e8f0ff; font-size: 14px; font-weight: 700; }
+.owner-copy { display: flex; min-width: 0; flex-direction: column; }.owner-copy small { color: #8491a5; font-size: 11px; }.owner-copy strong { margin-top: 2px; color: #1f2937; font-size: 13px; }
+.portal-grid { display: grid; width: min(1180px, 100%); grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; margin: 0 auto; }
+.prototype-card, .bind-card, .collab-card, .activity-section { border: 1px solid #dfe6ef; border-radius: 12px; background: #fff; box-shadow: 0 2px 5px rgb(15 23 42 / 3%); }
+.card-kicker, .section-heading { display: flex; min-height: 50px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid #edf1f6; padding: 0 20px; }
+.card-kicker > span { color: #25344a; font-weight: 650; }
+.prototype-card-body { display: flex; align-items: center; gap: 22px; padding: 24px; }
+.prototype-thumb { position: relative; width: 184px; height: 112px; flex: none; overflow: hidden; border: 1px solid #dce4ee; border-radius: 8px; background: linear-gradient(135deg, #f8fbff, #edf3fa); }
+.prototype-thumb::before { position: absolute; inset: 0 0 auto; height: 27px; background: #173a60; content: ''; }.prototype-thumb::after { position: absolute; inset: 27px auto 0 0; width: 43px; background: #eef3f9; content: ''; }
+.prototype-thumb span { position: absolute; left: 60px; right: 17px; height: 8px; border-radius: 3px; background: #d8e3f0; }.prototype-thumb span:nth-child(1) { top: 47px; }.prototype-thumb span:nth-child(2) { top: 66px; right: 42px; }.prototype-thumb span:nth-child(3) { top: 85px; right: 65px; }
+.prototype-card-copy { min-width: 0; flex: 1; }.prototype-title-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }.prototype-title-row h3 { margin: 0; color: #172033; font-size: 19px; font-weight: 650; }.prototype-card-copy > p { margin: 9px 0 0; color: #718096; font-size: 13px; line-height: 1.6; }.prototype-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 11px; color: #8a96a8; font-size: 12px; }.card-actions { display: flex; align-items: center; gap: 10px; margin-top: 19px; }
+.bind-card { min-height: 250px; }.bind-tip { margin: 8px 0 0; color: #8a96a8; font-size: 13px; }.bind-form { display: flex; width: min(460px, 100%); flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 14px; }.prototype-pagination { margin-top: 14px; }
+.collab-card { min-height: 250px; }.metric-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 18px; border-bottom: 1px solid #edf1f6; padding: 14px 2px; color: #718096; font-size: 13px; }.metric-list > div:last-child { border-bottom: 0; }.metric-list strong { color: #24344d; font-size: 13px; text-align: right; }.metric-list .metric-warning { color: #c27803; }.collab-actions { display: flex; flex-wrap: wrap; gap: 2px 10px; border-top: 1px solid #edf1f6; padding: 10px 16px 12px; }
+.activity-section { width: min(1180px, 100%); margin: 0 auto; }.section-heading { min-height: 62px; }.section-heading h3 { margin: 0; color: #25344a; font-size: 16px; font-weight: 650; }.activity-list { padding: 2px 20px 8px; }.activity-item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid #edf1f6; padding: 14px 0; }.activity-item:last-child { border-bottom: 0; }.activity-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }.activity-dot.status-ready { background: #f59e0b; }.activity-dot.status-adopted { background: #10b981; }.activity-dot.status-invalid, .activity-dot.status-rejected { background: #ef4444; }.activity-copy { min-width: 0; }.activity-copy strong { display: block; overflow: hidden; color: #334155; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.activity-copy p { margin: 4px 0 0; color: #8a96a8; font-size: 12px; }
 .candidate-boundary-bar {
   min-height: 34px;
   padding: 0 14px;
