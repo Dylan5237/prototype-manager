@@ -274,6 +274,47 @@
     @media (max-width: 1040px) { .workbench-body { grid-template-columns: 210px minmax(460px, 1fr); } .context { display: none; } .project-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 850px) { .app-shell { grid-template-columns: 1fr; } .sidebar { display: none; } .topbar { padding: 0 17px; } .screen { padding: 24px 17px; } .overview-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .page-header { align-items: flex-start; flex-direction: column; } .toolbar-row { align-items: flex-start; flex-direction: column; } .search-box { width: 100%; } .project-grid { grid-template-columns: 1fr; } .workbench-head { align-items: flex-start; flex-direction: column; padding: 18px; } .workbench-actions { width: 100%; flex-wrap: wrap; } .workbench-body { grid-template-columns: 190px minmax(0, 1fr); } .workspace { padding: 18px 15px; } .prototype-frame { padding: 10px; } .prototype-app { grid-template-columns: 105px minmax(0,1fr); } .prototype-app-nav { padding: 12px 7px; } .fake-content { padding: 14px; } .fake-filters { display: none; } .fake-table th:nth-child(n+4), .fake-table td:nth-child(n+4) { display: none; } .review-grid { grid-template-columns: 1fr; } }
     @media (max-width: 570px) { .overview-strip { grid-template-columns: 1fr 1fr; gap: 9px; } .metric-card { padding: 13px; } .metric-value { font-size: 21px; } .workbench-body { grid-template-columns: 1fr; } .module-nav { display: none; } .workspace-heading { font-size: 17px; } .prototype-window-bar { display: none; } .prototype-app { grid-template-columns: 1fr; } .prototype-app-nav { display: none; } .prototype-frame { min-height: 410px; } .prototype-window { min-height: 390px; } .fake-content-head { margin-bottom: 11px; } .fake-content h3 { font-size: 14px; } .modal-foot { flex-wrap: wrap; } }
+
+    /* 悬浮面板试验：把原型内容作为唯一视觉主角，面板只在需要时出现。 */
+    body.floating-panels .app-shell { grid-template-columns: 232px minmax(0, 1fr); }
+    body.floating-panels .main { grid-template-rows: minmax(0, 1fr); }
+    body.floating-panels .topbar,
+    body.floating-panels .module-nav,
+    body.floating-panels .context { position: fixed; z-index: 30; box-shadow: 0 18px 50px rgba(20, 33, 61, .2); transition: transform .24s ease, opacity .2s ease; }
+    body.floating-panels .topbar { top: 0; left: 50%; width: min(760px, calc(100% - 150px)); border: 1px solid var(--line); border-top: 0; border-radius: 0 0 14px 14px; transform: translate(-50%, -100%); }
+    body.floating-panels .module-nav { top: 76px; bottom: 16px; left: 0; transform: translateX(-100%); border-radius: 0 14px 14px 0; }
+    body.floating-panels .context { top: 76px; right: 0; bottom: 16px; width: 320px; transform: translateX(100%); border-radius: 14px 0 0 14px; }
+    body.floating-panels .workbench-body { grid-template-columns: minmax(0, 1fr); }
+    body.floating-panels .screen { min-height: 100vh; }
+    body.floating-panels .workbench-screen { padding: 0; }
+    body.floating-panels .workbench { min-height: 100vh; }
+    body.floating-panels .workspace { padding: 26px 30px 36px; }
+    body.floating-panels .floating-handle { opacity: 1; pointer-events: auto; }
+    body.floating-panels.panel-open-top .topbar,
+    body.floating-panels.panel-open-module .module-nav,
+    body.floating-panels.panel-open-right .context { transform: none; }
+    body.floating-panels.panel-open-top .topbar { transform: translateX(-50%); }
+    body.floating-panels.panel-open-module .module-nav { transform: translateX(0); }
+    body.floating-panels.panel-open-right .context { transform: translateX(0); }
+    .floating-handle { position: fixed; z-index: 40; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.6); color: rgba(20,33,61,.68); background: rgba(255,255,255,.54); box-shadow: 0 5px 18px rgba(20,33,61,.12); backdrop-filter: blur(10px); opacity: 0; pointer-events: none; transition: opacity .2s ease, background .2s ease; }
+    .floating-handle:hover, .floating-handle:focus-visible { background: rgba(255,255,255,.9); outline: 3px solid rgba(95,128,237,.35); outline-offset: 2px; }
+    .top-handle { top: 8px; left: 50%; width: 72px; height: 24px; border-radius: 0 0 12px 12px; transform: translateX(-50%); }
+    .left-handle { top: 50%; left: 8px; width: 24px; height: 72px; border-radius: 0 12px 12px 0; transform: translateY(-50%); }
+    .right-handle { top: 50%; right: 8px; width: 24px; height: 72px; border-radius: 12px 0 0 12px; transform: translateY(-50%); }
+    .floating-handle::after { font-size: 16px; line-height: 1; }
+    .top-handle::after { content: '⌄'; }
+    .left-handle::after { content: '›'; }
+    .right-handle::after { content: '‹'; }
+    @media (max-width: 850px) {
+      body.floating-panels .topbar { width: calc(100% - 86px); }
+      body.floating-panels .workspace { padding: 20px 17px 28px; }
+      body.floating-panels .context { width: min(320px, calc(100% - 42px)); }
+    }
+    @media (max-width: 570px) {
+      body.floating-panels .module-nav { top: 60px; bottom: 10px; width: min(278px, calc(100% - 38px)); }
+      body.floating-panels .context { top: 60px; bottom: 10px; }
+      .left-handle, .right-handle { width: 20px; height: 60px; }
+    }
   </style>
 </head>
 <body>
@@ -347,6 +388,9 @@
       </section>
     </main>
   </div>
+  <button class="floating-handle top-handle" type="button" aria-label="展开顶部操作栏" data-panel-toggle="top"></button>
+  <button class="floating-handle left-handle" type="button" aria-label="展开项目模块导航" data-panel-toggle="module"></button>
+  <button class="floating-handle right-handle" type="button" aria-label="展开项目上下文" data-panel-toggle="right"></button>
   <div class="prototype-label">高保真原型 · 阶段 22.1</div>
   <div class="overlay" id="overlay" hidden><div class="modal" id="modal"></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite"><span>✓</span><span id="toast-text">已完成</span></div>
@@ -370,9 +414,43 @@
     let activeMenu = 'customers';
     let contextMode = 'attention';
     let toastTimer;
+    const panelTimers = {};
+    const panelSelectors = { top: '.topbar', module: '.module-nav', right: '.context' };
 
     const $ = selector => document.querySelector(selector);
     const $$ = selector => [...document.querySelectorAll(selector)];
+
+    function setPanelOpen(panel, open) {
+      const selector = panelSelectors[panel];
+      const target = selector ? $(selector) : null;
+      if (!target) return;
+      clearTimeout(panelTimers[panel]);
+      document.body.classList.toggle(`panel-open-${panel}`, open);
+      const handle = $(`[data-panel-toggle="${panel}"]`);
+      if (handle) handle.setAttribute('aria-expanded', String(open));
+    }
+
+    function schedulePanelClose(panel) {
+      clearTimeout(panelTimers[panel]);
+      panelTimers[panel] = setTimeout(() => setPanelOpen(panel, false), 220);
+    }
+
+    function setupFloatingPanels() {
+      document.body.classList.add('floating-panels');
+      Object.keys(panelSelectors).forEach(panel => {
+        const target = $(panelSelectors[panel]);
+        const handle = $(`[data-panel-toggle="${panel}"]`);
+        if (!target || !handle) return;
+        handle.setAttribute('aria-expanded', 'false');
+        handle.addEventListener('mouseenter', () => setPanelOpen(panel, true));
+        handle.addEventListener('mouseleave', () => schedulePanelClose(panel));
+        handle.addEventListener('focus', () => setPanelOpen(panel, true));
+        handle.addEventListener('blur', () => schedulePanelClose(panel));
+        handle.addEventListener('click', () => setPanelOpen(panel, true));
+        target.addEventListener('mouseenter', () => clearTimeout(panelTimers[panel]));
+        target.addEventListener('mouseleave', () => schedulePanelClose(panel));
+      });
+    }
 
     function renderProjects() {
       const keyword = ($('#project-search')?.value || '').trim().toLowerCase();
@@ -470,6 +548,7 @@
     });
     $('#project-search').addEventListener('input', renderProjects);
     $('#overlay').addEventListener('click', event => { if (event.target === $('#overlay')) $('#overlay').hidden = true; });
+    setupFloatingPanels();
     renderProjects();
     renderWorkspace();
     renderContext();
