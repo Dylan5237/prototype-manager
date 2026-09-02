@@ -977,7 +977,7 @@ async function callTool(name, args) {
         authentication = e.code || 'unverified';
       }
     }
-    return contentJson({ apiUrl: API_URL, health: data, authentication, runtime, update });
+    return contentJson({ ok: true, apiUrl: API_URL, health: data, authentication, runtime, update });
   }
 
   if (name === 'list_prototypes') {
