@@ -18,6 +18,7 @@
         :active-group="activeGroup"
         :active-item="activeItem"
         :get-checkout-status="getCheckoutStatus"
+        :get-menu-state="getMenuState"
         @select="selectMenu"
       />
 
@@ -43,6 +44,16 @@
         @open-changes="openChangesDialog"
         @open-change-request="openChangeRequest"
         @go-prototype="goPrototype"
+      />
+
+      <ProjectContext
+        :project="project"
+        :changes="changes"
+        :active-path-label="activePathLabel"
+        :current-binding="currentBinding"
+        @open-changes="openChangesDialog"
+        @open-change="openChangeFromContext"
+        @open-snapshots="openSnapshotDialog"
       />
     </div>
 
@@ -287,6 +298,7 @@ import ProjectFormDialog from '../components/ProjectFormDialog.vue'
 import ProjectHeader from '../components/project/ProjectHeader.vue'
 import ProjectNavigation from '../components/project/ProjectNavigation.vue'
 import ProjectWorkspace from '../components/project/ProjectWorkspace.vue'
+import ProjectContext from '../components/project/ProjectContext.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -532,6 +544,16 @@ function getCheckoutStatus(group, item) {
   }
 }
 
+function getMenuState(group, item) {
+  const path = menuPath(group, item)
+  const pp = project.value.prototypes?.find(p => p.menu_path === path)
+  if (!pp) return { text: '未绑定', tone: 'empty' }
+  const hasPending = changes.value.some(change => change.status === 'ready' && change.prototype_id === pp.prototype_id)
+  if (hasPending) return { text: '待确认', tone: 'warn' }
+  if (pp.checkout) return { text: '签出中', tone: 'warn' }
+  return { text: '稳定', tone: 'stable' }
+}
+
 function changeStatusMeta(status) {
   const map = {
     editing: { label: '进行中', type: 'info' },
@@ -645,10 +667,15 @@ async function copyChangePrompt() {
   }
 }
 
-async function openChangesDialog() {
+async function openChangesDialog(preferredChange = null) {
   changesVisible.value = true
   await loadChanges()
-  selectChange(changes.value.find(change => change.status === 'ready') || changes.value[0] || null)
+  selectChange(
+    (preferredChange && changes.value.find(change => change.id === preferredChange.id))
+      || changes.value.find(change => change.status === 'ready')
+      || changes.value[0]
+      || null
+  )
 }
 
 async function adoptSelectedChange() {
@@ -916,11 +943,14 @@ function formatDate(row, col, val) {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 56px);
-  background: #f5f7fa;
+  color: #1a2438;
+  background: #f6f8fc;
 }
 .portal-body {
   flex: 1;
-  display: flex;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 228px minmax(0, 1fr) 320px;
   overflow: hidden;
 }
 .candidate-boundary-bar {
@@ -1099,6 +1129,7 @@ function formatDate(row, col, val) {
   background: #fff;
 }
 @media (max-width: 900px) {
+  .portal-body { grid-template-columns: 190px minmax(0, 1fr); }
   .changes-layout {
     grid-template-columns: 1fr;
   }
@@ -1110,5 +1141,8 @@ function formatDate(row, col, val) {
   .change-summary {
     grid-template-columns: 1fr;
   }
+}
+@media (max-width: 600px) {
+  .portal-body { grid-template-columns: 1fr; }
 }
 </style>

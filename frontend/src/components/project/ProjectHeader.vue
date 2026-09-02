@@ -45,31 +45,33 @@ defineEmits(['back', 'manage-menu', 'snapshots', 'members', 'full-preview'])
 
 <style scoped>
 .portal-header {
-  height: 60px;
+  min-height: 78px;
   background: #fff;
-  border-bottom: 1px solid #e4e7ed;
+  border-bottom: 1px solid #e7ebf2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
+  gap: 20px;
+  padding: 18px 30px 16px;
 }
 .header-left {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-.title-block h1 {
-  font-size: 18px;
-  font-weight: 600;
-  color: #1a202c;
-}
-.title-block .sub {
-  font-size: 12px;
-  color: #718096;
-}
-.header-actions {
-  display: flex;
-  align-items: center;
   gap: 10px;
+  min-width: 0;
+}
+.title-block { min-width: 0; }
+.title-block h1 { margin: 0; overflow: hidden; color: #1a2438; font-size: 23px; font-weight: 750; letter-spacing: -.04em; text-overflow: ellipsis; white-space: nowrap; }
+.title-block .sub { margin-top: 5px; overflow: hidden; color: #72809a; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.header-actions :deep(.el-button) { min-height: 30px; border-radius: 8px; color: #72809a; }
+.header-actions :deep(.el-button:hover) { color: #2958d5; background: #edf2ff; }
+.header-actions :deep(.el-button--success) { border-color: #68b94e; color: #fff; background: #6dbd4e; }
+.header-actions :deep(.el-button--success:hover) { color: #fff; background: #5ca63e; }
+.header-actions :deep(.el-tag) { border-color: #cfdcff; border-radius: 99px; color: #2958d5; background: #edf2ff; }
+
+@media (max-width: 900px) {
+  .portal-header { align-items: flex-start; flex-direction: column; padding: 18px; }
+  .header-actions { width: 100%; justify-content: flex-start; }
 }
 </style>

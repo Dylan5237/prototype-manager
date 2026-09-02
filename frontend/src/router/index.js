@@ -11,7 +11,7 @@ const AdminGroups = () => import('../views/AdminGroups.vue')
 const AdminAnnouncements = () => import('../views/AdminAnnouncements.vue')
 const AdminUsageDashboard = () => import('../views/AdminUsageDashboard.vue')
 const RecycleBinView = () => import('../views/RecycleBinView.vue')
-const ProjectsView = () => import('../views/ProjectsView.vue')
+const ProjectsView = () => import('../views/ProjectsViewRedesign.vue')
 const ProjectView = () => import('../views/ProjectView.vue')
 const ProjectPreview = () => import('../views/ProjectPreview.vue')
 
