@@ -125,7 +125,9 @@ git -C "$active_root" diff -- backend/package-lock.json frontend/package-lock.js
 STOPPED=true
 tar -czhf "$BACKUP/persistent.tar.gz" -C "$active_root/backend" data repos uploads
 tar -tzf "$BACKUP/persistent.tar.gz" >/dev/null
-tar -tzf "$BACKUP/persistent.tar.gz" | grep -qx 'data/app.db'
+# Do not use grep -q here: with pipefail, an early grep exit sends SIGPIPE to
+# tar and turns a valid backup into a false deployment failure (exit 141).
+tar -tzf "$BACKUP/persistent.tar.gz" | grep -x 'data/app.db' >/dev/null
 tar -tvzf "$BACKUP/persistent.tar.gz" | awk '$1 ~ /^-/ {count++} END {exit count > 0 ? 0 : 1}'
 sha256sum "$BACKUP/persistent.tar.gz" > "$BACKUP/persistent.tar.gz.sha256"
 if [[ -f "$active_root/backend/.env" ]]; then cp -L "$active_root/backend/.env" "$BACKUP/backend.env"; fi
