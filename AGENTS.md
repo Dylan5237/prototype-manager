@@ -50,16 +50,17 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 
 - 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`，GitHub `origin` 不作为生产来源。
 - 阶段 20 已快进到本地 `main` 并完成 16077 release `20260830-092500-adf7ea7f` 验收；阶段 21 安全同步已完成，阶段 22 项目模块首批增量已部署测试环境，尚未部署 16088。
-- 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 当前测试 release 为 `20260901-194026-869add12`，健康 200、bootstrap 未授权 401、认证 API 回读、项目工作台和预览 iframe 浏览器复测通过。
+- 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 当前测试 release 为 `20260902-095755-97fc9e9a`，健康 200、bootstrap 未授权 401、认证 API 回读、项目高保真列表/三栏工作台和预览 iframe 浏览器复测通过。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
 - 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
 - 不写凭证、密码或长期 token 进仓库或文档。
 - 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；GitLab Provider 真实环境验收已废弃，默认继续使用无 Git 轻协作，详见 `docs/BACKLOG.md`。
 - 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
-- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选、绑定选择器服务端搜索分页、MCP 签出门禁、预览 ResizeObserver 误报修复、`ProjectWorkspace` 主内容拆分和任务/成员/快照权限显示对齐；目标项目的真实浏览器入口/iframe 复测已通过，完整角色路径、任务/成员/快照职责拆分和端到端性能样本仍待完成。阶段 24 已增加本地写入型 multipart 预备基线；详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/PHASE24_LOCAL_UPLOAD_BASELINE.md`。
+- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成高保真项目列表/三栏工作台接入、项目列表分页/筛选、绑定选择器服务端搜索分页、MCP 签出门禁、预览 ResizeObserver 误报修复、`ProjectWorkspace` 主内容拆分和任务/成员/快照权限显示对齐；目标项目的真实浏览器入口/iframe 复测已通过，完整角色路径、任务/成员/快照职责拆分和端到端性能样本仍待完成。阶段 24 已增加本地写入型 multipart 预备基线；详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/PHASE24_LOCAL_UPLOAD_BASELINE.md`。
 - 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
 
 ## 测试环境部署约定
 
+- 用户已于 2026-09-02 明确授权后续 16077 测试环境部署无需逐次确认；执行仍必须使用本 Skill 的安全脚本和 `DEPLOY_FUXI_TEST` 门禁参数。该授权不包含 16088 生产发布、远程推送、删除或回滚。
 - `16077` 后续默认走轻量部署：`build-release.ps1 -Lightweight` 仍执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；跳过每次全量 MCP 集成回归，由用户人工测试。
 - 只有准备发布 `16088` 时才使用完整构建、MCP 校验/集成、生产基线和发布验收门禁。
