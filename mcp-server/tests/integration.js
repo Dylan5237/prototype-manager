@@ -338,6 +338,12 @@ async function main() {
     assert(!bootstrap.data.prompt.includes('.cursor/skills'));
     assert(bootstrap.data.connectCode);
     assert(bootstrap.data.connectCodeExpiresAt);
+    assert.equal(bootstrap.data.bootstrapManifest.schema, 'fuxi-bootstrap/2');
+    assert.equal(bootstrap.data.bootstrapManifest.artifacts.mcp.url, bootstrap.data.mcpUrl);
+    assert.equal(bootstrap.data.bootstrapManifest.artifacts.skill.url, bootstrap.data.skillUrl);
+    assert(bootstrap.data.prompt.includes('src/bootstrap.js'));
+    assert(bootstrap.data.prompt.includes('--mcp-zip'));
+    assert(bootstrap.data.prompt.includes('--skill-zip'));
     const connectCodeRemainingMs = Date.parse(bootstrap.data.connectCodeExpiresAt) - Date.now();
     assert(connectCodeRemainingMs > 18 * 60 * 1000 && connectCodeRemainingMs <= 20 * 60 * 1000 + 5000);
     assert(bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
@@ -447,6 +453,7 @@ async function main() {
     const mcpPackage = new AdmZip(Buffer.from(await mcpPackageResponse.arrayBuffer()));
     const mcpEntries = mcpPackage.getEntries().map(entry => entry.entryName);
     assert(mcpEntries.includes('fuxi-platform-mcp/src/server.js'));
+    assert(mcpEntries.includes('fuxi-platform-mcp/src/bootstrap.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/src/fuxi-zip.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/package.json'));
     assert(!mcpEntries.some(name => name.includes('/tests/')));

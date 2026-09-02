@@ -2,6 +2,12 @@
 
 This MCP server exposes Fuxi prototype-management operations to agents through structured tools.
 
+The package also contains `src/bootstrap.js`, a deterministic first-install CLI. It is not an MCP tool
+and does not create a separate Fuxi client. The AI host downloads the package with its native HTTP and
+Node.js capabilities, runs `preflight`, then `install`; the installer backs up and updates the host
+configuration, installs `fuxi-prototype`, performs the first MCP `check_connection` self-test, and emits
+one JSON result. The host reload is reported separately as `reloadRequired`.
+
 ## Configuration
 
 Set these environment variables in the MCP host:

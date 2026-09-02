@@ -431,6 +431,7 @@ module.exports = {
   validateProject,
   validateZipFile,
   packProject,
+  buildZip,
   parseZipBuffer,
   findEntryFromList,
   MAX_ZIP_BYTES,
