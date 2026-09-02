@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "project_name": "伏羲项目工作台 Canvas-first 改版",
+  "status": "direction_confirmed_ready_for_frontend_implementation",
+  "source_branch": "master",
+  "work_branch": "design/project-workbench-canvas-first",
+  "implementation_scope": [
+    "frontend project browser mode",
+    "frontend prototype workspace mode",
+    "overlay project menu drawer",
+    "overlay review drawer",
+    "route-restorable active menu path"
+  ],
+  "domain_invariants": [
+    "project menu node is real product navigation, collaboration boundary, and prototype binding point",
+    "candidate upload never replaces the formal version",
+    "adoption remains an explicit owner or admin action",
+    "base-version CAS and stale-candidate protection remain intact"
+  ],
+  "layout_thresholds": {
+    "desktop_viewport": "1440x900",
+    "canvas_width_ratio_min": 0.8,
+    "canvas_height_ratio_min": 0.75,
+    "shell_horizontal_overflow_allowed": false,
+    "persistent_sidebars_in_workspace_max": 0,
+    "simultaneously_open_overlay_drawers_max": 1
+  },
+  "required_validation": [
+    "cd frontend && npm run build",
+    "menu node binding or empty state switch",
+    "workspace refresh restores active menu path",
+    "left and right drawers are mutually exclusive",
+    "formal and candidate actions preserve existing permissions and state flow"
+  ],
+  "forbidden_scope": [
+    "backend or database contract changes",
+    "MCP changes",
+    "production or test deployment",
+    "release creation",
+    "framework upgrade",
+    "React Tailwind or Shadcn added to product frontend",
+    "generic task board realtime collaboration CRDT or web code editor",
+    "Git merge request or auto-merge workflow"
+  ],
+  "visual_qa_owner": "user_and_chatgpt",
+  "codex_visual_constraint": "do not inspect screenshots; validate code, DOM dimensions, build, and provide routes for user-captured screenshots",
+  "reference_artifacts": {
+    "design": "FULL_DESIGN.md",
+    "codex_prompt": "CODEX_HANDOFF_PROMPT.md",
+    "reference_source": "reference-site/",
+    "historical_images": "assets/"
+  }
+}
+
