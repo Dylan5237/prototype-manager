@@ -42,7 +42,7 @@
 | 平台后端回归 | `55/55 PASS` | `backend/npm test`；证明代码路径，不替代真实角色页面 |
 | 前端回归与构建 | `3/3 PASS`；Vite 构建成功（1206 modules） | `frontend/npm test`、`frontend/npm run build` |
 | MCP | `check PASS`；集成通过（30 工具）；远程更新 `3/3 PASS` | `mcp-server` 脚本输出；不等于真实 AI 客户端接入 |
-| Skill | 静态 `PASS`；单测 `19/19 PASS`；`CACHE_VALID` | `validate_skill.py`、Skill 脚本测试、缓存检查 |
+| Skill | 静态 `PASS`；全量脚本测试 `58/58 PASS`；`CACHE_VALID` | `validate_skill.py`、`fuxi-prototype` 全部 `*.test.mjs`、缓存检查 |
 | Skill 黄金样例 | 3/3 结构检查 `PASS`；整体 `UNVERIFIED` | 构建、视觉、真实 Agent 生成证据仍需人工补齐 |
 | 本地性能 | MCP 打包 30/30 无失败；上传 1/20/80 MB 各 3/3 无失败，损坏 ZIP 无半成品 | 临时 SQLite/Express，仅作本地预备基线 |
 | 16077 只读性能 | health、项目列表、项目详情、原型列表、MCP `check_connection` 各 `10/10` 成功 | [PHASE24_16077_BASELINE.md](PHASE24_16077_BASELINE.md)；无写入 |
