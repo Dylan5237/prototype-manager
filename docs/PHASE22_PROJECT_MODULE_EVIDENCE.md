@@ -53,3 +53,12 @@
 - 四角色完整页面路径、全流程写入动作及阶段 22–24 的完整验收门仍按计划保留。
 - owner/admin/editor/viewer 四角色完整页面路径、项目组件拆分、端到端生成/上传性能 10 次样本：仍按阶段计划保留，不以本次 API 回读替代。
 - 16088 生产发布、GitLab/GitHub 推送、BL-006 实际清理：均未执行。
+
+## 6. 2026-09-02 自动验收补充
+
+- 平台后端 `npm test`：`55/55 PASS`；前端测试 `3/3 PASS`；Vite 构建成功（1206 modules）。
+- MCP `check`、集成测试和远程更新测试均通过；Skill 静态校验 `PASS`、全量 `*.test.mjs` `58/58 PASS`、能力缓存 `CACHE_VALID`。
+- Skill 三份黄金样例结构检查 `3/3 PASS`，整体仍为 `UNVERIFIED`（构建、视觉和真实 Agent 生成证据按门禁待补）。
+- MCP 本地打包基线 30/30 无失败；本地 multipart 上传 1/20/80 MB 各 3/3 无失败，损坏 ZIP 无半成品；这些均不替代 16077 写入验收。
+- 16077 认证只读基线：health、项目列表、项目详情、原型列表、MCP `check_connection` 各 10/10 成功。浏览器再次确认项目关键字筛选、默认第一个已绑定菜单、预览内容、控制台错误数为 0 和绑定搜索“权限”返回 3 条；未执行绑定或其他写入。
+- 逐项人工操作、证据位置和勾选规则见 [ACCEPTANCE_CHECKLIST.md](ACCEPTANCE_CHECKLIST.md)。
