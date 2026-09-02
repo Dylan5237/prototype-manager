@@ -8,7 +8,7 @@
 >
 > Skill 仓库：`D:\_projects\skills\prototype-manager-skills`
 >
-> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成仓库治理与安全同步；阶段 22.1 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选与绑定选择器服务端搜索首批实现；真实页面验收、组件拆分和 BL-006 实际清理仍需独立确认
+> 计划状态：阶段 20 已于 2026-08-30 完成并通过 16077 验收；阶段 21 已于 2026-09-01 完成仓库治理与安全同步；阶段 22.1 已确认固定打开第一个已绑定菜单，并完成项目列表分页/筛选、绑定选择器服务端搜索、主内容组件拆分和 16077 浏览器复核；完整角色/写入链路及 BL-006 实际清理仍需独立确认
 >
 > 需求增补：2026-09-01 纳入 BL-007「管理员全量原型只读预览」；平台实现、本地/API 回归和 16077 跨用户真实复核已完成，项目绑定夹具补充验证单独记录
 
@@ -246,7 +246,7 @@
 - BL-007 管理员全量预览的权限说明、API/页面测试和审计事件证据。
 - 项目模块自动化与 16077 验收记录。
 
-> 本轮实现与 16077 API 回读证据见 [PHASE22_PROJECT_MODULE_EVIDENCE.md](PHASE22_PROJECT_MODULE_EVIDENCE.md)；页面真实浏览器验收仍未宣称完成。
+> 本轮实现、16077 API 回读和浏览器证据见 [PHASE22_PROJECT_MODULE_EVIDENCE.md](PHASE22_PROJECT_MODULE_EVIDENCE.md)；完整阶段验收仍需按 [ACCEPTANCE_CHECKLIST.md](ACCEPTANCE_CHECKLIST.md) 补齐角色与写入闭环。
 
 ### 6.5 验收条件
 
@@ -263,8 +263,8 @@
 - [x] 原型选择支持服务端搜索/分页，大量原型时不一次性拉取全量数据。
 - [ ] 项目首页不存在明显 N+1 请求；请求数量和关键接口耗时有基线记录。
 - [ ] `ProjectView.vue` 的主要职责已拆分，任务、成员、快照和绑定逻辑可独立测试和维护。
-- [x] 后端项目/轻协作测试、前端构建、MCP 项目工具相关检查通过；全量后端最终 54/54，MCP integration 通过。
-- [ ] 16077 完成真实浏览器验收；未经验收不得写成项目模块 2.0 已完成。
+- [x] 后端项目/轻协作测试、前端构建、MCP 项目工具相关检查通过；当前全量后端 55/55、前端权限测试 3/3，MCP integration 通过。
+- [x] 16077 已完成项目列表、默认入口、预览和绑定搜索的真实浏览器复核；完整项目模块 2.0 仍以四角色和写入闭环为准。
 
 ### 6.6 人工决策点
 
@@ -460,4 +460,4 @@
 5. 建立性能/质量基线脚本和报告格式。
 6. 完成阶段 20 总体验收，再决定是否进入阶段 21。
 
-阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；BL-007 主目标已收口，下一实施入口为阶段 22.1 项目模块高保真原型，设计说明见 [PHASE22_PROJECT_MODULE_IA.md](PHASE22_PROJECT_MODULE_IA.md)，可点击稿见 [project-module-2-0/index.html](prototypes/project-module-2-0/index.html)。
+阶段 21 已完成只读仓库治理，证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)；BL-007 主目标已收口，阶段 22.1 已有实现和 16077 浏览器证据，后续按 [ACCEPTANCE_CHECKLIST.md](ACCEPTANCE_CHECKLIST.md) 补齐人工验收；设计说明见 [PHASE22_PROJECT_MODULE_IA.md](PHASE22_PROJECT_MODULE_IA.md)，可点击稿见 [project-module-2-0/index.html](prototypes/project-module-2-0/index.html)。
