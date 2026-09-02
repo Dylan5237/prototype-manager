@@ -20,7 +20,6 @@
         </div>
       </div>
       <div class="context-actions">
-        <el-button text @click="openMenuDrawer"><el-icon><Menu /></el-icon>项目菜单</el-button>
         <el-button text :type="pendingReadyCount ? 'warning' : 'default'" @click="openReviewDrawer">
           <el-icon><List /></el-icon>待处理
           <el-badge v-if="pendingReadyCount" :value="pendingReadyCount" class="pending-badge" />
@@ -31,6 +30,17 @@
 
     <section class="workbench-toolbar" aria-label="原型预览工具栏">
       <div class="version-switcher">
+        <el-button
+          class="menu-trigger"
+          type="primary"
+          plain
+          @click="openMenuDrawer"
+          aria-label="打开项目菜单"
+          :aria-expanded="menuDrawerOpen"
+        >
+          <el-icon><Menu /></el-icon>
+          <span>项目菜单</span>
+        </el-button>
         <el-radio-group v-model="previewMode" size="small" :disabled="!currentBinding">
           <el-radio-button value="formal">正式版 v{{ currentBinding?.version_label || currentBinding?.version_number || '-' }}</el-radio-button>
           <el-radio-button v-if="previewableChanges.length" value="candidate">候选版</el-radio-button>
@@ -51,16 +61,28 @@
     <main class="canvas-stage" :class="`device-${deviceMode}`">
       <div v-if="loading" class="canvas-state"><el-icon class="is-loading"><Loading /></el-icon><span>正在加载项目原型…</span></div>
       <template v-else-if="previewMode === 'candidate' && selectedChange && candidatePreviewUrl">
-        <div class="canvas-label candidate-label"><el-tag type="warning" effect="light" size="small">候选预览</el-tag><span>{{ selectedChange.title }} · 仅供审核，不会自动替换正式版</span></div>
-        <iframe :key="candidatePreviewUrl" :src="candidatePreviewUrl" class="prototype-frame" frameborder="0" title="候选原型预览" />
+        <div class="canvas-frame-shell">
+          <div class="canvas-label candidate-label"><el-tag type="warning" effect="light" size="small">候选预览</el-tag><span>{{ selectedChange.title }} · 仅供审核，不会自动替换正式版</span></div>
+          <iframe :key="candidatePreviewUrl" :src="candidatePreviewUrl" class="prototype-frame" frameborder="0" title="候选原型预览" />
+        </div>
       </template>
       <template v-else-if="previewUrl">
-        <div class="canvas-label"><span>{{ activePathLabel }}</span><span>当前正式版本 v{{ currentBinding.version_label || currentBinding.version_number }}</span></div>
-        <iframe :key="previewUrl" :src="previewUrl" class="prototype-frame" frameborder="0" title="正式原型预览" />
+        <div class="canvas-frame-shell">
+          <div class="canvas-label"><span>{{ activePathLabel }}</span><span>当前正式版本 v{{ currentBinding.version_label || currentBinding.version_number }}</span></div>
+          <iframe :key="previewUrl" :src="previewUrl" class="prototype-frame" frameborder="0" title="正式原型预览" />
+        </div>
       </template>
       <div v-else class="canvas-state">
         <el-empty v-if="activeItem && !currentBinding" description="该菜单项尚未绑定原型"><el-button type="primary" @click="backToProject">返回项目绑定原型</el-button></el-empty>
         <el-empty v-else description="请选择项目菜单节点" />
+      </div>
+      <div v-if="focusMode" class="focus-controls" aria-label="专注模式控制">
+        <el-button circle type="primary" plain class="focus-menu-trigger" @click="openMenuDrawer" aria-label="打开项目菜单" :aria-expanded="menuDrawerOpen">
+          <el-icon><Menu /></el-icon>
+        </el-button>
+        <el-button circle type="primary" plain class="focus-exit-trigger" @click="toggleFocus" aria-label="退出专注模式">
+          <el-icon><FullScreen /></el-icon>
+        </el-button>
       </div>
     </main>
 
@@ -343,12 +365,13 @@ async function handleForceRelease() { if (!currentBinding.value) return; try { a
 </script>
 
 <style scoped>
-.project-workbench { --border: #dfe6ef; display: flex; width: 100%; height: 100vh; min-width: 0; flex-direction: column; overflow: hidden; background: #eef2f7; color: #172033; }
-.workbench-context { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.97); padding: 0 18px; }
+.project-workbench { --border: #dfe6ef; position: relative; display: flex; width: 100%; height: 100vh; min-width: 0; flex-direction: column; overflow: hidden; background: #eef2f7; color: #172033; }
+.workbench-context { display: flex; min-height: 58px; flex: none; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,.97); padding: 0 18px; }
 .context-main,.context-actions,.context-title-row,.context-breadcrumb,.toolbar-actions,.version-switcher,.device-switch,.drawer-header,.review-owner,.change-item,.change-detail-heading,.review-actions { display: flex; align-items: center; }
 .context-main { min-width: 0; gap: 10px; }.back-button { flex: none; }.context-copy { min-width: 0; }.context-breadcrumb { gap: 6px; color: #8090a5; font-size: 12px; }.context-breadcrumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.context-title-row { gap: 10px; margin-top: 3px; }.context-title-row strong { overflow: hidden; color: #172033; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }.context-actions { flex: none; gap: 2px; }.pending-badge { margin-left: 5px; }
-.workbench-toolbar { display: flex; min-height: 50px; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); background: #f8fafc; padding: 0 14px; }.version-switcher { min-width: 0; gap: 10px; }.toolbar-actions { gap: 8px; }.device-switch { height: 32px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: #fff; }.device-switch .el-button { width: 34px; height: 30px; margin: 0; border-radius: 0; color: #8794a8; }.device-switch .el-button + .el-button { border-left: 1px solid var(--border); }.device-switch .el-button.active { background: #eaf2ff; color: #2563eb; }
-.canvas-stage { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; align-items: stretch; justify-content: center; overflow: hidden; padding: 10px; background: #e8edf4; }.canvas-stage.device-tablet .prototype-frame { width: min(820px, 100%); }.canvas-stage.device-mobile .prototype-frame { width: min(430px, 100%); }.prototype-frame { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgb(15 23 42 / 8%); }.canvas-label { position: absolute; top: 18px; right: 22px; left: 22px; z-index: 1; display: flex; justify-content: space-between; gap: 12px; pointer-events: none; color: #8794a8; font-size: 11px; }.candidate-label { color: #9a6509; }.candidate-label .el-tag { pointer-events: auto; }.canvas-state { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }.canvas-state .el-icon { margin-right: 8px; }
+.workbench-toolbar { display: flex; min-height: 50px; flex: none; align-items: center; justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); background: #f8fafc; padding: 0 14px; }.version-switcher { min-width: 0; gap: 10px; }.menu-trigger { flex: none; font-weight: 600; }.menu-trigger .el-icon { margin-right: 4px; }.toolbar-actions { gap: 8px; }.device-switch { height: 32px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: #fff; }.device-switch .el-button { width: 34px; height: 30px; margin: 0; border-radius: 0; color: #8794a8; }.device-switch .el-button + .el-button { border-left: 1px solid var(--border); }.device-switch .el-button.active { background: #eaf2ff; color: #2563eb; }
+.canvas-stage { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; align-items: stretch; justify-content: center; overflow: hidden; padding: 10px; background: #e8edf4; }.canvas-frame-shell { display: flex; width: 100%; height: 100%; min-width: 0; min-height: 0; flex-direction: column; }.canvas-stage.device-tablet .canvas-frame-shell { width: min(820px, 100%); }.canvas-stage.device-mobile .canvas-frame-shell { width: min(430px, 100%); }.prototype-frame { display: block; width: 100%; height: auto; min-width: 0; min-height: 0; flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; box-shadow: 0 8px 24px rgb(15 23 42 / 8%); }.canvas-label { display: flex; min-height: 28px; flex: none; align-items: center; justify-content: space-between; gap: 12px; padding: 0 4px; color: #8794a8; font-size: 11px; }.candidate-label { color: #9a6509; }.candidate-label .el-tag { pointer-events: auto; }.canvas-state { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; }.canvas-state .el-icon { margin-right: 8px; }
+.focus-controls { position: absolute; top: 14px; right: 14px; left: 14px; z-index: 4; display: flex; justify-content: space-between; pointer-events: none; }.focus-controls .el-button { pointer-events: auto; border-color: rgb(148 163 184 / 45%); background: rgb(255 255 255 / 82%); box-shadow: 0 6px 18px rgb(15 23 42 / 15%); backdrop-filter: blur(8px); }.project-workbench.is-focus .workbench-context,.project-workbench.is-focus .workbench-toolbar { display: none; }.project-workbench.is-focus .canvas-stage { padding: 0; }.project-workbench.is-focus .canvas-label { display: none; }.project-workbench.is-focus .prototype-frame { border: 0; border-radius: 0; box-shadow: none; }
 .drawer-header { justify-content: space-between; gap: 14px; border-bottom: 1px solid var(--border); padding: 20px 22px 17px; }.drawer-header > div { min-width: 0; }.drawer-header h2 { margin: 3px 0 0; color: #172033; font-size: 18px; }.drawer-header p:last-child { margin: 6px 0 0; color: #8794a8; font-size: 12px; }.drawer-eyebrow { margin: 0; color: #8290a5; font-size: 11px; font-weight: 600; letter-spacing: .05em; }.drawer-scroll { min-height: 0; overflow-y: auto; padding: 16px; }.menu-group { margin-bottom: 16px; }.group-label { padding: 0 8px 8px; color: #8290a5; font-size: 12px; font-weight: 600; }.menu-item { display: flex; width: 100%; min-height: 42px; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #334155; padding: 8px 10px 8px 14px; text-align: left; cursor: pointer; }.menu-item:hover { background: #f5f8fc; }.menu-item.active { border-color: #cfe0ff; background: #eaf2ff; color: #2563eb; font-weight: 600; }.item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.item-meta { display: inline-flex; flex: none; align-items: center; gap: 4px; }.drawer-footer { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--border); background: #f8fafc; padding: 14px 22px; color: #8290a5; font-size: 12px; }.drawer-footer strong { max-width: 220px; overflow: hidden; color: #334155; text-overflow: ellipsis; white-space: nowrap; }
 .review-content { padding: 0; }.review-owner { gap: 10px; border-bottom: 1px solid var(--border); padding: 18px 20px; }.owner-avatar { display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; border-radius: 50%; background: #e8f0ff; color: #2563eb; font-size: 14px; font-weight: 700; }.review-owner > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }.review-owner small { color: #8794a8; font-size: 11px; }.review-owner strong { margin-top: 2px; color: #27364f; font-size: 13px; }.change-list { padding: 14px 16px 6px; }.change-item { width: 100%; justify-content: space-between; gap: 10px; margin-bottom: 8px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; padding: 11px 12px; text-align: left; cursor: pointer; }.change-item:hover { border-color: #b9d0fb; }.change-item.active { border-color: #6b9cf0; background: #f3f7ff; box-shadow: 0 0 0 2px #eaf2ff; }.change-item-main { display: flex; min-width: 0; flex: 1; flex-direction: column; }.change-item-main strong { overflow: hidden; color: #334155; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.change-item-main small { margin-top: 4px; color: #8794a8; font-size: 11px; }.change-detail { border-top: 1px solid var(--border); padding: 18px 20px 24px; }.change-detail-heading { align-items: flex-start; justify-content: space-between; gap: 12px; }.change-detail-heading h3 { margin: 0; color: #25344a; font-size: 16px; }.change-detail-heading p { margin: 6px 0 0; color: #718096; font-size: 12px; line-height: 1.6; }.change-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; margin: 11px 0; color: #8794a8; font-size: 11px; }.adopt-hint { margin: 12px 0; color: #718096; font-size: 12px; line-height: 1.6; }.review-actions { gap: 8px; margin: 12px 0; }.drawer-candidate-preview { display: block; width: 100%; height: 280px; margin-top: 14px; border: 1px solid #e2e8f0; border-radius: 6px; background: #fff; }.validation-errors { margin: 5px 0 0; padding-left: 16px; line-height: 1.6; }.dialog-tip { color: #718096; font-size: 13px; line-height: 1.7; }.task-code-row { display: flex; align-items: center; gap: 10px; margin-top: 16px; color: #606266; font-size: 13px; }.task-code-row code { padding: 4px 8px; color: #1f2937; background: #f2f6fc; border: 1px solid #dcdfe6; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }.task-prompt { box-sizing: border-box; width: 100%; max-height: 360px; overflow: auto; margin-top: 16px; padding: 14px; color: #e2e8f0; background: #172033; border-radius: 8px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; font: inherit; font-size: 12px; }
 @media (max-width: 760px) { .workbench-context { min-height: 54px; padding: 0 10px; }.context-actions .el-button { padding: 8px 5px; }.context-actions .el-button span:not(.el-icon) { display: none; }.context-breadcrumb { max-width: 43vw; }.workbench-toolbar { overflow-x: auto; padding: 0 8px; }.toolbar-actions { margin-left: auto; }.toolbar-actions > .el-button:not(:last-child) { display: none; }.canvas-stage { padding: 6px; } }
