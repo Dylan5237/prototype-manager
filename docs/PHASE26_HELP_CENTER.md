@@ -1,6 +1,6 @@
 # 阶段 26：帮助中心与手册维护
 
-> 状态：`in-progress`
+> 状态：`completed`（2026-09-03；16077 部署与业务回读通过）
 >
 > 目标验收：帮助中心成功部署到 16077 测试环境；16088 生产环境不在本轮范围。
 >
@@ -101,3 +101,15 @@
 - 验证结果记录 platform commit、release ID、备份 ID 和实际接口回读结果。
 
 阶段只有在上述 16077 条件满足后，才标记 `completed`。手册引入提示词是下一阶段，不用本阶段结果代替。
+
+## 6. 16077 实际验收证据
+
+- release：`20260903-143813-1a396d03`；platform commit：`1a396d03d1c5fc7278f669e5d17d410c870b25a0`；Skill commit：`686d0e3bf618d3af063051b7ff939de102ba4641`。
+- 备份：`20260903-143856-pre-test-20260903-143813-1a396d03`；部署结果：`deployment_status=complete`。
+- 基础状态：`health=200`、bootstrap 未登录 `401`、Nginx `200`。
+- 真实登录回读：用户 `wushengzhi` 读取帮助目录 `5` 篇，首篇 `quick-start`，状态 `published`；管理员视角 `includeDrafts=true` 读取 `5` 篇。
+- 真实安全预览：管理员预览返回标题 HTML，正文中的 `<script>` 未出现在结果中。
+- 页面资源：`/help=200`、`/admin/help=200`。
+- 浏览器扩展页面 DOM 检查因 `Debugger unattached` 未完成；不把这项工具受限结果冒充视觉验收，页面可达和核心业务 API 回读已完成。
+
+本轮没有把手册引入提示词，也没有修改 MCP/Skill；后续进入下一阶段前，仍需重新评估两仓契约并实施 `quickStartGuide/helpVersion`、`get_help/search_help`。
