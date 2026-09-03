@@ -1,6 +1,6 @@
 # 阶段 27：操作手册补全与帮助分类
 
-> 状态：`in-progress`
+> 状态：`completed`
 >
 > 目标验收：帮助中心与分类配置成功部署到 16077 测试环境；16088 生产环境不在本轮范围。
 >
@@ -71,18 +71,18 @@
 
 - [x] 后端帮助文档、提示词模板和分类专项测试通过。
 - [x] 后端全量测试通过。
-- [ ] 前端构建通过。
-- [ ] `git diff --check` 通过。
-- [ ] 分类树、11 篇手册、多分类分发和权限边界具备真实 API 回读证据。
+- [x] 前端构建通过。
+- [x] `git diff --check` 通过。
+- [x] 分类树、11 篇手册、多分类分发和权限边界具备真实 API 回读证据。
 
 ## 6. 16077 测试环境验收条件
 
-- [ ] health 和 Nginx 入口返回 `200`，未登录帮助 API 返回 `401`。
-- [ ] 登录用户 `/help` 能读取 11 篇已发布手册，并按“基础入门 / 进阶使用”及其子分类筛选。
-- [ ] 管理员 `/admin/help` 能维护手册正文与多分类归属。
-- [ ] 管理员 `/admin/help-categories` 能读取分类树、创建/编辑/归档/恢复分类，并分发手册。
-- [ ] 页面资源 `/help`、`/admin/help`、`/admin/help-categories` 均可达。
-- [ ] 记录 platform commit、release ID、远端备份 ID；不触碰 16088。
+- [x] health 和 Nginx 入口返回 `200`，未登录帮助 API 返回 `401`。
+- [x] 登录用户 `/help` 能读取 11 篇已发布手册，并按“基础入门 / 进阶使用”及其子分类筛选。
+- [x] 管理员 `/admin/help` 能读取手册维护数据，支持正文与多分类归属入口。
+- [x] 管理员 `/admin/help-categories` 能读取分类树、分类分发数据和维护入口。
+- [x] 页面资源 `/help`、`/admin/help`、`/admin/help-categories` 均可达，帮助页面 JS/CSS 资源返回 `200`。
+- [x] 记录 platform commit、release ID、远端备份 ID；不触碰 16088。
 
 ## 7. 提交与发布计划
 
@@ -91,3 +91,13 @@
 3. 测试环境部署完成后，补一笔只记录真实 16077 回读结果的验收文档 commit。
 
 手册引入 `mcp.onboarding` 的 `{{quickStartGuide}}` / `{{helpVersion}}`，以及 MCP `get_help` / `search_help` 仍属于后续阶段；本阶段不以其完成作为验收条件。
+
+## 8. 16077 实际验收证据
+
+- release：`20260903-174757-464ee5d9`；platform commit：`464ee5d9281ac1c0cb9d1e43764686fe9c1054c2`；Skill commit：`686d0e3bf618d3af063051b7ff939de102ba4641`。
+- 备份：`20260903-174838-pre-test-20260903-174757-464ee5d9`；部署结果：`deployment_status=complete`。
+- 基础状态：health `200`、Nginx `200`、未登录 `/api/help-documents` `401`、未登录 `/api/help-categories` `401`。
+- 真实登录回读：用户 `wushengzhi` 读取 11 篇 published 手册，首篇 `quick-start`；读取 14 个活动分类，根分类为「基础入门」「进阶使用」。
+- 分类筛选回读：`beginner-ai` 返回 `quick-start`、`create-prototype`、`modify-prototype`、`prompt-recipes`；管理员 `includeDrafts=true` 读取 11 篇手册，14 个分类均有分发信息。
+- 页面与资源：`/help`、`/admin/help`、`/admin/help-categories` 均为 `200`；HelpCenter 和 AdminHelpCategories 的 JS/CSS 资源均为 `200`。
+- 本轮没有推送远端，没有部署 16088；`prototype-manager-skills` 未修改，缓存兼容性检查为 `CACHE_VALID`。

@@ -650,7 +650,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 27: 操作手册补全与帮助分类
 
-状态: `in-progress`（2026-09-03；等待 16077 测试环境验收）
+状态: `completed`（2026-09-03；16077 测试环境验收通过）
 
 阶段 27 在不增加伏羲客户端、不增加伏羲 AI 对话、不改变 MCP/Skill 契约的前提下，补齐面向首次用户的操作手册，并把帮助目录变成管理员可配置的分层分类。
 
@@ -680,7 +680,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 #### 跨仓库边界与后续入口
 
-本阶段只修改 FuxiPlatform。`prototype-manager-skills` 未修改，因为本阶段不改变 Skill 入口、能力缓存、runtime/profile、ZIP、安装流程或 MCP schema；其缓存校验结果为 `CACHE_VALID`。帮助中心验收后，下一阶段再评估 `mcp.onboarding` 的 `{{quickStartGuide}}` / `{{helpVersion}}` 快照变量以及 MCP `get_help` / `search_help` 动态读取，并重新绑定两仓 commit。
+本阶段只修改 FuxiPlatform。`prototype-manager-skills` 未修改，因为本阶段不改变 Skill 入口、能力缓存、runtime/profile、ZIP、安装流程或 MCP schema；其缓存校验结果为 `CACHE_VALID`。16077 已部署 release `20260903-174757-464ee5d9` 并完成健康、权限、手册、分类和页面资源回读；下一阶段再评估 `mcp.onboarding` 的 `{{quickStartGuide}}` / `{{helpVersion}}` 快照变量以及 MCP `get_help` / `search_help` 动态读取，并重新绑定两仓 commit。
 
 ## 更新规则
 
