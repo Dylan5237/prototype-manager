@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>伏羲平台 · 帮助中心原型</title>
+  <style>
+    :root {
+      --blue: #3b82f6;
+      --blue-strong: #2563eb;
+      --ink: #172033;
+      --muted: #64748b;
+      --subtle: #94a3b8;
+      --line: #e2e8f0;
+      --line-soft: #edf2f7;
+      --canvas: #f2f6fb;
+      --panel: #ffffff;
+      --blue-tint: #eef6ff;
+      --shadow: 0 18px 46px rgba(15, 23, 42, .10);
+      --header: 58px;
+      --side: 208px;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      overflow: hidden;
+      color: var(--ink);
+      background: var(--canvas);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    }
+    button, input, textarea { font: inherit; }
+    button { cursor: pointer; }
+    button:focus-visible, input:focus-visible, textarea:focus-visible {
+      outline: 3px solid rgba(59, 130, 246, .22);
+      outline-offset: 2px;
+    }
+    .topbar {
+      height: var(--header);
+      display: grid;
+      grid-template-columns: var(--side) 1fr auto;
+      align-items: center;
+      background: rgba(255, 255, 255, .84);
+      border-bottom: 1px solid var(--line);
+      backdrop-filter: blur(14px);
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding-left: 16px; }
+    .brand-mark {
+      width: 30px; height: 30px; display: grid; place-items: center;
+      color: #fff; border-radius: 8px; background: linear-gradient(135deg, #7acb6a, #3987e7);
+      font-size: 15px; font-weight: 800;
+    }
+    .brand-name { color: var(--ink); font-size: 16px; font-weight: 750; }
+    .brand-sub { display: block; color: var(--subtle); font-size: 10px; line-height: 1.2; }
+    .beta { margin-left: 4px; padding: 2px 6px; color: #4f9bf3; border: 1px solid #cfe3ff; border-radius: 5px; background: #eff6ff; font-size: 10px; }
+    .topnav { display: flex; align-items: center; gap: 5px; margin-left: 28px; }
+    .topnav button {
+      min-height: 38px; padding: 0 14px; color: #526075; border: 0; border-radius: 9px; background: transparent; font-weight: 650;
+    }
+    .topnav button:hover, .topnav button.active { color: #1e293b; background: #e9eef5; }
+    .account { display: flex; align-items: center; gap: 9px; margin-right: 16px; color: #334155; font-weight: 650; }
+    .avatar { width: 31px; height: 31px; display: grid; place-items: center; color: #1d4ed8; border-radius: 50%; background: #dbeafe; font-size: 12px; }
+    .shell { height: calc(100vh - var(--header)); display: grid; grid-template-columns: var(--side) 1fr; }
+    .sidebar { padding: 0 10px; background: rgba(255, 255, 255, .76); border-right: 1px solid var(--line); }
+    .sidebar-title { height: 62px; display: flex; align-items: center; gap: 10px; padding-left: 7px; color: var(--ink); font-size: 15px; font-weight: 750; }
+    .sidebar-title span:first-child { color: #526075; font-size: 19px; }
+    .side-label { padding: 14px 11px 6px; color: var(--subtle); font-size: 11px; font-weight: 750; letter-spacing: .08em; }
+    .sidenav { display: grid; gap: 3px; }
+    .sidenav button {
+      min-height: 40px; padding: 0 12px; color: #526075; border: 0; border-radius: 8px; background: transparent; text-align: left;
+    }
+    .sidenav button:hover { background: #f1f5f9; }
+    .sidenav button.active { color: #1e293b; background: #e7edf5; font-weight: 700; }
+    main { min-width: 0; padding: 25px 30px 28px; overflow: hidden; }
+    .page { height: 100%; max-width: 1370px; margin: auto; display: flex; flex-direction: column; }
+    .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; margin-bottom: 18px; }
+    .breadcrumb { margin-bottom: 4px; color: var(--subtle); font-size: 12px; }
+    h1, h2, h3, p { margin-top: 0; }
+    .page-head h1 { margin-bottom: 4px; font-size: 23px; line-height: 1.35; }
+    .page-head p { margin: 0; color: var(--muted); }
+    .head-actions { display: flex; align-items: center; gap: 9px; }
+    .search {
+      width: 260px; min-height: 38px; padding: 0 12px 0 36px; color: var(--ink);
+      border: 1px solid var(--line); border-radius: 8px; outline: none; background: #fff;
+    }
+    .search-wrap { position: relative; }
+    .search-icon { position: absolute; left: 12px; top: 8px; color: var(--subtle); font-size: 17px; pointer-events: none; }
+    .btn {
+      min-height: 38px; padding: 7px 14px; color: #334155; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; font-weight: 650;
+    }
+    .btn:hover { border-color: #94a3b8; background: #f8fafc; }
+    .btn.primary { color: #fff; border-color: var(--blue); background: var(--blue); }
+    .btn.primary:hover { background: var(--blue-strong); }
+    .workspace {
+      min-height: 0; flex: 1; display: grid; grid-template-columns: 235px minmax(0, 1fr) 265px;
+      gap: 14px; align-items: stretch;
+    }
+    .panel { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 1px 2px rgba(15, 23, 42, .02); overflow: hidden; }
+    .catalog { padding: 16px 10px; overflow: auto; }
+    .catalog-head { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 12px; border-bottom: 1px solid var(--line-soft); }
+    .eyebrow { display: block; margin-bottom: 2px; color: var(--subtle); font-size: 10px; font-weight: 750; letter-spacing: .08em; }
+    .catalog-head h2 { margin: 0; font-size: 15px; }
+    .count { min-width: 28px; padding: 3px 8px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; background: #fff; font-size: 12px; text-align: center; }
+    .catalog-group { margin-top: 13px; }
+    .catalog-group-title { padding: 0 9px 5px; color: var(--subtle); font-size: 11px; font-weight: 750; }
+    .doc-link {
+      display: block; width: 100%; padding: 10px 9px; color: inherit; border: 0; border-radius: 8px; background: transparent; text-align: left;
+    }
+    .doc-link:hover { background: #f8fbff; }
+    .doc-link.active { color: #1677ff; background: var(--blue-tint); }
+    .doc-link strong, .doc-link small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .doc-link strong { font-size: 13px; }
+    .doc-link small { margin-top: 3px; color: var(--subtle); font-size: 11px; }
+    .doc-link.active small { color: #75a8e8; }
+    .reader { min-height: 0; display: flex; flex-direction: column; }
+    .reader-head { padding: 23px 26px 18px; border-bottom: 1px solid var(--line-soft); }
+    .reader-head h2 { margin: 0 0 6px; font-size: 21px; line-height: 1.35; }
+    .reader-meta { display: flex; align-items: center; gap: 8px; color: var(--subtle); font-size: 12px; }
+    .tag { padding: 3px 7px; color: #2563eb; border-radius: 5px; background: #eff6ff; font-size: 11px; font-weight: 700; }
+    .reader-body { min-height: 0; flex: 1; padding: 22px 26px; overflow: auto; }
+    .lead { margin-bottom: 18px; padding: 14px 16px; color: #334155; border-left: 4px solid var(--blue); border-radius: 0 9px 9px 0; background: #f8fafc; }
+    .step-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .step { padding: 15px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .step-top { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+    .step-no { width: 25px; height: 25px; display: grid; place-items: center; color: #1d4ed8; border-radius: 7px; background: #dbeafe; font-size: 12px; font-weight: 800; }
+    .step h3 { margin: 0; font-size: 14px; }
+    .step p { margin: 0; color: var(--muted); font-size: 13px; }
+    .reader-body h3.section-title { margin: 20px 0 9px; font-size: 15px; }
+    .check-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; color: #475569; }
+    .check-list li::before { content: "✓"; display: inline-grid; width: 20px; height: 20px; margin-right: 7px; place-items: center; color: #15803d; border-radius: 50%; background: #dcfce7; font-size: 11px; font-weight: 800; }
+    .reader-cta { margin-top: 20px; padding: 13px 15px; border: 1px solid #bfdbfe; border-radius: 9px; background: linear-gradient(100deg, #eff6ff, #f8fbff); }
+    .reader-cta strong, .reader-cta span { display: block; }
+    .reader-cta span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+    .context { display: flex; min-height: 0; flex-direction: column; gap: 12px; }
+    .context-card { padding: 16px; border: 1px solid var(--line); border-radius: 11px; background: #fff; }
+    .context-card.highlight { border-color: #bfdbfe; background: linear-gradient(145deg, #eff6ff, #fff); }
+    .context-card h3 { margin: 0 0 7px; font-size: 14px; }
+    .context-card p { margin: 0; color: var(--muted); font-size: 12px; }
+    .context-card .btn { width: 100%; margin-top: 12px; }
+    .tool-call { margin-top: 11px; padding: 10px; overflow: auto; color: #334155; border: 1px solid #dbeafe; border-radius: 7px; background: rgba(255,255,255,.75); font: 11px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .context-list { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+    .context-list li { display: flex; align-items: flex-start; gap: 8px; color: var(--muted); font-size: 12px; }
+    .context-list b { color: #2563eb; }
+    .status-row { display: flex; align-items: center; justify-content: space-between; color: var(--subtle); font-size: 12px; }
+    .status { color: #15803d; font-weight: 700; }
+    .toast { position: fixed; right: 22px; top: 75px; display: none; padding: 12px 15px; color: #166534; border: 1px solid #bbf7d0; border-radius: 9px; background: #f0fdf4; box-shadow: var(--shadow); }
+    .toast.show { display: block; }
+    .edit-mode .reader-head h2::after { content: " · 内容维护"; color: var(--blue); font-size: 13px; font-weight: 500; }
+    .edit-mode .reader-body { background: #fbfcfe; }
+    .editor-label { display: block; margin: 0 0 6px; color: var(--muted); font-size: 12px; font-weight: 650; }
+    .editor-input, .editor-textarea { width: 100%; padding: 10px 11px; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; background: #fff; outline: none; }
+    .editor-textarea { min-height: 190px; resize: vertical; line-height: 1.65; }
+    .editor-block + .editor-block { margin-top: 13px; }
+    .editor-actions { display: flex; gap: 8px; margin-top: 15px; }
+    @media (max-width: 1100px) { .workspace { grid-template-columns: 210px minmax(0, 1fr); } .context { display: none; } }
+    @media (max-width: 760px) { body { overflow: auto; } .topbar { grid-template-columns: 1fr auto; } .topnav { display: none; } .shell { height: auto; display: block; } .sidebar { display: none; } main { padding: 20px 15px; overflow: visible; } .page { height: auto; } .page-head { flex-direction: column; } .head-actions { width: 100%; } .search { flex: 1; width: auto; } .workspace { display: block; } .catalog { margin-bottom: 14px; } .reader { min-height: 680px; } .step-grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">伏</span><div><span class="brand-name">伏羲平台 <small class="beta">beta</small></span><span class="brand-sub">AI 原型管理平台</span></div></div>
+    <nav class="topnav" aria-label="主导航"><button>▧ 原型列表</button><button>▣ 项目</button><button>⚙ 系统管理</button><button class="active">? 帮助</button></nav>
+    <div class="account"><span class="avatar">W</span><span>wushengzhi</span><span>⌄</span></div>
+  </header>
+  <div class="shell">
+    <aside class="sidebar" aria-label="帮助中心导航">
+      <div class="sidebar-title"><span>?</span><span>帮助中心</span></div>
+      <div class="side-label">使用手册</div>
+      <nav class="sidenav">
+        <button class="active" data-doc="quick-start">快速入门</button>
+        <button data-doc="mcp-onboarding">接入平台 MCP</button>
+        <button data-doc="create-prototype">创建原型</button>
+        <button data-doc="modify-prototype">修改原型</button>
+      </nav>
+      <div class="side-label">问题排查</div>
+      <nav class="sidenav"><button data-doc="faq">常见问题</button></nav>
+    </aside>
+    <main>
+      <div class="page">
+        <div class="page-head">
+          <div><div class="breadcrumb">帮助中心 / 使用手册</div><h1>帮助中心</h1><p>用最少的步骤了解伏羲平台，并把常用手册交给 AI 助手。</p></div>
+          <div class="head-actions"><div class="search-wrap"><span class="search-icon">⌕</span><input id="search" class="search" type="search" placeholder="搜索使用手册" aria-label="搜索使用手册"></div><button id="maintain" class="btn">维护手册</button></div>
+        </div>
+        <div id="workspace" class="workspace">
+          <section class="panel catalog" aria-label="手册目录">
+            <div class="catalog-head"><div><span class="eyebrow">DOCUMENTATION</span><h2>手册目录</h2></div><span class="count">5 篇</span></div>
+            <div class="catalog-group"><div class="catalog-group-title">开始使用</div><button class="doc-link active" data-doc="quick-start"><strong>快速入门</strong><small>3 分钟了解核心流程</small></button><button class="doc-link" data-doc="mcp-onboarding"><strong>接入平台 MCP</strong><small>让 AI 助手使用伏羲能力</small></button></div>
+            <div class="catalog-group"><div class="catalog-group-title">原型工作流</div><button class="doc-link" data-doc="create-prototype"><strong>创建原型</strong><small>从需求到可预览原型</small></button><button class="doc-link" data-doc="modify-prototype"><strong>修改原型</strong><small>独立版本与项目候选</small></button></div>
+            <div class="catalog-group"><div class="catalog-group-title">问题排查</div><button class="doc-link" data-doc="faq"><strong>常见问题</strong><small>连接、预览和交付排查</small></button></div>
+          </section>
+          <article id="reader" class="panel reader" aria-live="polite"></article>
+          <aside class="context" aria-label="帮助中心上下文"><div id="context" class="context-card highlight"></div><div class="context-card"><h3>手册维护状态</h3><div class="status-row"><span>当前发布</span><span class="status">已发布</span></div><div class="status-row" style="margin-top:8px"><span>版本</span><span>v1.0 · 2026-09-03</span></div><button class="btn" id="context-maintain">维护手册</button></div><div class="context-card"><h3>阅读建议</h3><ul class="context-list"><li><b>01</b><span>先看快速入门，再按当前任务打开对应手册。</span></li><li><b>02</b><span>页面右侧指令可交给已接入的 AI 助手。</span></li></ul></div></aside>
+        </div>
+      </div>
+    </main>
+  </div>
+  <div id="toast" class="toast" role="status"></div>
+  <script>
+    const docs = {
+      "quick-start": { group: "开始使用", title: "伏羲平台快速入门", meta: "预计阅读 3 分钟", version: "v1.0", lead: "伏羲平台负责管理 AI 生成的前端原型：你在平台上准备需求、查看预览和版本；AI 助手负责实现与交付。", steps: [["01", "准备需求", "在原型列表点击“让 AI 创建原型”，写清使用者、目标、关键页面和验收方式。"], ["02", "接入 AI", "首次使用先完成 MCP 与 Skill 接入；接入成功后开启一个新的 AI 会话。"], ["03", "交给 AI 实现", "复制平台生成的完整提示词，发送给已接入伏羲的 AI 助手。"], ["04", "回到平台验收", "在伏羲平台查看预览、设计文档和版本；修改时选择独立正式版本或项目候选版本。"]], checks: ["业务需求只以你提供的文字和附件为准，不让 AI 自行扩展业务范围。", "交付前必须完成构建、入口、资源引用和预览检查。", "项目候选版本需要负责人预览并采用，未采用前不改变正式版本。"] },
+      "mcp-onboarding": { group: "开始使用", title: "接入平台 MCP", meta: "预计阅读 5 分钟", version: "v1.0", lead: "接入后，AI 助手可以发现 fuxi-prototype Skill，并调用伏羲 MCP 创建、修改和交付原型。", steps: [["01", "识别客户端", "确认当前 AI 工具、操作系统、MCP 配置路径和 Skill 目录。"], ["02", "安装能力", "使用平台生成的接入提示词，下载并校验 MCP 与 Skill，然后由 launcher 原子安装。"], ["03", "完成验证", "安装后调用 check_connection，并确认 tools/list 与 Skill 文件均可发现。"], ["04", "开始使用", "刷新或重启 AI 客户端，打开新会话，再把创建或修改提示词交给 AI。"]], checks: ["接入成功不等于客户端已重新加载，必须区分 reloadRequired 和 postReloadVerified。", "连接码、token 和凭据不写入业务仓库，也不回显到回答中。", "后续 MCP 与 Skill 更新由 launcher 在客户端启动时处理。"] },
+      "create-prototype": { group: "原型工作流", title: "让 AI 创建原型", meta: "预计阅读 4 分钟", version: "v1.0", lead: "用平台生成的提示词固定需求边界和交付顺序，让 AI 把注意力集中在原型实现。", steps: [["01", "写清需求", "说明目标用户、使用场景、页面范围、关键交互和验收方式。"], ["02", "选择模式", "快速验证适合先看布局和主路径；按组件规范适合需要严格执行 runtime 规范的交付。"], ["03", "发送提示词", "复制完整提示词，发送到已接入伏羲的 AI 会话。"], ["04", "检查结果", "回到平台查看预览、README、版本与剩余风险，不把 AI 的口头说明当作交付证据。"]], checks: ["只把需求文字和附件作为业务来源，减少 AI 自行补充。", "正式版本只能在 validate_project、pack_project、validate_zip、deliver_project 全部通过后形成。"] },
+      "modify-prototype": { group: "原型工作流", title: "让 AI 修改原型", meta: "预计阅读 4 分钟", version: "v1.0", lead: "修改入口会锁定基线版本并生成专用任务码，避免 AI 凭空重建或覆盖错误版本。", steps: [["01", "选择入口", "未归属项目的原型走独立修改；项目内原型走候选版本流程。"], ["02", "领取任务", "AI 第一调用必须领取任务，并下载平台返回的当前正式版本源码。"], ["03", "提交交付", "完成构建、校验和 ZIP 后，调用对应的正式版本或候选上传工具。"], ["04", "确认状态", "独立修改确认 completed；项目修改确认 ready，最终由项目负责人决定是否采用。"]], checks: ["未收到 completed 或 adopted/ready 证据时，不要宣称已上线。", "项目候选未采用前不会改变正式版本。"] },
+      "faq": { group: "问题排查", title: "常见问题", meta: "预计阅读 3 分钟", version: "v1.0", lead: "先判断问题发生在客户端加载、MCP 连接、Skill 发现还是原型交付阶段，再按对应手册处理。", steps: [["01", "没有工具", "确认客户端已刷新或重启，并检查 MCP Host 是否完成 tools/list。"], ["02", "连接失败", "检查连接码是否过期；过期时回到平台重新生成接入提示词。"], ["03", "预览异常", "让 AI 从正式版本源码排查入口、相对路径和资源引用，不要直接重建。"], ["04", "候选未生效", "项目候选必须由负责人预览并采用，ready 不等于正式版本已切换。"]], checks: ["报告问题时带上 AI 工具、客户端版本、MCP 连接状态和具体错误码。", "不要把 token、密码或凭据文件内容粘贴到对话中。"] }
+    };
+    let selected = "quick-start";
+    let editing = new URLSearchParams(location.search).get("mode") === "edit";
+    const reader = document.getElementById("reader");
+    const context = document.getElementById("context");
+    const workspace = document.getElementById("workspace");
+    const toast = document.getElementById("toast");
+    function showToast(message) { toast.textContent = message; toast.classList.add("show"); setTimeout(() => toast.classList.remove("show"), 1800); }
+    function renderDoc() {
+      const doc = docs[selected];
+      document.querySelectorAll("[data-doc]").forEach(node => node.classList.toggle("active", node.dataset.doc === selected));
+      if (editing) {
+        reader.innerHTML = '<div class="reader-head"><div class="reader-meta"><span class="tag">内容维护</span><span>草稿编辑 · 未发布</span></div><h2>' + doc.title + '</h2></div><div class="reader-body"><div class="editor-block"><label class="editor-label" for="doc-title">手册标题</label><input id="doc-title" class="editor-input" value="' + doc.title + '"></div><div class="editor-block"><label class="editor-label" for="doc-lead">摘要</label><textarea id="doc-lead" class="editor-textarea" style="min-height:90px">' + doc.lead + '</textarea></div><div class="editor-block"><label class="editor-label" for="doc-content">正文 Markdown</label><textarea id="doc-content" class="editor-textarea">' + doc.steps.map((step, index) => "## " + (index + 1) + ". " + step[1] + "\n" + step[2]).join("\n\n") + '</textarea></div><div class="editor-actions"><button class="btn" id="cancel-edit">取消</button><button class="btn primary" id="save-draft">保存草稿</button><button class="btn primary" id="publish-draft">发布新版本</button></div></div>';
+        context.innerHTML = "<h3>维护手册</h3><p>先保存草稿，再发布为用户和 AI 可读取的版本。发布后保留版本号与更新时间。</p>";
+        document.getElementById("cancel-edit").onclick = () => { editing = false; renderDoc(); };
+        document.getElementById("save-draft").onclick = () => showToast("原型演示：草稿已保存");
+        document.getElementById("publish-draft").onclick = () => showToast("原型演示：已发布 v1.1");
+        return;
+      }
+      reader.innerHTML = '<div class="reader-head"><div class="reader-meta"><span class="tag">' + doc.group + '</span><span>' + doc.meta + '</span><span>' + doc.version + '</span></div><h2>' + doc.title + '</h2></div><div class="reader-body"><p class="lead">' + doc.lead + '</p><div class="step-grid">' + doc.steps.map(step => '<section class="step"><div class="step-top"><span class="step-no">' + step[0] + '</span><h3>' + step[1] + '</h3></div><p>' + step[2] + '</p></section>').join("") + '</div><h3 class="section-title">执行检查</h3><ul class="check-list">' + doc.checks.map(item => "<li>" + item + "</li>").join("") + '</ul><div class="reader-cta"><strong>准备好了吗？</strong><span>返回原型列表，打开对应入口，平台会生成与当前任务匹配的完整提示词。</span></div></div>';
+      context.innerHTML = '<h3>交给 AI 助手</h3><p>已接入 MCP 的 AI 可以按手册标识读取最新内容。</p><div class="tool-call">get_help({ slug: "' + selected + '" })</div><button class="btn primary" id="copy-command">复制给 AI</button>';
+      document.getElementById("copy-command").onclick = () => showToast("原型演示：指令已复制");
+    }
+    function setSelected(key) { if (!docs[key]) return; selected = key; editing = false; renderDoc(); }
+    document.querySelectorAll("[data-doc]").forEach(node => node.addEventListener("click", () => setSelected(node.dataset.doc)));
+    document.getElementById("maintain").onclick = () => { editing = true; renderDoc(); };
+    document.getElementById("context-maintain").onclick = () => { editing = true; renderDoc(); };
+    document.getElementById("search").addEventListener("input", event => {
+      const term = event.target.value.trim().toLowerCase();
+      document.querySelectorAll(".doc-link").forEach(node => { node.hidden = term && !(node.textContent + docs[node.dataset.doc].lead).toLowerCase().includes(term); });
+    });
+    renderDoc();
+  </script>
+</body>
+</html>

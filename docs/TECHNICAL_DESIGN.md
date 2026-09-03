@@ -1,7 +1,7 @@
 # 伏羲原型体系技术方案设计文档
 
-> 版本: 1.0
-> 更新日期: 2026-08-27
+> 版本: 1.1
+> 更新日期: 2026-09-03
 > 文档定位: 伏羲原型体系的完整技术方案设计，包含但不限于整体架构、环境信息、使用手册、详细设计说明和迭代计划
 > 配套文档: [MCP_SKILLS_EVOLUTION_JOURNEY.md](MCP_SKILLS_EVOLUTION_JOURNEY.md) 记录迭代旅程和阶段验证证据
 
@@ -610,6 +610,43 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 阶段 20 已完成；BL-003/004 已关闭，BL-006 只保留实际处置决策，详见 [PHASE20_EVIDENCE.md](PHASE20_EVIDENCE.md) 和 [BACKLOG.md](BACKLOG.md)。
 - 阶段 21 已完成仓库治理与安全同步：FuxiPlatform `main` 已更新 GitLab/GitHub 两端，协作分支与 tag 已按安全方案同步；Skill `main` 已更新 GitLab，两个主 worktree 无未跟踪文件。分支、tag、worktree 和残留处置证据见 [PHASE21_EVIDENCE.md](PHASE21_EVIDENCE.md)。
 - 阶段 21 未执行分支/worktree 删除、强制推送、合并或部署；阶段 22 BL-007 已完成平台侧权限实现和本地/API 回归，16077 真实页面验收待执行。
+
+### 阶段 26: 帮助中心与手册维护
+
+状态: `in-progress`（本轮目标：帮助中心成功部署 16077；手册引入提示词在帮助中心验收后实施）
+
+本阶段把原来写死在接入提示词中的“快速入门”沉淀为可维护的帮助内容源，但暂不改动提示词生成链路。产品仍保持轻量 Web 原型查看、发布和分享平台，不新增伏羲客户端或 AI 对话能力。
+
+#### 用户入口与信息架构
+
+- 顶部导航在「系统管理」后增加「帮助」，登录用户进入 `/help` 阅读已发布手册。
+- 阅读页采用“左目录 / 中正文 / 右上下文”的三栏结构，支持标题、摘要和标识搜索，内容区域独立滚动，桌面端尽量一屏完成导航和阅读。
+- 管理员从「系统管理 → 帮助中心 → 使用手册」或阅读页的「维护手册」进入 `/admin/help`；维护流程为编辑草稿 → 预览 → 保存 → 发布。
+- 管理页只维护内置手册，新增文档保留 `slug`、`version` 和排序扩展点，避免本轮引入复杂的文档站点和权限模型。
+
+#### 数据与 API
+
+平台后端新增 `help_documents`：草稿字段与 `published_*` 快照分离。管理员编辑时，普通用户继续读取旧的已发布版本；发布动作才替换公开快照；归档不会物理删除文档。
+
+- `GET /api/help-documents`：登录用户只返回已发布内容；管理员带 `includeDrafts=true` 可查看草稿和归档。
+- `GET /api/help-documents/:slug`：按稳定标识读取文档。
+- `POST /api/help-documents/:slug/preview`：管理员只读预览当前草稿，不写库。
+- `PUT /api/help-documents/:slug`：管理员保存草稿。
+- `POST /api/help-documents/:slug/publish`：管理员发布当前草稿。
+- Markdown 统一转换为受控 HTML，移除脚本、事件属性和 `javascript:` 协议。
+
+服务层同时暴露“读取已发布文档”的稳定边界，后续可以直接被提示词快照或 MCP 只读工具复用；本阶段不增加 `get_help` / `search_help` MCP 工具，不修改 `fuxi-prototype` Skill。
+
+#### 后续提示词与 MCP 扩展点（本阶段不启用）
+
+帮助中心完成 16077 验收后，再分两步接入原有流程：
+
+1. 接入提示词增加受控变量 `{{quickStartGuide}}`、`{{helpVersion}}`，由后端读取最新 published 快照并在生成提示词时渲染，保证首次接入即可展示当时版本的入门手册。
+2. 平台 MCP 增加只读 `get_help({ slug })` / `search_help({ query })`，复用同一 published 服务层；Skill 同步工具说明和能力缓存。动态读取失败时保留提示词快照作为 fallback。
+
+这样既不让 AI 助手猜测变量含义，也不让提示词直接访问数据库；发布版本、读取权限和内容安全均由平台后端控制。上述第 1、2 步属于下一阶段，不计入本轮帮助中心验收。
+
+详细需求、原型、技术路径和验收条件见 [PHASE26_HELP_CENTER.md](PHASE26_HELP_CENTER.md)；可点击设计稿见 [help-module-prototype](design/help-module-prototype/README.md)。
 
 ## 更新规则
 

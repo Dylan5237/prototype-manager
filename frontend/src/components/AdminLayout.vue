@@ -9,7 +9,7 @@
 
 <script setup>
 import GlobalSidebar from './GlobalSidebar.vue'
-import { Setting, User, UserFilled, Promotion, Collection, Bell, DataAnalysis, MagicStick } from '@element-plus/icons-vue'
+import { Setting, User, UserFilled, Promotion, Collection, Bell, DataAnalysis, MagicStick, Document } from '@element-plus/icons-vue'
 
 const sections = [
   {
@@ -34,6 +34,10 @@ const sections = [
   {
     label: 'AI 配置',
     items: [{ index: '/admin/prompt-templates', label: '提示词模板', icon: MagicStick }]
+  },
+  {
+    label: '帮助中心',
+    items: [{ index: '/admin/help', label: '使用手册', icon: Document }]
   }
 ]
 </script>

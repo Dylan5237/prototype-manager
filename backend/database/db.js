@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const { applyCollaborationSchema } = require('./collaboration-schema');
 const { PROMPT_TEMPLATE_DEFAULTS } = require('../services/prompt-template-defaults');
+const { HELP_DOCUMENT_DEFAULTS } = require('../services/help-document-defaults');
 
 const DEFAULT_DB_PATH = path.join(__dirname, '../data/app.db');
 
@@ -483,6 +484,54 @@ function createTables() {
       definition.key
     ]);
   }
+
+  // 帮助中心：草稿字段与已发布快照分离，编辑草稿不影响普通用户正在阅读的版本。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS help_documents (
+      slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL DEFAULT '',
+      content_markdown TEXT NOT NULL DEFAULT '',
+      version TEXT NOT NULL DEFAULT '1.0',
+      status TEXT NOT NULL DEFAULT 'draft',
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      published_at TEXT,
+      published_title TEXT,
+      published_summary TEXT,
+      published_content_markdown TEXT,
+      published_version TEXT,
+      FOREIGN KEY (updated_by) REFERENCES users(id)
+    )
+  `);
+  const helpDocumentNow = new Date().toISOString();
+  for (const definition of HELP_DOCUMENT_DEFAULTS) {
+    db.run(`
+      INSERT INTO help_documents
+        (slug, title, summary, content_markdown, version, status, sort_order,
+         created_at, updated_at, published_at, published_title, published_summary,
+         published_content_markdown, published_version)
+      SELECT ?, ?, ?, ?, ?, 'published', ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM help_documents WHERE slug = ?)
+    `, [
+      definition.slug,
+      definition.title,
+      definition.summary,
+      definition.contentMarkdown,
+      definition.version,
+      definition.sortOrder,
+      helpDocumentNow,
+      helpDocumentNow,
+      helpDocumentNow,
+      definition.title,
+      definition.summary,
+      definition.contentMarkdown,
+      definition.version,
+      definition.slug
+    ]);
+  }
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
@@ -490,6 +539,7 @@ function createTables() {
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_user ON agent_update_intents(user_id, updated_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcements_status ON platform_announcements(status, published_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcement_reads_user ON platform_announcement_reads(user_id, read_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_help_documents_status_order ON help_documents(status, sort_order, slug)`); } catch (e) {}
 
   // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
   applyCollaborationSchema(db);

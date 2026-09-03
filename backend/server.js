@@ -16,6 +16,7 @@ const shareRoutes = require('./routes/share');
 const integrationRoutes = require('./routes/integrations');
 const announcementRoutes = require('./routes/announcements');
 const promptTemplateRoutes = require('./routes/prompt-templates');
+const helpDocumentRoutes = require('./routes/help-documents');
 const adminUsageRoutes = require('./routes/admin-usage');
 const collaborationWebhookRoutes = require('./routes/collaboration-webhooks');
 const { initProxy } = require('./services/github');
@@ -77,6 +78,7 @@ async function startServer() {
   app.use('/api/integrations', integrationRoutes);
   app.use('/api/announcements', announcementRoutes);
   app.use('/api/prompt-templates', promptTemplateRoutes);
+  app.use('/api/help-documents', helpDocumentRoutes);
   app.use('/api/admin', adminUsageRoutes);
   
   // 静态文件服务 - 用于预览原型
