@@ -2,22 +2,21 @@
   <div class="help-center-page">
     <header class="help-center-header">
       <div>
-        <div class="help-eyebrow"><el-icon><QuestionFilled /></el-icon>帮助中心</div>
         <div class="help-title-row">
           <h1>{{ manageMode ? '手册维护' : '使用手册' }}</h1>
           <el-tag v-if="manageMode" type="warning" effect="light" size="small">管理员</el-tag>
         </div>
-        <p>{{ manageMode ? '维护已发布的使用手册，先保存草稿和预览，确认后再发布。' : '从接入 AI 工具开始，快速完成原型创建、修改、发布和分享。' }}</p>
+        <p>{{ manageMode ? '编辑正文，保存草稿，确认后发布。' : '从接入 AI 工具开始，快速完成原型创建、修改、发布和分享。' }}</p>
       </div>
       <div class="help-header-actions">
-        <el-input v-model="searchText" clearable :prefix-icon="Search" placeholder="搜索手册" class="help-search" />
+        <el-input v-if="!manageMode" v-model="searchText" clearable :prefix-icon="Search" placeholder="搜索手册" class="help-search" />
         <el-button v-if="manageMode" @click="goReader">返回阅读</el-button>
         <el-button v-else-if="authStore.isAdmin" type="primary" plain @click="goManager">维护手册</el-button>
         <el-button :loading="loading" @click="loadDocuments">刷新</el-button>
       </div>
     </header>
 
-    <div v-loading="loading" class="help-workspace">
+    <div v-loading="loading" :class="['help-workspace', { 'is-manage': manageMode }]">
       <aside class="help-panel help-catalog-panel">
         <div class="help-panel-heading">
           <div>
@@ -61,11 +60,9 @@
         <template v-else>
           <div class="help-editor">
             <div class="help-editor-heading">
-              <div>
-                <span class="help-panel-kicker">编辑草稿</span>
-                <h2>{{ selectedDocument.title }}</h2>
-              </div>
+              <h2>{{ selectedDocument.title }}</h2>
               <el-tag :type="statusType(selectedDocument.status)" effect="light">{{ statusLabel(selectedDocument.status) }}</el-tag>
+              <el-button size="small" @click="openPreview">预览</el-button>
             </div>
             <el-form label-position="top" class="help-editor-form">
               <div class="help-editor-fields">
@@ -82,55 +79,35 @@
       </main>
       <el-empty v-else-if="!loading" description="暂无可用手册" :image-size="96" class="help-empty" />
 
-      <aside v-if="selectedDocument" class="help-panel help-context-panel">
-        <template v-if="!manageMode">
-          <div class="help-context-card help-context-card--accent">
-            <div class="help-context-icon"><el-icon><Promotion /></el-icon></div>
-            <span class="help-panel-kicker">AI 助手</span>
-            <h2>让 AI 帮你完成</h2>
-            <p>本期先通过帮助中心阅读最新手册。后续接入 MCP 帮助工具后，AI 可按手册标识读取已发布内容。</p>
-            <div class="help-reserved-row"><el-icon><Lock /></el-icon> MCP 动态读取：预留</div>
-          </div>
-          <div class="help-context-card">
-            <span class="help-panel-kicker">阅读建议</span>
-            <h3>推荐顺序</h3>
-            <ol class="help-reading-order">
-              <li>先完成一次 MCP 接入</li>
-              <li>再创建一个最小原型</li>
-              <li>最后学习版本和分享</li>
-            </ol>
-          </div>
-        </template>
-        <template v-else>
-          <div class="help-context-card help-context-card--accent">
-            <div class="help-context-icon"><el-icon><View /></el-icon></div>
-            <span class="help-panel-kicker">实时预览</span>
-            <h2>发布前确认</h2>
-            <p>预览只使用当前草稿，不会写入公开版本。确认标题、步骤和链接无误后再发布。</p>
-            <div class="help-status-line">
-              <span>当前状态</span>
-              <el-tag :type="statusType(selectedDocument.status)" effect="light" size="small">{{ statusLabel(selectedDocument.status) }}</el-tag>
-            </div>
-            <div v-if="dirty" class="help-dirty-tip"><el-icon><WarningFilled /></el-icon>有未保存修改</div>
-          </div>
-          <div class="help-preview-card">
-            <div class="help-preview-toolbar">
-              <span>预览内容</span>
-              <el-button size="small" :loading="previewing" @click="refreshPreview">刷新</el-button>
-            </div>
-            <div class="help-preview-scroll">
-              <h3>{{ previewTitle }}</h3>
-              <p class="help-preview-summary">{{ previewSummary }}</p>
-              <div class="help-article help-article--preview" v-html="previewHtml"></div>
-            </div>
-          </div>
-          <div class="help-extension-note">
-            <el-icon><Connection /></el-icon>
-            <span>稳定扩展点：slug / version 将供后续提示词快照和 MCP 帮助工具引用。</span>
-          </div>
-        </template>
+      <aside v-if="selectedDocument && !manageMode" class="help-panel help-context-panel">
+        <div class="help-context-card help-context-card--accent">
+          <div class="help-context-icon"><el-icon><Promotion /></el-icon></div>
+          <span class="help-panel-kicker">AI 助手</span>
+          <h2>让 AI 帮你完成</h2>
+          <p>本期先通过帮助中心阅读最新手册。后续接入 MCP 帮助工具后，AI 可按手册标识读取已发布内容。</p>
+          <div class="help-reserved-row"><el-icon><Lock /></el-icon> MCP 动态读取：预留</div>
+        </div>
+        <div class="help-context-card">
+          <span class="help-panel-kicker">阅读建议</span>
+          <h3>推荐顺序</h3>
+          <ol class="help-reading-order">
+            <li>先完成一次 MCP 接入</li>
+            <li>再创建一个最小原型</li>
+            <li>最后学习版本和分享</li>
+          </ol>
+        </div>
       </aside>
     </div>
+
+    <el-dialog v-model="previewDialogVisible" title="预览手册" width="820px" class="help-preview-dialog" destroy-on-close>
+      <div class="help-dialog-meta">草稿预览 · v{{ draft.version }}</div>
+      <h2 class="help-dialog-title">{{ previewTitle }}</h2>
+      <p class="help-dialog-summary">{{ previewSummary }}</p>
+      <div class="help-dialog-scroll">
+        <div class="help-article help-article--preview" v-html="previewHtml"></div>
+      </div>
+      <template #footer><el-button @click="previewDialogVisible = false">关闭</el-button></template>
+    </el-dialog>
 
     <footer v-if="manageMode && selectedDocument" class="help-editor-footer">
       <span class="help-footer-hint">{{ dirty ? '修改尚未保存' : '草稿与当前内容一致' }}</span>
@@ -146,7 +123,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Connection, Lock, Menu, Promotion, QuestionFilled, Search, View, WarningFilled } from '@element-plus/icons-vue'
+import { Lock, Menu, Promotion, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import {
   getHelpDocuments,
@@ -168,6 +145,7 @@ const loading = ref(false)
 const saving = ref(false)
 const publishing = ref(false)
 const previewing = ref(false)
+const previewDialogVisible = ref(false)
 const draft = reactive({ title: '', summary: '', contentMarkdown: '', version: '', sortOrder: 0 })
 
 const manageMode = computed(() => route.path === '/admin/help')
@@ -255,6 +233,11 @@ async function refreshPreview() {
   }
 }
 
+async function openPreview() {
+  await refreshPreview()
+  if (previewHtml.value) previewDialogVisible.value = true
+}
+
 async function saveDraft({ quiet = false } = {}) {
   if (!selectedDocument.value || !manageMode.value || !dirty.value) return true
   saving.value = true
@@ -327,8 +310,6 @@ onMounted(loadDocuments)
 :global(.admin-content .help-center-page) { height: calc(100vh - 145px); }
 
 .help-center-header { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-shrink:0; }
-.help-eyebrow { display:flex; align-items:center; gap:7px; color:#718096; font-size:13px; font-weight:600; margin-bottom:5px; }
-.help-eyebrow .el-icon { color:#4facfe; }
 .help-title-row { display:flex; align-items:center; gap:10px; }
 .help-title-row h1 { color:#1a202c; font-size:28px; line-height:1.2; letter-spacing:-.4px; }
 .help-center-header p { margin-top:8px; color:#718096; font-size:14px; }
@@ -336,6 +317,7 @@ onMounted(loadDocuments)
 .help-search { width:230px; }
 
 .help-workspace { flex:1; min-height:0; display:grid; grid-template-columns:240px minmax(0,1fr) 286px; gap:16px; }
+.help-workspace.is-manage { grid-template-columns:240px minmax(0,1fr); }
 .help-panel { min-height:0; overflow:hidden; background:rgba(255,255,255,.84); border:1px solid rgba(222,230,240,.9); border-radius:14px; box-shadow:0 8px 28px rgba(51,65,85,.045); }
 .help-catalog-panel { display:flex; flex-direction:column; }
 .help-panel-heading { display:flex; justify-content:space-between; align-items:flex-start; padding:20px 18px 15px; border-bottom:1px solid #edf1f6; }
@@ -346,6 +328,8 @@ onMounted(loadDocuments)
 .help-catalog-item { display:block; width:100%; padding:14px 11px; text-align:left; background:transparent; border:0; border-radius:10px; cursor:pointer; color:inherit; transition:background .16s ease, transform .16s ease; }
 .help-catalog-item:hover { background:#f4f7fb; }
 .help-catalog-item.is-active { background:#edf5ff; box-shadow:inset 3px 0 #4facfe; }
+.help-workspace.is-manage .help-catalog-item { padding-top:12px; padding-bottom:12px; }
+.help-workspace.is-manage .help-catalog-item__summary { display:none; }
 .help-catalog-item__title { display:block; color:#27364a; font-size:13px; font-weight:700; line-height:1.4; }
 .help-catalog-item.is-active .help-catalog-item__title { color:#2878d8; }
 .help-catalog-item__summary { display:-webkit-box; margin-top:5px; overflow:hidden; color:#8b99aa; font-size:12px; line-height:1.5; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
@@ -389,8 +373,8 @@ onMounted(loadDocuments)
 .help-extension-note .el-icon { flex-shrink:0; margin-top:2px; color:#86a9ce; }
 
 .help-editor { height:100%; display:flex; flex-direction:column; padding:25px 30px 22px; }
-.help-editor-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:16px; padding-bottom:18px; border-bottom:1px solid #edf1f6; }
-.help-editor-heading h2 { margin-top:5px; color:#27364a; font-size:20px; }
+.help-editor-heading { display:flex; align-items:center; gap:12px; padding-bottom:18px; border-bottom:1px solid #edf1f6; }
+.help-editor-heading h2 { flex:1; min-width:0; overflow:hidden; color:#27364a; font-size:20px; text-overflow:ellipsis; white-space:nowrap; }
 .help-editor-form { flex:1; min-height:0; display:flex; flex-direction:column; padding-top:18px; }
 .help-editor-fields { display:grid; grid-template-columns:minmax(0,1fr) 150px; gap:14px; }
 .help-editor-form :deep(.el-form-item) { margin-bottom:13px; }
@@ -401,6 +385,11 @@ onMounted(loadDocuments)
 .help-empty { height:100%; }
 .help-editor-footer { display:flex; align-items:center; justify-content:space-between; flex-shrink:0; padding:12px 15px; border:1px solid #dfe8f3; border-radius:11px; background:rgba(255,255,255,.8); }
 .help-footer-hint { color:#9aa8ba; font-size:12px; }
+.help-dialog-meta { color:#9aa8ba; font-size:12px; }
+.help-dialog-title { margin-top:8px; color:#27364a; font-size:22px; }
+.help-dialog-summary { margin-top:6px; color:#718096; font-size:13px; line-height:1.6; }
+.help-dialog-scroll { max-height:55vh; overflow:auto; margin-top:18px; padding:4px 8px 8px 0; border-top:1px solid #edf1f6; }
+.help-preview-dialog :deep(.el-dialog__body) { padding-top:6px; }
 
 @media (max-width: 1100px) {
   .help-workspace { grid-template-columns:220px minmax(0,1fr); }

@@ -28,7 +28,7 @@
               系统管理
             </router-link>
             <router-link to="/help" :class="{ active: isHelpPage }">
-              <el-icon><QuestionFilled /></el-icon>
+              <el-icon><Reading /></el-icon>
               帮助
             </router-link>
           </div>
@@ -73,7 +73,7 @@ import ProjectLayout from './components/ProjectLayout.vue'
 import AnnouncementCenter from './components/AnnouncementCenter.vue'
 import AccountMenu from './components/AccountMenu.vue'
 import McpOnboardingDialog from './components/McpOnboardingDialog.vue'
-import { Files, FolderOpened, QuestionFilled, Setting } from '@element-plus/icons-vue'
+import { Files, FolderOpened, Reading, Setting } from '@element-plus/icons-vue'
 
 const authStore = useAuthStore()
 const route = useRoute()
