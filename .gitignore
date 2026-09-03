@@ -31,6 +31,7 @@ docs/*
 !docs/PHASE22_BL007_EVIDENCE.md
 !docs/PHASE22_PROJECT_MODULE_IA.md
 !docs/PHASE26_HELP_CENTER.md
+!docs/PHASE27_HELP_MANUAL_CATEGORIES.md
 !docs/prototypes/
 docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/

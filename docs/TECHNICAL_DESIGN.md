@@ -646,7 +646,41 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 这样既不让 AI 助手猜测变量含义，也不让提示词直接访问数据库；发布版本、读取权限和内容安全均由平台后端控制。上述第 1、2 步属于下一阶段，不计入本轮帮助中心验收。
 
-详细需求、原型、技术路径和验收条件见 [PHASE26_HELP_CENTER.md](PHASE26_HELP_CENTER.md)；可点击设计稿见 [help-module-prototype](design/help-module-prototype/README.md)。
+详细需求、原型、技术路径和验收条件见 [PHASE26_HELP_CENTER.md](PHASE26_HELP_CENTER.md)；可点击设计稿见 [help-module-prototype](design/help-module-prototype/README.md)。阶段 27 的手册补全与分类扩展见 [PHASE27_HELP_MANUAL_CATEGORIES.md](PHASE27_HELP_MANUAL_CATEGORIES.md)。
+
+### 阶段 27: 操作手册补全与帮助分类
+
+状态: `in-progress`（2026-09-03；等待 16077 测试环境验收）
+
+阶段 27 在不增加伏羲客户端、不增加伏羲 AI 对话、不改变 MCP/Skill 契约的前提下，补齐面向首次用户的操作手册，并把帮助目录变成管理员可配置的分层分类。
+
+#### 用户入口
+
+- 普通用户从顶部「帮助」进入 `/help`，可按分类路径筛选已发布手册；页面只展示 published 快照。
+- 管理员从「系统管理 → 帮助中心 → 使用手册」维护正文和多分类归属。
+- 管理员从「系统管理 → 帮助中心 → 手册分类」维护分类树和当前分类的手册分发。
+
+#### 数据模型
+
+- `help_categories`：`slug`、名称、说明、`category_type`、`parent_id`、排序和 active/archived 状态；服务层阻止父级环和归档仍有活动子分类。
+- `help_document_categories`：`document_slug` 与 `category_id` 的多对多关联；更新某个分类的分发集合时保留手册的其他分类。
+- `help_documents` 的已发布快照模型保持不变；分类归档不会删除正文，普通用户不读取归档分类或归档手册。
+
+#### 初始内容
+
+数据库新增 11 篇已发布手册：`quick-start`、`mcp-onboarding`、`platform-basics`、`create-prototype`、`modify-prototype`、`prototype-delivery`、`faq`、`project-collaboration`、`spec-and-quality`、`prompt-recipes`、`troubleshooting`。初始分类以「基础入门 / 进阶使用」为根，向下覆盖「平台操作 / AI 原型设计」及 MCP 接入、创建、项目协作、质量交付等叶子目录。
+
+#### API 与权限
+
+- `GET /api/help-categories`：登录用户读取活动分类；管理员可带 `includeArchived=true&includeDocuments=true` 读取维护数据。
+- `POST/PUT /api/help-categories`、`POST /api/help-categories/:id/archive|restore`：管理员维护分类。
+- `PUT /api/help-categories/:id/documents`：管理员将手册分发到一个分类；`PUT /api/help-documents/:slug/categories` 支持从手册页维护多分类。
+- `GET /api/help-documents?categoryId=`：按分类读取；服务层仍按用户/管理员区分 published 与草稿。
+- 分类写操作仅允许 `admin` / `platform_admin`，服务层校验 ID、slug、父级、状态和手册存在性，并用事务写入关联。
+
+#### 跨仓库边界与后续入口
+
+本阶段只修改 FuxiPlatform。`prototype-manager-skills` 未修改，因为本阶段不改变 Skill 入口、能力缓存、runtime/profile、ZIP、安装流程或 MCP schema；其缓存校验结果为 `CACHE_VALID`。帮助中心验收后，下一阶段再评估 `mcp.onboarding` 的 `{{quickStartGuide}}` / `{{helpVersion}}` 快照变量以及 MCP `get_help` / `search_help` 动态读取，并重新绑定两仓 commit。
 
 ## 更新规则
 
