@@ -23,7 +23,7 @@
               <el-icon><FolderOpened /></el-icon>
               项目
             </router-link>
-            <router-link v-if="authStore.isAdmin" to="/admin/users" :class="{ active: isAdminPage }">
+            <router-link v-if="authStore.isAdmin" to="/admin/usage" :class="{ active: isAdminPage }">
               <el-icon><Setting /></el-icon>
               系统管理
             </router-link>
