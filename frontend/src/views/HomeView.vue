@@ -182,7 +182,7 @@
         <el-button @click="showCreateDialog = false">{{ prototypePromptGenerated ? '关闭' : '取消' }}</el-button>
         <el-button v-if="prototypePromptGenerated" @click="returnPrototypePromptEdit">返回编辑</el-button>
         <el-button v-if="prototypePromptGenerated" type="primary" @click="copyPrototypePrompt">复制完整提示词</el-button>
-        <el-button v-else type="primary" @click="generatePrototypePrompt">生成完整提示词</el-button>
+        <el-button v-else type="primary" :loading="prototypePromptGenerating" @click="generatePrototypePrompt">生成完整提示词</el-button>
       </template>
     </el-dialog>
 
@@ -200,7 +200,7 @@ import { getCategories } from '../api/prototypes'
 import { Search, Plus, User, Loading, Delete } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
-import { buildPrototypePrompt } from '../utils/prototype-prompts'
+import { renderPromptTemplate } from '../api/prompt-templates'
 import PlatformAnnouncementBanner from '../components/PlatformAnnouncementBanner.vue'
 
 const authStore = useAuthStore()
@@ -224,6 +224,7 @@ const prototypeRequirement = ref('')
 const prototypeFilePath = ref('')
 const prototypePrompt = ref('')
 const prototypePromptGenerated = ref(false)
+const prototypePromptGenerating = ref(false)
 const agentUpdateLoading = ref(false)
 const agentUpdateSubmitting = ref(false)
 const agentUpdateSession = ref(null)
@@ -384,19 +385,42 @@ function getAttachmentName(filePath) {
   return filePath.split(/[\\/]/).pop() || filePath
 }
 
-function generatePrototypePrompt() {
+async function generatePrototypePrompt() {
   const attachmentPath = prototypeFilePath.value.trim()
   if (!prototypeRequirement.value.trim() && !attachmentPath) {
     ElMessage.warning('请输入需求或选择一份需求文档')
     return
   }
-  prototypePrompt.value = buildPrototypePrompt({
-    requirement: prototypeRequirement.value.trim(),
-    mode: prototypePromptMode.value,
-    attachmentName: attachmentPath ? getAttachmentName(attachmentPath) : '',
-    attachmentPath
-  })
-  prototypePromptGenerated.value = true
+  const attachmentName = attachmentPath ? getAttachmentName(attachmentPath) : ''
+  const requirement = prototypeRequirement.value.trim()
+  const requirementBlock = [
+    requirement,
+    attachmentName ? `需求附件：${attachmentName}` : '',
+    attachmentName ? `需求附件本地路径：${attachmentPath || '未能由浏览器自动读取，请在生成前补充可访问的完整本地路径。'}` : ''
+  ].filter(Boolean).join('\n') || '请完整读取附件中的需求文档，并将其作为唯一业务需求来源。'
+  const strict = prototypePromptMode.value === 'implementation-proof'
+  prototypePromptGenerating.value = true
+  try {
+    const response = await renderPromptTemplate(
+      strict ? 'prototype.create.implementation-proof' : 'prototype.create.alignment',
+      {
+        outputModeLabel: strict ? 'implementation-proof（按选定组件规范）' : 'alignment（快速验证）',
+        attachmentInstruction: attachmentName
+          ? `- 附件文件名：${attachmentName}；先完整读取，再与文字需求合并；冲突时以文字需求为准。`
+          : '',
+        requirementBlock,
+        validationInstruction: strict
+          ? '4. 编码前核对真实组件文档，输出组件审计表；构建、类型检查、ZIP 内容和预览 Smoke 任一失败都必须停止交付。'
+          : '4. 优先实现需求主路径和关键交互，保持范围最小；构建和预览失败必须停止交付。'
+      }
+    )
+    prototypePrompt.value = response.data.data.prompt
+    prototypePromptGenerated.value = true
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || err.message || '生成提示词失败，请稍后重试')
+  } finally {
+    prototypePromptGenerating.value = false
+  }
 }
 
 function returnPrototypePromptEdit() {

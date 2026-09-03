@@ -9,6 +9,7 @@ const { getProjectById } = require('./db-projects');
 const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb } = require('./storage');
 const { validateCandidateDirectory } = require('./candidate-validation');
 const { normalizeVersionStrategy, resolveVersionLabel } = require('./version-strategy');
+const { renderPromptTemplate } = require('./db-prompt-templates');
 
 const DEFAULT_CANDIDATES_ROOT = path.join(UPLOADS_DIR, 'collaboration-candidates');
 const HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -131,38 +132,19 @@ function buildPrompt({ change, handoffCode, expiresAt }) {
   const versionStrategy = change.version_strategy_type === 'custom'
     ? `固定使用 v${change.version_strategy_value}`
     : '由 AI 选择 major、minor 或 patch，平台根据当前版本计算最终版本号';
-  return [
-    '你是伏羲原型修改 Agent。请严格按下面的任务完成一次“候选版本”交付。',
-    '',
-    '【任务上下文】',
-    `- 项目：${projectName}（${change.project_id}）`,
-    `- 原型：${prototypeName}（${change.prototype_id}）`,
-    `- 菜单路径：${menuPath}`,
-    `- 任务 ID：${change.id}`,
-    `- 基础版本：v${change.base_version_number}`,
-    `- 版本策略：${versionStrategy}`,
-    `- 任务码：${handoffCode}`,
-    `- 任务码有效期：${expiresAt}`,
-    '',
-    '【必须执行的步骤】',
-    '1. 调用 redeem_change_handoff，参数 handoffCode 使用上面的任务码。',
-    '2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。',
-    '3. 在源码基础上实现“修改要求”，先本地检查入口、相对路径和主要交互。',
-    '4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。AI 决定版本策略时必须额外传入 versionType=major、minor 或 patch。',
-    '5. 上传成功后调用 get_change_status 确认状态为 ready；平台已完成 ZIP、入口和资源引用静态校验，负责人可在伏羲候选页面查看预览并决定是否采纳。',
-    '',
-    '【交付约束】',
-    '- 这是候选版本，绝对不要直接覆盖正式版本，也不要调用正式版本上传接口。',
-    '- ZIP 必须包含可预览入口 index.html 或系统识别的 HTML 入口，路径使用相对路径。',
-    '- ZIP 不得包含 .git、versions、node_modules 或绝对路径；不要把凭证、密码、长期 token 写入产物。',
-    '- 保持未涉及页面和交互不变；如果需求存在歧义，优先保留现有行为并在完成说明中指出。',
-    '',
-    '【修改要求】',
-    change.requirement,
-    '',
-    '【完成说明】',
-    '上传候选后，请返回：已领取任务、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。'
-  ].join('\n');
+  return renderPromptTemplate('prototype.modify.project', {
+    projectName,
+    projectId: change.project_id,
+    prototypeName,
+    prototypeId: change.prototype_id,
+    menuPath,
+    changeId: change.id,
+    baseVersion: change.base_version_number,
+    versionStrategy,
+    handoffCode,
+    expiresAt,
+    requirement: change.requirement
+  });
 }
 
 function getChangeById(changeId) {

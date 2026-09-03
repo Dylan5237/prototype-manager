@@ -16,6 +16,7 @@ const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb } = require('./stora
 const { validateCandidateDirectory } = require('./candidate-validation');
 const { normalizeRoles } = require('./authorization');
 const { normalizeVersionStrategy, resolveVersionLabel } = require('./version-strategy');
+const { renderPromptTemplate } = require('./db-prompt-templates');
 
 const DIRECT_CANDIDATES_ROOT = path.join(UPLOADS_DIR, 'prototype-direct-candidates');
 const DIRECT_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -137,37 +138,16 @@ function buildPrompt(change, handoffCode, expiresAt) {
   const strategy = change.version_strategy_type === 'custom'
     ? `固定使用 v${change.version_strategy_value}`
     : '由你根据实际改动选择 major、minor 或 patch，并在上传时传入 versionType';
-  return [
-    '你是伏羲原型修改 Agent。请严格完成一次独立原型修改，不要创建项目任务，也不要调用通用 upload_zip 直接覆盖正式版本。',
-    '',
-    '【任务上下文】',
-    `- 原型：${change.prototype_name || change.prototype_id}（${change.prototype_id}）`,
-    `- 修改 ID：${change.id}`,
-    `- 基线版本：v${change.base_version_number}（领取后锁定）`,
-    `- 任务码：${handoffCode}`,
-    `- 任务码有效期：${expiresAt}`,
-    `- 版本策略：${strategy}`,
-    '',
-    '【必须执行】',
-    '1. 第一调用 redeem_prototype_change_handoff，参数 handoffCode 使用上面的任务码。',
-    '2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。',
-    '3. 在源码基础上实现修改要求，先执行项目自己的构建或静态检查。',
-    '4. 调用 validate_project 检查交付目录，再调用 pack_project 生成完整 ZIP。',
-    '5. 调用 submit_prototype_change 上传 ZIP；参数必须使用本任务的 prototypeId、changeId，versionType 只能是 major、minor、patch。',
-    '6. 上传后调用 get_prototype_change_status 确认最终状态为 completed；平台已完成 ZIP、入口和资源引用静态校验并直接形成正式版本。',
-    '',
-    '【交付约束】',
-    '- 这是独立原型修改，平台会在静态校验和基线版本 CAS 通过后直接形成正式版本；如果正式预览打不开，请回到伏羲平台让 AI 排查并重新上传。',
-    '- ZIP 必须包含可预览入口 index.html 或系统识别的 HTML 入口，所有引用必须使用相对路径。',
-    '- ZIP 不得包含 .git、versions、node_modules、绝对路径、凭证、密码或长期 token。',
-    '- 保持未涉及页面和交互不变；遇到歧义先保留现有行为并在完成说明中指出。',
-    '',
-    '【修改要求】',
-    change.requirement,
-    '',
-    '【完成说明】',
-    '请返回：已领取任务、修改摘要、构建与校验结果、ZIP 路径、versionType 和最终状态。未收到 completed 前不要宣称已上线。'
-  ].join('\n');
+  return renderPromptTemplate('prototype.modify.standalone', {
+    prototypeName: change.prototype_name || change.prototype_id,
+    prototypeId: change.prototype_id,
+    changeId: change.id,
+    baseVersion: change.base_version_number,
+    handoffCode,
+    expiresAt,
+    versionStrategy: strategy,
+    requirement: change.requirement
+  });
 }
 
 function getCurrentChange(prototypeId, actor) {

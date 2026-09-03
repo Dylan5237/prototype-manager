@@ -2,6 +2,7 @@ const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
 const { applyCollaborationSchema } = require('./collaboration-schema');
+const { PROMPT_TEMPLATE_DEFAULTS } = require('../services/prompt-template-defaults');
 
 const DEFAULT_DB_PATH = path.join(__dirname, '../data/app.db');
 
@@ -442,6 +443,46 @@ function createTables() {
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     )
   `);
+
+  // AI 提示词模板：模板正文可配置，变量和 Mock 数据由平台内置并受控。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS prompt_templates (
+      key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      template TEXT NOT NULL,
+      variables_json TEXT NOT NULL DEFAULT '[]',
+      mock_data_json TEXT NOT NULL DEFAULT '{}',
+      default_template TEXT NOT NULL,
+      default_mock_data_json TEXT NOT NULL DEFAULT '{}',
+      updated_by INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (updated_by) REFERENCES users(id)
+    )
+  `);
+  const promptTemplateNow = new Date().toISOString();
+  for (const definition of PROMPT_TEMPLATE_DEFAULTS) {
+    db.run(`
+      INSERT INTO prompt_templates
+        (key, name, description, template, variables_json, mock_data_json,
+         default_template, default_mock_data_json, created_at, updated_at)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM prompt_templates WHERE key = ?)
+    `, [
+      definition.key,
+      definition.name,
+      definition.description,
+      definition.template,
+      JSON.stringify(definition.variables),
+      JSON.stringify(definition.mockData),
+      definition.template,
+      JSON.stringify(definition.mockData),
+      promptTemplateNow,
+      promptTemplateNow,
+      definition.key
+    ]);
+  }
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
