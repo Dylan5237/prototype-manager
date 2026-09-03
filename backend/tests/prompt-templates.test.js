@@ -10,7 +10,6 @@ const {
   getPromptTemplate,
   updatePromptTemplate,
   resetPromptTemplate,
-  renderPromptTemplate,
   previewPromptTemplate
 } = require('../services/db-prompt-templates');
 
@@ -48,16 +47,28 @@ test('seeds all product prompt scenarios and renders built-in Mock data', () => 
 test('only declared variables can be saved and missing values fail closed', () => {
   const current = getPromptTemplate('prototype.create.alignment');
   const custom = '需求：{{requirementBlock}}\n模式：{{outputModeLabel}}';
-  const saved = updatePromptTemplate('prototype.create.alignment', custom, 7);
+  const saved = updatePromptTemplate('prototype.create.alignment', {
+    template: custom,
+    mockData: {
+      outputModeLabel: '测试模式',
+      attachmentInstruction: '',
+      requirementBlock: '可配置 Mock 需求',
+      validationInstruction: '测试校验'
+    }
+  }, 7);
   assert.equal(saved.template, custom);
   assert.equal(saved.isCustomized, true);
+  assert.equal(previewPromptTemplate('prototype.create.alignment'), '需求：可配置 Mock 需求\n模式：测试模式');
 
   assert.throws(
-    () => updatePromptTemplate('prototype.create.alignment', '{{unknown}}', 7),
+    () => updatePromptTemplate('prototype.create.alignment', { template: '{{unknown}}', mockData: {} }, 7),
     error => error.code === 'PROMPT_TEMPLATE_INVALID'
   );
   assert.throws(
-    () => renderPromptTemplate('prototype.create.alignment', { requirementBlock: '仅需求' }),
+    () => updatePromptTemplate('prototype.create.alignment', {
+      template: '需求：{{requirementBlock}}\n模式：{{outputModeLabel}}',
+      mockData: { requirementBlock: '仅需求' }
+    }, 7),
     error => error.code === 'PROMPT_TEMPLATE_VARIABLE_MISSING'
   );
 

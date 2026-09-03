@@ -45,55 +45,81 @@
             </div>
             <div class="editor-actions">
               <el-button :disabled="!dirty" :loading="saving" @click="resetTemplate">恢复默认</el-button>
-              <el-button :loading="previewing" @click="previewTemplate">预览 Mock</el-button>
               <el-button type="primary" :disabled="!dirty" :loading="saving" @click="saveTemplate">保存模板</el-button>
             </div>
           </div>
 
-          <div class="editor-body">
-            <div class="editor-pane">
-              <div class="section-title-row">
-                <div>
-                  <h3>模板正文</h3>
-                  <p>只允许使用下方变量，使用 <code v-pre>{{变量名}}</code> 插入动态内容。</p>
+          <el-tabs v-model="activeTab" class="editor-tabs">
+            <el-tab-pane label="模板正文" name="template">
+              <div class="tab-pane-content template-tab-content">
+                <div class="section-title-row">
+                  <div>
+                    <h3>模板正文</h3>
+                    <p>只允许使用下方变量，使用 <code v-pre>{{变量名}}</code> 插入动态内容。</p>
+                  </div>
+                  <span class="character-count">{{ draftTemplate.length }} / 60000</span>
                 </div>
-                <span class="character-count">{{ draftTemplate.length }} / 60000</span>
-              </div>
-              <el-input
-                v-model="draftTemplate"
-                type="textarea"
-                :rows="25"
-                resize="none"
-                class="template-textarea"
-                spellcheck="false"
-              />
-              <div class="variable-list">
-                <span class="variable-label">可用变量</span>
-                <el-tag v-for="variable in selectedTemplate.variables" :key="variable" size="small" effect="plain">
-                  {{ formatVariable(variable) }}
-                </el-tag>
-              </div>
-            </div>
-
-            <div class="preview-pane">
-              <div class="section-title-row">
-                <div>
-                  <h3>Mock 预览</h3>
-                  <p>使用平台内置示例数据渲染，不会写入真实业务数据。</p>
+                <el-input
+                  v-model="draftTemplate"
+                  type="textarea"
+                  resize="none"
+                  class="template-textarea"
+                  spellcheck="false"
+                />
+                <div class="variable-list">
+                  <span class="variable-label">可用变量</span>
+                  <el-tag v-for="variable in selectedTemplate.variables" :key="variable" size="small" effect="plain">
+                    {{ formatVariable(variable) }}
+                  </el-tag>
                 </div>
               </div>
-              <el-input v-model="previewText" type="textarea" :rows="25" resize="none" readonly class="preview-textarea" />
-              <div class="mock-data-box">
-                <div class="mock-data-title">内置 Mock 数据</div>
-                <pre>{{ mockDataText }}</pre>
+            </el-tab-pane>
+            <el-tab-pane label="Mock 预览" name="preview">
+              <div class="tab-pane-content preview-tab-content">
+                <div class="section-title-row">
+                  <div>
+                    <h3>Mock 预览</h3>
+                    <p>使用当前 Mock 数据渲染提示词，不会写入真实业务数据。</p>
+                  </div>
+                  <el-button size="small" :loading="previewing" @click="previewTemplate">刷新预览</el-button>
+                </div>
+                <el-input v-model="previewText" type="textarea" resize="none" readonly class="preview-textarea" />
+                <div class="mock-data-box">
+                  <div>
+                    <div class="mock-data-title">当前 Mock 数据</div>
+                    <p class="mock-data-summary">已配置 {{ mockDataFieldCount }} 个变量，可在弹窗中编辑 JSON 数据。</p>
+                  </div>
+                  <el-button size="small" @click="openMockDataDialog">配置 Mock 数据</el-button>
+                </div>
               </div>
-            </div>
-          </div>
+            </el-tab-pane>
+          </el-tabs>
         </div>
       </section>
 
       <el-empty v-else-if="!loading" description="选择一个提示词模板开始配置" :image-size="96" class="template-empty" />
     </div>
+
+    <el-dialog v-model="mockDialogVisible" title="配置 Mock 数据" width="680px" destroy-on-close class="management-dialog">
+      <el-alert type="info" :closable="false" show-icon>
+        <template #title>用 JSON 为模板变量提供预览值</template>
+        <p>只允许配置当前模板的变量；点击“应用 Mock 数据”后先更新当前草稿，最后点击页面右上角“保存模板”才会持久化。</p>
+      </el-alert>
+      <el-input
+        v-model="mockDialogDraftText"
+        type="textarea"
+        :rows="18"
+        resize="none"
+        class="mock-data-editor"
+        spellcheck="false"
+        placeholder='请输入 JSON 对象，例如：{ "requirementBlock": "示例需求" }'
+      />
+      <el-alert v-if="mockDataError" class="mock-data-error" type="error" :closable="false" show-icon :title="mockDataError" />
+      <template #footer>
+        <el-button @click="mockDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="applyMockData">应用 Mock 数据</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -111,23 +137,55 @@ import {
 const templates = ref([])
 const selectedKey = ref('')
 const draftTemplate = ref('')
+const draftMockDataText = ref('{}')
 const previewText = ref('')
+const activeTab = ref('template')
 const loading = ref(false)
 const saving = ref(false)
 const previewing = ref(false)
+const mockDialogVisible = ref(false)
+const mockDialogDraftText = ref('{}')
+const mockDataError = ref('')
 
 const selectedTemplate = computed(() => templates.value.find(item => item.key === selectedKey.value) || null)
-const dirty = computed(() => Boolean(selectedTemplate.value && draftTemplate.value !== selectedTemplate.value.template))
-const mockDataText = computed(() => selectedTemplate.value ? JSON.stringify(selectedTemplate.value.mockData, null, 2) : '')
+const mockDataFieldCount = computed(() => {
+  try {
+    const value = JSON.parse(draftMockDataText.value)
+    return value && typeof value === 'object' && !Array.isArray(value) ? Object.keys(value).length : 0
+  } catch (error) {
+    return 0
+  }
+})
+const mockDataDirty = computed(() => Boolean(
+  selectedTemplate.value && draftMockDataText.value !== JSON.stringify(selectedTemplate.value.mockData, null, 2)
+))
+const dirty = computed(() => Boolean(
+  selectedTemplate.value && (draftTemplate.value !== selectedTemplate.value.template || mockDataDirty.value)
+))
 
 function formatVariable(variable) {
   return `{{${variable}}}`
 }
 
+function parseMockData(text = draftMockDataText.value) {
+  let value
+  try {
+    value = JSON.parse(text)
+  } catch (error) {
+    throw new Error('Mock 数据不是有效的 JSON')
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Mock 数据必须是 JSON 对象')
+  }
+  return value
+}
+
 function setSelected(item) {
   selectedKey.value = item.key
   draftTemplate.value = item.template
+  draftMockDataText.value = JSON.stringify(item.mockData || {}, null, 2)
   previewText.value = ''
+  activeTab.value = 'template'
   previewTemplate()
 }
 
@@ -157,6 +215,7 @@ async function loadTemplates() {
     else {
       selectedKey.value = ''
       draftTemplate.value = ''
+      draftMockDataText.value = '{}'
       previewText.value = ''
     }
   } catch (error) {
@@ -170,11 +229,15 @@ async function previewTemplate() {
   if (!selectedTemplate.value) return
   previewing.value = true
   try {
-    const response = await requestPreview(selectedTemplate.value.key, { template: draftTemplate.value })
+    const response = await requestPreview(selectedTemplate.value.key, {
+      template: draftTemplate.value,
+      mockData: parseMockData()
+    })
     previewText.value = response.data.data.prompt
   } catch (error) {
     previewText.value = ''
-    ElMessage.error(error.response?.data?.message || 'Mock 预览失败，请检查模板变量')
+    const message = error.response?.data?.message || error.message || 'Mock 预览失败，请检查模板变量'
+    ElMessage.error(message)
   } finally {
     previewing.value = false
   }
@@ -184,11 +247,15 @@ async function saveTemplate() {
   if (!selectedTemplate.value || !dirty.value) return
   saving.value = true
   try {
-    const response = await updatePromptTemplate(selectedTemplate.value.key, { template: draftTemplate.value })
+    const response = await updatePromptTemplate(selectedTemplate.value.key, {
+      template: draftTemplate.value,
+      mockData: parseMockData()
+    })
     const saved = response.data.data
     const index = templates.value.findIndex(item => item.key === saved.key)
     if (index >= 0) templates.value.splice(index, 1, saved)
     draftTemplate.value = saved.template
+    draftMockDataText.value = JSON.stringify(saved.mockData || {}, null, 2)
     ElMessage.success('提示词模板已保存，后续生成将使用新模板')
     await previewTemplate()
   } catch (error) {
@@ -212,6 +279,7 @@ async function resetTemplate() {
     const index = templates.value.findIndex(item => item.key === restored.key)
     if (index >= 0) templates.value.splice(index, 1, restored)
     draftTemplate.value = restored.template
+    draftMockDataText.value = JSON.stringify(restored.mockData || {}, null, 2)
     ElMessage.success('已恢复默认模板')
     await previewTemplate()
   } catch (error) {
@@ -223,20 +291,51 @@ async function resetTemplate() {
   }
 }
 
+function openMockDataDialog() {
+  mockDataError.value = ''
+  mockDialogDraftText.value = draftMockDataText.value
+  mockDialogVisible.value = true
+}
+
+function applyMockData() {
+  try {
+    const value = parseMockData(mockDialogDraftText.value)
+    draftMockDataText.value = JSON.stringify(value, null, 2)
+    mockDataError.value = ''
+    mockDialogVisible.value = false
+    previewTemplate()
+  } catch (error) {
+    mockDataError.value = error.message
+  }
+}
+
 onMounted(loadTemplates)
 </script>
 
 <style scoped>
+.prompt-template-page {
+  height: calc(100vh - 136px);
+  min-height: 540px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .prompt-template-layout {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);
   gap: 18px;
-  align-items: start;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+  overflow: hidden;
 }
 
 .template-list-panel {
-  min-height: 660px;
+  min-height: 0;
+  height: 100%;
   padding: 16px 10px;
+  overflow: auto;
 }
 
 .panel-heading,
@@ -300,7 +399,8 @@ onMounted(loadTemplates)
 .is-active .template-list-item__title { color: #1677ff; }
 .template-list-item__description { margin: 5px 0 8px; color: #94a3b8; font-size: 12px; }
 
-.editor-panel { overflow: hidden; }
+.template-editor-column { min-width: 0; height: 100%; min-height: 0; }
+.editor-panel { height: 100%; display: flex; flex-direction: column; overflow: hidden; }
 .editor-heading { justify-content: space-between; gap: 18px; padding: 20px 22px 17px; border-bottom: 1px solid #edf2f7; }
 .editor-title-block { min-width: 0; }
 .editor-title-line { gap: 8px; }
@@ -310,10 +410,13 @@ onMounted(loadTemplates)
 .editor-actions { display: flex; flex: 0 0 auto; gap: 8px; }
 .editor-actions .el-button { min-height: 34px; }
 
-.editor-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-.editor-pane,
-.preview-pane { min-width: 0; padding: 20px 22px 22px; }
-.preview-pane { border-left: 1px solid #edf2f7; background: #fbfcfe; }
+.editor-tabs { display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.editor-tabs :deep(.el-tabs__header) { flex: 0 0 auto; margin: 0; padding: 0 22px; }
+.editor-tabs :deep(.el-tabs__nav-wrap::after) { background-color: #edf2f7; }
+.editor-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: hidden; }
+.editor-tabs :deep(.el-tab-pane) { height: 100%; }
+.tab-pane-content { display: flex; height: 100%; min-height: 0; flex-direction: column; padding: 18px 22px 22px; }
+.preview-tab-content { background: #fbfcfe; }
 .section-title-row { align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
 .section-title-row h3 { font-size: 14px; }
 .section-title-row p { margin: 4px 0 0; color: #94a3b8; font-size: 12px; line-height: 1.5; }
@@ -321,6 +424,8 @@ onMounted(loadTemplates)
 .character-count { flex: 0 0 auto; color: #94a3b8; font-size: 12px; }
 .template-textarea :deep(.el-textarea__inner),
 .preview-textarea :deep(.el-textarea__inner) {
+  height: 100%;
+  min-height: 0 !important;
   padding: 12px;
   border-color: #e2e8f0;
   border-radius: 8px;
@@ -329,13 +434,19 @@ onMounted(loadTemplates)
   font-size: 12px;
   line-height: 1.65;
 }
+.template-textarea,
+.preview-textarea { display: flex; flex: 1; min-height: 0; }
+.template-textarea :deep(.el-textarea),
+.preview-textarea :deep(.el-textarea) { height: 100%; }
 .template-textarea :deep(.el-textarea__inner) { background: #fff; }
 .preview-textarea :deep(.el-textarea__inner) { background: #f8fafc; }
-.variable-list { flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+.variable-list { flex: 0 0 auto; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
 .variable-label { margin-right: 2px; color: #64748b; font-size: 12px; }
-.mock-data-box { margin-top: 12px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
+.mock-data-box { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex: 0 0 auto; margin-top: 12px; padding: 10px 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; }
 .mock-data-title { margin-bottom: 6px; color: #64748b; font-size: 12px; font-weight: 650; }
-.mock-data-box pre { max-height: 160px; margin: 0; overflow: auto; color: #64748b; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.mock-data-summary { margin: 0; color: #94a3b8; font-size: 12px; }
+.mock-data-editor :deep(.el-textarea__inner) { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; line-height: 1.6; }
+.mock-data-error { margin-top: 12px; }
 .template-empty { min-height: 320px; border: 1px dashed #dbe4ef; border-radius: 12px; background: #fff; }
 
 @media (max-width: 1050px) {
@@ -344,10 +455,10 @@ onMounted(loadTemplates)
 }
 
 @media (max-width: 780px) {
-  .prompt-template-layout,
-  .editor-body { grid-template-columns: 1fr; }
-  .template-list-panel { min-height: auto; }
-  .preview-pane { border-top: 1px solid #edf2f7; border-left: 0; }
+  .prompt-template-page { height: auto; min-height: 0; overflow: visible; }
+  .prompt-template-layout { display: block; overflow: visible; }
+  .template-list-panel { height: auto; max-height: 300px; }
+  .template-editor-column { height: 760px; margin-top: 14px; }
   .editor-actions { flex-wrap: wrap; }
 }
 </style>

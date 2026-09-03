@@ -43,7 +43,10 @@ router.post('/render', requireAuth, (req, res) => {
 router.put('/:key', ...adminOnly, (req, res) => {
   try {
     const template = req.body && req.body.template;
-    const data = updatePromptTemplate(req.params.key, template, req.user.id);
+    const data = updatePromptTemplate(req.params.key, {
+      template,
+      mockData: req.body && req.body.mockData
+    }, req.user.id);
     res.json({ success: true, data });
   } catch (error) {
     sendError(res, error, '更新提示词模板失败');
@@ -53,7 +56,12 @@ router.put('/:key', ...adminOnly, (req, res) => {
 router.post('/:key/preview', ...adminOnly, (req, res) => {
   try {
     const template = req.body && req.body.template;
-    const prompt = previewPromptTemplate(req.params.key, template == null ? undefined : template);
+    const mockData = req.body && req.body.mockData;
+    const prompt = previewPromptTemplate(
+      req.params.key,
+      template == null ? undefined : template,
+      mockData === undefined ? undefined : mockData
+    );
     res.json({ success: true, data: { key: req.params.key, prompt } });
   } catch (error) {
     sendError(res, error, '预览提示词失败');
