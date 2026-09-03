@@ -7,8 +7,9 @@ const {
   updateHelpDocument,
   publishHelpDocument,
   archiveHelpDocument,
-  previewHelpDocument
+  previewHelpDocument,
 } = require('../services/db-help-documents');
+const { HelpCategoryError, setDocumentCategories } = require('../services/db-help-categories');
 
 const router = express.Router();
 
@@ -34,7 +35,7 @@ router.get('/', requireAuth, (req, res) => {
     const includeDrafts = isAdmin(req) && String(req.query.includeDrafts) === 'true';
     res.json({
       success: true,
-      data: listHelpDocuments({ includeDrafts, queryText: req.query.q })
+      data: listHelpDocuments({ includeDrafts, queryText: req.query.q, categoryId: req.query.categoryId })
     });
   } catch (error) {
     sendError(res, error, '加载帮助文档失败');
@@ -64,6 +65,19 @@ router.put('/:slug', requireAuth, requireRole(['admin', 'platform_admin']), (req
     res.json({ success: true, data: updateHelpDocument(req.params.slug, req.body || {}, req.user.id) });
   } catch (error) {
     sendError(res, error, '保存帮助文档失败');
+  }
+});
+
+router.put('/:slug/categories', requireAuth, requireRole(['admin', 'platform_admin']), (req, res) => {
+  try {
+    setDocumentCategories(req.params.slug, req.body && req.body.categoryIds, req.user.id);
+    res.json({ success: true, data: getHelpDocument(req.params.slug, { includeDrafts: true }) });
+  } catch (error) {
+    if (error instanceof HelpCategoryError) {
+      return res.status(error.status).json({ success: false, code: error.code, message: error.message, details: error.details });
+    }
+    console.error('[帮助中心] 更新手册分类失败:', error);
+    res.status(500).json({ success: false, message: '更新手册分类失败' });
   }
 });
 

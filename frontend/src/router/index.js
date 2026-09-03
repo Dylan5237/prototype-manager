@@ -12,6 +12,7 @@ const AdminAnnouncements = () => import('../views/AdminAnnouncements.vue')
 const AdminUsageDashboard = () => import('../views/AdminUsageDashboard.vue')
 const AdminPromptTemplates = () => import('../views/AdminPromptTemplates.vue')
 const HelpCenterView = () => import('../views/HelpCenterView.vue')
+const AdminHelpCategories = () => import('../views/AdminHelpCategories.vue')
 const RecycleBinView = () => import('../views/RecycleBinView.vue')
 const ProjectsView = () => import('../views/ProjectsViewRedesign.vue')
 const ProjectView = () => import('../views/ProjectView.vue')
@@ -35,6 +36,7 @@ const routes = [
   { path: '/admin/usage', name: 'admin-usage', component: AdminUsageDashboard, meta: { requireAdmin: true } },
   { path: '/admin/prompt-templates', name: 'admin-prompt-templates', component: AdminPromptTemplates, meta: { requireAdmin: true } },
   { path: '/admin/help', name: 'admin-help', component: HelpCenterView, meta: { requireAdmin: true } },
+  { path: '/admin/help-categories', name: 'admin-help-categories', component: AdminHelpCategories, meta: { requireAdmin: true } },
   { path: '/admin/distribution', name: 'admin-distribution', component: AdminDistribution, meta: { requireAdmin: true } },
   { path: '/admin/categories', name: 'admin-categories', component: AdminCategories, meta: { requireAdmin: true } },
   { path: '/admin/groups', name: 'admin-groups', component: AdminGroups, meta: { requireAdmin: true } },

@@ -37,7 +37,10 @@ const sections = [
   },
   {
     label: '帮助中心',
-    items: [{ index: '/admin/help', label: '使用手册', icon: Reading }]
+    items: [
+      { index: '/admin/help', label: '使用手册', icon: Reading },
+      { index: '/admin/help-categories', label: '手册分类', icon: Collection }
+    ]
   }
 ]
 </script>

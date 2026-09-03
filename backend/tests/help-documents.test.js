@@ -31,9 +31,15 @@ test('seeds published manuals and returns only published content to readers', ()
   assert.deepEqual(documents.map(document => document.slug), [
     'quick-start',
     'mcp-onboarding',
+    'platform-basics',
     'create-prototype',
     'modify-prototype',
-    'faq'
+    'prototype-delivery',
+    'faq',
+    'project-collaboration',
+    'spec-and-quality',
+    'prompt-recipes',
+    'troubleshooting'
   ]);
   assert.equal(documents.every(document => document.status === 'published'), true);
   assert.match(getHelpDocument('quick-start').contentHtml, /接入平台 MCP|创建原型/);

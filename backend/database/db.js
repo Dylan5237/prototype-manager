@@ -4,6 +4,7 @@ const path = require('path');
 const { applyCollaborationSchema } = require('./collaboration-schema');
 const { PROMPT_TEMPLATE_DEFAULTS } = require('../services/prompt-template-defaults');
 const { HELP_DOCUMENT_DEFAULTS } = require('../services/help-document-defaults');
+const { HELP_CATEGORY_DEFAULTS } = require('../services/help-category-defaults');
 
 const DEFAULT_DB_PATH = path.join(__dirname, '../data/app.db');
 
@@ -507,6 +508,47 @@ function createTables() {
     )
   `);
   const helpDocumentNow = new Date().toISOString();
+  db.run(`
+    CREATE TABLE IF NOT EXISTS help_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      slug TEXT UNIQUE NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category_type TEXT NOT NULL DEFAULT 'platform',
+      parent_id INTEGER,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (parent_id) REFERENCES help_categories(id)
+    )
+  `);
+  const helpCategoryIds = new Map();
+  for (const definition of HELP_CATEGORY_DEFAULTS) {
+    let parentId = null;
+    if (definition.parentSlug) {
+      const parent = db.exec('SELECT id FROM help_categories WHERE slug = ?', [definition.parentSlug]);
+      parentId = parent[0] && parent[0].values[0] ? Number(parent[0].values[0][0]) : null;
+    }
+    db.run(`
+      INSERT INTO help_categories
+        (slug, name, description, category_type, parent_id, sort_order, status, created_at, updated_at)
+      SELECT ?, ?, ?, ?, ?, ?, 'active', ?, ?
+      WHERE NOT EXISTS (SELECT 1 FROM help_categories WHERE slug = ?)
+    `, [
+      definition.slug,
+      definition.name,
+      definition.description,
+      definition.categoryType || 'platform',
+      parentId,
+      definition.sortOrder || 0,
+      helpDocumentNow,
+      helpDocumentNow,
+      definition.slug
+    ]);
+    const category = db.exec('SELECT id FROM help_categories WHERE slug = ?', [definition.slug]);
+    if (category[0] && category[0].values[0]) helpCategoryIds.set(definition.slug, Number(category[0].values[0][0]));
+  }
   for (const definition of HELP_DOCUMENT_DEFAULTS) {
     db.run(`
       INSERT INTO help_documents
@@ -532,6 +574,26 @@ function createTables() {
       definition.slug
     ]);
   }
+  db.run(`
+    CREATE TABLE IF NOT EXISTS help_document_categories (
+      document_slug TEXT NOT NULL,
+      category_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (document_slug, category_id),
+      FOREIGN KEY (document_slug) REFERENCES help_documents(slug) ON DELETE CASCADE,
+      FOREIGN KEY (category_id) REFERENCES help_categories(id) ON DELETE CASCADE
+    )
+  `);
+  for (const definition of HELP_DOCUMENT_DEFAULTS) {
+    for (const categorySlug of definition.categorySlugs || []) {
+      const categoryId = helpCategoryIds.get(categorySlug);
+      if (categoryId == null) continue;
+      db.run(`
+        INSERT OR IGNORE INTO help_document_categories (document_slug, category_id, created_at)
+        VALUES (?, ?, ?)
+      `, [definition.slug, categoryId, helpDocumentNow]);
+    }
+  }
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
@@ -540,6 +602,8 @@ function createTables() {
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcements_status ON platform_announcements(status, published_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_platform_announcement_reads_user ON platform_announcement_reads(user_id, read_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_help_documents_status_order ON help_documents(status, sort_order, slug)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_help_categories_parent_order ON help_categories(parent_id, sort_order, slug)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_help_document_categories_category ON help_document_categories(category_id, document_slug)`); } catch (e) {}
 
   // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
   applyCollaborationSchema(db);

@@ -16,6 +16,15 @@
       </div>
     </header>
 
+    <div v-if="!manageMode" class="help-category-bar">
+      <span class="help-category-label">按分类浏览</span>
+      <el-select v-model="selectedCategoryId" clearable class="help-category-select" placeholder="全部手册">
+        <el-option :value="0" label="全部手册" />
+        <el-option v-for="category in categoryOptions" :key="category.id" :value="category.id" :label="category.path" />
+      </el-select>
+      <span class="help-category-result">{{ filteredDocuments.length }} 篇</span>
+    </div>
+
     <div v-loading="loading" :class="['help-workspace', { 'is-manage': manageMode }]">
       <aside class="help-panel help-catalog-panel">
         <div class="help-panel-heading">
@@ -70,6 +79,12 @@
                 <el-form-item label="版本"><el-input v-model="draft.version" maxlength="40" /></el-form-item>
               </div>
               <el-form-item label="摘要"><el-input v-model="draft.summary" maxlength="240" show-word-limit /></el-form-item>
+              <el-form-item label="所属分类">
+                <el-select v-model="draftCategoryIds" multiple collapse-tags collapse-tags-tooltip filterable class="help-category-multi-select" placeholder="选择一个或多个分类">
+                  <el-option v-for="category in categoryOptions" :key="category.id" :value="category.id" :label="category.path" />
+                </el-select>
+                <p class="help-form-tip">一份手册可以分发到多个分类；分类结构在「系统管理 → 帮助中心 → 手册分类」维护。</p>
+              </el-form-item>
               <el-form-item label="正文（支持 Markdown）" class="help-content-form-item">
                 <el-input v-model="draft.contentMarkdown" type="textarea" resize="none" class="help-editor-textarea" spellcheck="false" />
               </el-form-item>
@@ -125,18 +140,22 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Lock, Menu, Promotion, Search } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
+import { getHelpCategories } from '../api/help-categories'
 import {
   getHelpDocuments,
   previewHelpDocument as requestPreview,
   publishHelpDocument as requestPublish,
-  updateHelpDocument
+  updateHelpDocument,
+  updateHelpDocumentCategories
 } from '../api/help-documents'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 const documents = ref([])
+const categories = ref([])
 const selectedSlug = ref('')
+const selectedCategoryId = ref(0)
 const searchText = ref('')
 const previewHtml = ref('')
 const previewTitle = ref('')
@@ -146,18 +165,39 @@ const saving = ref(false)
 const publishing = ref(false)
 const previewing = ref(false)
 const previewDialogVisible = ref(false)
+const draftCategoryIds = ref([])
 const draft = reactive({ title: '', summary: '', contentMarkdown: '', version: '', sortOrder: 0 })
 
 const manageMode = computed(() => route.path === '/admin/help')
 const selectedDocument = computed(() => documents.value.find(document => document.slug === selectedSlug.value) || null)
+const categoryOptions = computed(() => categories.value.filter(category => category.status === 'active'))
+const categoryDescendantIds = computed(() => {
+  const children = new Map()
+  categories.value.forEach(category => {
+    const list = children.get(category.parentId) || []
+    list.push(category.id)
+    children.set(category.parentId, list)
+  })
+  const collect = id => {
+    const result = [id]
+    ;(children.get(id) || []).forEach(childId => result.push(...collect(childId)))
+    return result
+  }
+  return collect
+})
 const filteredDocuments = computed(() => {
   const keyword = searchText.value.trim().toLowerCase()
-  if (!keyword) return documents.value
-  return documents.value.filter(document => [document.title, document.summary, document.slug].some(value => String(value || '').toLowerCase().includes(keyword)))
+  const categoryIds = selectedCategoryId.value ? new Set(categoryDescendantIds.value(selectedCategoryId.value)) : null
+  return documents.value.filter(document => {
+    if (categoryIds && !document.categories.some(category => categoryIds.has(category.id))) return false
+    if (!keyword) return true
+    return [document.title, document.summary, document.slug].some(value => String(value || '').toLowerCase().includes(keyword))
+  })
 })
+const contentDirty = computed(() => Boolean(selectedDocument.value && manageMode.value && ['title', 'summary', 'contentMarkdown', 'version', 'sortOrder'].some(field => String(draft[field] ?? '') !== String(selectedDocument.value[field] ?? ''))))
+const categoryDirty = computed(() => Boolean(selectedDocument.value && manageMode.value && [...draftCategoryIds.value].sort((a, b) => a - b).join(',') !== selectedDocument.value.categories.filter(category => category.status === 'active').map(category => category.id).sort((a, b) => a - b).join(',')))
 const dirty = computed(() => {
-  if (!selectedDocument.value || !manageMode.value) return false
-  return ['title', 'summary', 'contentMarkdown', 'version', 'sortOrder'].some(field => String(draft[field] ?? '') !== String(selectedDocument.value[field] ?? ''))
+  return contentDirty.value || categoryDirty.value
 })
 
 function statusLabel(status) { return ({ draft: '草稿', published: '已发布', archived: '已归档' }[status] || status) }
@@ -174,6 +214,7 @@ function syncDraft(document) {
   draft.contentMarkdown = document.contentMarkdown || ''
   draft.version = document.version || ''
   draft.sortOrder = document.sortOrder || 0
+  draftCategoryIds.value = document.categories.filter(category => category.status === 'active').map(category => category.id)
   previewHtml.value = document.contentHtml || ''
   previewTitle.value = document.title || ''
   previewSummary.value = document.summary || ''
@@ -197,8 +238,12 @@ function selectDocument(document) {
 async function loadDocuments() {
   loading.value = true
   try {
-    const response = await getHelpDocuments({ includeDrafts: manageMode.value ? 'true' : undefined })
+    const [response, categoryResponse] = await Promise.all([
+      getHelpDocuments({ includeDrafts: manageMode.value ? 'true' : undefined }),
+      getHelpCategories({ includeArchived: manageMode.value ? 'true' : undefined })
+    ])
     documents.value = response.data.data || []
+    categories.value = categoryResponse.data.data?.items || []
     const querySlug = String(route.query.slug || '')
     const next = documents.value.find(document => document.slug === querySlug)
       || documents.value.find(document => document.slug === selectedSlug.value)
@@ -218,7 +263,7 @@ async function loadDocuments() {
 }
 
 async function refreshPreview() {
-  if (!selectedDocument.value || !manageMode.value) return
+  if (!selectedDocument.value || !manageMode.value) return false
   previewing.value = true
   try {
     const response = await requestPreview(selectedDocument.value.slug, { ...draft })
@@ -226,24 +271,34 @@ async function refreshPreview() {
     previewHtml.value = data.contentHtml || ''
     previewTitle.value = data.title || ''
     previewSummary.value = data.summary || ''
+    return true
   } catch (error) {
     ElMessage.error(error.response?.data?.message || '预览帮助文档失败')
+    return false
   } finally {
     previewing.value = false
   }
 }
 
 async function openPreview() {
-  await refreshPreview()
-  if (previewHtml.value) previewDialogVisible.value = true
+  if (await refreshPreview()) previewDialogVisible.value = true
 }
 
 async function saveDraft({ quiet = false } = {}) {
   if (!selectedDocument.value || !manageMode.value || !dirty.value) return true
+  const shouldSaveContent = contentDirty.value
+  const shouldSaveCategories = categoryDirty.value
   saving.value = true
   try {
-    const response = await updateHelpDocument(selectedDocument.value.slug, { ...draft })
-    const saved = response.data.data
+    let saved = selectedDocument.value
+    if (shouldSaveContent) {
+      const response = await updateHelpDocument(selectedDocument.value.slug, { ...draft })
+      saved = response.data.data
+    }
+    if (shouldSaveCategories) {
+      const response = await updateHelpDocumentCategories(saved.slug, draftCategoryIds.value)
+      saved = response.data.data
+    }
     const index = documents.value.findIndex(document => document.slug === saved.slug)
     if (index >= 0) documents.value.splice(index, 1, saved)
     syncDraft(saved)
@@ -294,6 +349,15 @@ watch(() => route.query.slug, slug => {
   }
 })
 
+watch(selectedCategoryId, () => {
+  if (manageMode.value) return
+  const next = filteredDocuments.value[0]
+  if (next && !filteredDocuments.value.some(document => document.slug === selectedSlug.value)) {
+    selectedSlug.value = next.slug
+    syncDraft(next)
+  }
+})
+
 onMounted(loadDocuments)
 </script>
 
@@ -315,6 +379,10 @@ onMounted(loadDocuments)
 .help-center-header p { margin-top:8px; color:#718096; font-size:14px; }
 .help-header-actions { display:flex; align-items:center; gap:10px; }
 .help-search { width:230px; }
+.help-category-bar { display:flex; align-items:center; gap:10px; flex-shrink:0; min-height:34px; }
+.help-category-label { color:#718096; font-size:12px; font-weight:600; }
+.help-category-select { width:230px; }
+.help-category-result { color:#9aa8ba; font-size:12px; }
 
 .help-workspace { flex:1; min-height:0; display:grid; grid-template-columns:240px minmax(0,1fr) 286px; gap:16px; }
 .help-workspace.is-manage { grid-template-columns:240px minmax(0,1fr); }
@@ -378,6 +446,8 @@ onMounted(loadDocuments)
 .help-editor-form { flex:1; min-height:0; display:flex; flex-direction:column; padding-top:18px; }
 .help-editor-fields { display:grid; grid-template-columns:minmax(0,1fr) 150px; gap:14px; }
 .help-editor-form :deep(.el-form-item) { margin-bottom:13px; }
+.help-category-multi-select { width:100%; }
+.help-form-tip { margin-top:6px; color:#9aa8ba; font-size:11px; line-height:1.5; }
 .help-content-form-item { flex:1; min-height:0; }
 .help-content-form-item :deep(.el-form-item__content) { min-height:0; height:100%; }
 .help-editor-textarea { height:100%; }
@@ -400,6 +470,8 @@ onMounted(loadDocuments)
   .help-center-header { display:block; }
   .help-header-actions { margin-top:15px; flex-wrap:wrap; }
   .help-search { width:100%; }
+  .help-category-bar { flex-wrap:wrap; }
+  .help-category-select { flex:1; min-width:180px; }
   .help-workspace { min-height:720px; grid-template-columns:1fr; }
   .help-catalog-panel { max-height:250px; }
   .help-reader { padding:25px 22px 35px; }

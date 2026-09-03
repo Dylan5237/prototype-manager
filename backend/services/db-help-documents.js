@@ -46,6 +46,23 @@ function normalizeSortOrder(value, fallback = 0) {
   return number;
 }
 
+function getDocumentCategories(slug, { includeArchived = false } = {}) {
+  return query(`
+    SELECT c.id, c.slug, c.name, c.category_type, c.parent_id, c.status
+    FROM help_document_categories hdc
+    INNER JOIN help_categories c ON c.id = hdc.category_id
+    WHERE hdc.document_slug = ? ${includeArchived ? '' : "AND c.status = 'active'"}
+    ORDER BY c.sort_order ASC, c.id ASC
+  `, [slug]).map(category => ({
+    id: Number(category.id),
+    slug: category.slug,
+    name: category.name,
+    categoryType: category.category_type,
+    parentId: category.parent_id == null ? null : Number(category.parent_id),
+    status: category.status
+  }));
+}
+
 function mapDocument(row, { published = false } = {}) {
   if (!row) return null;
   const usePublished = published && row.published_content_markdown != null;
@@ -65,7 +82,8 @@ function mapDocument(row, { published = false } = {}) {
     updatedBy: row.updated_by == null ? null : Number(row.updated_by),
     createdAt: row.created_at,
     updatedAt: usePublished ? (row.published_at || row.updated_at) : row.updated_at,
-    publishedAt: row.published_at || null
+    publishedAt: row.published_at || null,
+    categories: getDocumentCategories(row.slug, { includeArchived: !published })
   };
 }
 
@@ -81,8 +99,12 @@ function getHelpDocument(slug, { includeDrafts = false } = {}) {
   return mapDocument(row, { published: true });
 }
 
-function listHelpDocuments({ includeDrafts = false, queryText = '' } = {}) {
+function listHelpDocuments({ includeDrafts = false, queryText = '', categoryId } = {}) {
   const normalizedQuery = String(queryText || '').trim().toLowerCase();
+  const normalizedCategoryId = categoryId == null || categoryId === '' ? null : Number(categoryId);
+  if (normalizedCategoryId != null && (!Number.isInteger(normalizedCategoryId) || normalizedCategoryId <= 0)) {
+    throw new HelpDocumentError('HELP_CATEGORY_INVALID', '分类 ID 不合法');
+  }
   const rows = query(
     includeDrafts
       ? 'SELECT * FROM help_documents ORDER BY sort_order ASC, slug ASC'
@@ -93,6 +115,7 @@ function listHelpDocuments({ includeDrafts = false, queryText = '' } = {}) {
   return rows
     .map(row => mapDocument(row, { published: !includeDrafts }))
     .filter(document => {
+      if (normalizedCategoryId != null && !document.categories.some(category => category.id === normalizedCategoryId)) return false;
       if (!normalizedQuery) return true;
       return [document.slug, document.title, document.summary, document.contentMarkdown]
         .some(value => String(value || '').toLowerCase().includes(normalizedQuery));
@@ -180,5 +203,6 @@ module.exports = {
   updateHelpDocument,
   publishHelpDocument,
   archiveHelpDocument,
-  previewHelpDocument
+  previewHelpDocument,
+  getDocumentCategories
 };
