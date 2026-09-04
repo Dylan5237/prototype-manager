@@ -22,7 +22,7 @@
 | BL-007 | P1 | `completed` | 管理员全量原型只读预览 | 平台实现、权限矩阵、本地/API 回归和 16077 跨用户真实复核已完成；项目绑定夹具因现场无样本保留补充验证记录。 |
 | BL-008 | P1 | `completed` | 帮助中心与手册维护 | `/help`、`/admin/help`、published API 和草稿/预览/发布能力完成；16077 release `20260903-143813-1a396d03` 真实部署与业务回读通过；提示词变量和 MCP `get_help/search_help` 顺延下一阶段。 |
 | BL-009 | P1 | `completed` | 操作手册补全与帮助分类 | `OPERATION_MANUAL.md` 和 11 篇内置手册完成；系统管理下的分层分类、多分类分发和读者筛选完成；16077 release `20260903-174757-464ee5d9` 页面/API/权限回读通过；不包含手册注入提示词。 |
-| BL-010 | P1 | `in-progress` | 接入提示词引用已发布快速入门 | `mcp.onboarding` 使用 `{{quickStartGuide}}` / `{{helpVersion}}` 读取 published 快照，旧默认模板安全升级、自定义正文不覆盖；本地回归和 16077 真实生成回读完成后关闭；不包含 MCP 帮助工具。 |
+| BL-010 | P1 | `completed` | 接入提示词引用已发布快速入门 | `mcp.onboarding` 使用 `{{quickStartGuide}}` / `{{helpVersion}}` 读取 published 快照，旧默认模板安全升级、自定义正文不覆盖；16077 release `20260904-094353-730a24ab` 真实生成回读通过；不包含 MCP 帮助工具。 |
 
 ## BL-007 需求边界与验收口径
 

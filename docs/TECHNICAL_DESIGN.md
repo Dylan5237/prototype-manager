@@ -684,7 +684,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 ### 阶段 28: 接入提示词引用已发布快速入门
 
-状态: `in-progress`（2026-09-04；待 16077 测试环境验收）
+状态: `completed`（2026-09-04；16077 测试环境验收通过）
 
 阶段 28 将阶段 27 已验收的帮助中心内容接入已有 `GET /api/integrations/agent-bootstrap` 生成链路：
 
@@ -694,7 +694,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 - 数据库启动时升级已有默认模板和 Mock，管理员自定义模板正文不覆盖，只补齐默认值和允许变量；
 - 本阶段不增加 MCP `get_help/search_help`，不修改 `prototype-manager-skills`，不改变 token、连接码、manifest 和下载地址契约。
 
-后续若增加 MCP 动态帮助工具，必须复用 published 服务层并重新评估平台与 Skill 两仓库契约。
+16077 已部署 release `20260904-094353-730a24ab` 并完成接入提示词真实生成回读：published `quick-start` v1.0 已注入，两个变量均已替换且未使用兜底；未登录 bootstrap 仍为 `401`。后续若增加 MCP 动态帮助工具，必须复用 published 服务层并重新评估平台与 Skill 两仓库契约。
 
 ## 更新规则
 

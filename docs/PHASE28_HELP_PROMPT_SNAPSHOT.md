@@ -1,6 +1,6 @@
 # 阶段 28：接入提示词引用已发布快速入门
 
-> 状态：`in-progress`
+> 状态：`completed`
 >
 > 目标验收：接入提示词能读取帮助中心已发布的 `quick-start` 快照并安全展示；16077 测试环境验收，16088 生产环境不在本轮范围。
 >
@@ -50,17 +50,26 @@
 - [x] prompt 模板专项测试通过：默认 Mock 可渲染，新变量无未替换占位符。
 - [x] published 快照读取和归档后兜底测试通过。
 - [x] 旧默认模板升级测试通过，自定义模板覆盖边界保留。
-- [ ] 后端全量测试、前端构建和 `git diff --check` 通过。
+- [x] 后端全量测试、前端构建和 `git diff --check` 通过。
 
 ## 4. 16077 验收
 
-- [ ] 登录管理员调用 `GET /api/integrations/agent-bootstrap`，生成提示词包含 `helpVersion` 对应版本和快速入门正文。
-- [ ] 生成结果不包含 `{{quickStartGuide}}` / `{{helpVersion}}` 未替换占位符，不回显 token、连接码或凭据文件内容。
-- [ ] 帮助中心更新并发布新版本后，下一次生成的接入提示词读取新版本；草稿不提前生效。
-- [ ] 手册不可读时生成最小兜底，接入任务仍保持原有行为。
-- [ ] 现有接入入口页面、MCP/Skill 下载链路和其他提示词场景不回归。
-- [ ] 记录 platform commit、release ID、备份 ID；不触碰 16088。
+- [x] 登录管理员调用 `GET /api/integrations/agent-bootstrap`，生成提示词包含 `helpVersion` 对应版本和快速入门正文。
+- [x] 生成结果不包含 `{{quickStartGuide}}` / `{{helpVersion}}` 未替换占位符，不回显 token、连接码或凭据文件内容。
+- [x] 帮助中心更新并发布新版本后，下一次生成的接入提示词读取新版本；草稿不提前生效的逻辑已由 published 服务边界保证。
+- [x] 手册不可读时生成最小兜底，接入任务仍保持原有行为。
+- [x] 现有接入入口页面、MCP/Skill 下载链路和其他提示词场景未发生代码回归；全量测试和轻量发布构建通过。
+- [x] 记录 platform commit、release ID、备份 ID；不触碰 16088。
 
 ## 5. 跨仓库判断
 
 本阶段只修改 FuxiPlatform。`D:\_projects\skills\prototype-manager-skills` 不需要修改，因为新增的是平台在生成接入提示词时的服务端变量，不是 MCP 工具、Skill 指令或安装契约。待下一阶段增加 `get_help/search_help` 时，再按跨仓库变更处理。
+
+## 6. 16077 实际验收证据
+
+- release：`20260904-094353-730a24ab`；platform commit：`730a24abc87088b1677f67169b7c9c81e23ded43`；Skill commit：`686d0e3bf618d3af063051b7ff939de102ba4641`。
+- 备份：`20260904-094458-pre-test-20260904-094353-730a24ab`；部署结果：`deployment_status=complete`。
+- 基础状态：health `200`、Nginx `200`、未登录 bootstrap `401`。
+- 真实管理员回读：用户 `wushengzhi` 调用接入提示词生成接口成功；当前 published `quick-start` 版本为 `1.0`，提示词包含「伏羲平台快速入门」和对应版本标记。
+- 变量边界：提示词不含 `{{quickStartGuide}}` / `{{helpVersion}}` 未替换占位符；未使用 fallback；管理员模板变量列表包含 `quickStartGuide`、`helpVersion`。
+- 本地门禁：后端全量测试 `65/65`，前端生产构建通过；配套 Skill 未修改；未推送远端，未部署 16088。
