@@ -682,6 +682,20 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 本阶段只修改 FuxiPlatform。`prototype-manager-skills` 未修改，因为本阶段不改变 Skill 入口、能力缓存、runtime/profile、ZIP、安装流程或 MCP schema；其缓存校验结果为 `CACHE_VALID`。16077 已部署 release `20260903-174757-464ee5d9` 并完成健康、权限、手册、分类和页面资源回读；下一阶段再评估 `mcp.onboarding` 的 `{{quickStartGuide}}` / `{{helpVersion}}` 快照变量以及 MCP `get_help` / `search_help` 动态读取，并重新绑定两仓 commit。
 
+### 阶段 28: 接入提示词引用已发布快速入门
+
+状态: `in-progress`（2026-09-04；待 16077 测试环境验收）
+
+阶段 28 将阶段 27 已验收的帮助中心内容接入已有 `GET /api/integrations/agent-bootstrap` 生成链路：
+
+- `mcp.onboarding` 增加 `{{quickStartGuide}}` 和 `{{helpVersion}}`，并由后端读取 `quick-start` 的 published 快照；
+- 快照拼接标题、版本、摘要和正文，去除 HTML 标签并限制为 12000 字符，不把草稿或归档内容注入提示词；
+- 手册不可读取时使用最小兜底文本，接入任务继续执行原有客户端识别、安装和连接验证流程；
+- 数据库启动时升级已有默认模板和 Mock，管理员自定义模板正文不覆盖，只补齐默认值和允许变量；
+- 本阶段不增加 MCP `get_help/search_help`，不修改 `prototype-manager-skills`，不改变 token、连接码、manifest 和下载地址契约。
+
+后续若增加 MCP 动态帮助工具，必须复用 published 服务层并重新评估平台与 Skill 两仓库契约。
+
 ## 更新规则
 
 每完成一个阶段，必须更新:

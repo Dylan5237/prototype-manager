@@ -32,6 +32,7 @@ docs/*
 !docs/PHASE22_PROJECT_MODULE_IA.md
 !docs/PHASE26_HELP_CENTER.md
 !docs/PHASE27_HELP_MANUAL_CATEGORIES.md
+!docs/PHASE28_HELP_PROMPT_SNAPSHOT.md
 !docs/prototypes/
 docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/
