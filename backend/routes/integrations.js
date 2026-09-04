@@ -26,6 +26,7 @@ const {
   getArtifactMetadata
 } = require('../services/agent-artifacts');
 const { renderPromptTemplate } = require('../services/db-prompt-templates');
+const { getQuickStartPromptVariables } = require('../services/help-prompt-snapshot');
 
 const router = express.Router();
 const SKILL_NAME = 'fuxi-prototype';
@@ -135,6 +136,7 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
   };
   const tokenExpiresLocal = formatLocalTime(expiresAt);
   const codeExpiresLocal = formatLocalTime(connect.expiresAt);
+  const helpPromptVariables = getQuickStartPromptVariables();
   const prompt = renderPromptTemplate('mcp.onboarding', {
     baseUrl,
     skillName: SKILL_NAME,
@@ -144,7 +146,8 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
     tokenExpiresLocal,
     connectCode: connect.code,
     codeExpiresLocal,
-    bootstrapManifestJson: JSON.stringify(bootstrapManifest, null, 2)
+    bootstrapManifestJson: JSON.stringify(bootstrapManifest, null, 2),
+    ...helpPromptVariables
   });
 
   res.json({

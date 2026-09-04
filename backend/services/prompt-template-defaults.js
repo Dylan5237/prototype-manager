@@ -152,10 +152,8 @@ Bootstrap 程序和配置应使用以下 stdio 入口；尖括号路径必须替
 - MCP/Skill 下载、校验或安装失败：恢复备份并报告失败步骤；
 - bootstrap 成功不等于客户端已重新加载；必须区分 reloadRequired 和 postReloadVerified。
 
-接入成功后引导我使用伏羲平台：
-   【创建新原型】打开伏羲平台“原型列表”→点击“让AI创建原型”→在“新建原型”中输入需求或粘贴需求文件的完整本地路径→选择“快速验证”或“按选定组件规范”→生成并复制完整提示词→将提示词发送给当前已接入的 AI 助手→回到伏羲查看原型预览、设计文档和版本历史。
-   【修改独立原型】在“原型列表”打开未归属项目的原型详情→点击“让 AI 修改”→填写修改要求并选择版本策略→生成并复制完整提示词→发送给 AI→等待伏羲完成构建和静态交付检查→查看新的正式版本和预览；如果预览无法加载，再让 AI 排查后重新上传。
-   【修改项目中的原型】如果原型已经绑定项目，进入顶部“项目”→打开所属项目→在项目菜单中选择目标原型→点击“让 AI 修改”→生成并复制完整提示词→发送给 AI→候选上传后由项目负责人预览并采用；未采用前不会改变正式版本。
+接入成功后引导我使用伏羲平台（帮助手册 v{{helpVersion}}）：
+{{quickStartGuide}}
 
 恢复规则：需要客户端授权时只请求最小原生授权；refresh token 失效时保留旧安装并报告 AUTHENTICATION_FAILED；Skill 或 MCP 替换失败时恢复备份；任一步失败都不得声称接入成功。首次接入完成后，后续 MCP 和 Skill 更新由稳定 launcher 在 AI 客户端下次启动时处理，不要让我重复执行完整接入流程。`;
 
@@ -228,7 +226,7 @@ const PROMPT_TEMPLATE_DEFAULTS = [
     name: '接入平台 MCP',
     description: '引导 AI 工具识别本地配置、安装 MCP 与 Skill，并完成连接验证。',
     template: MCP_ONBOARDING_TEMPLATE,
-    variables: ['baseUrl', 'skillName', 'skillUrl', 'mcpUrl', 'token', 'tokenExpiresLocal', 'connectCode', 'codeExpiresLocal', 'bootstrapManifestJson'],
+    variables: ['baseUrl', 'skillName', 'skillUrl', 'mcpUrl', 'token', 'tokenExpiresLocal', 'connectCode', 'codeExpiresLocal', 'bootstrapManifestJson', 'quickStartGuide', 'helpVersion'],
     mockData: {
       baseUrl: 'http://fuxi.example.test',
       skillName: 'fuxi-prototype',
@@ -238,6 +236,8 @@ const PROMPT_TEMPLATE_DEFAULTS = [
       tokenExpiresLocal: '2026-09-03 13:00:00',
       connectCode: 'FX-MOCK-CONNECT',
       codeExpiresLocal: '2026-09-03 12:20:00',
+      helpVersion: '1.0',
+      quickStartGuide: '【伏羲平台快速入门】\n\n1. 打开「原型列表」生成创建提示词并发送给已接入的 AI。\n2. 修改原型时先判断是否已绑定项目。\n3. 完成预览、版本和权限确认后再发布或分享。',
       bootstrapManifestJson: JSON.stringify({
         schema: 'fuxi-bootstrap/2',
         bootstrapId: 'mock-bootstrap-001',

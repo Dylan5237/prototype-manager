@@ -485,6 +485,7 @@ function createTables() {
       definition.key
     ]);
   }
+  migratePromptTemplateDefaults();
 
   // 帮助中心：草稿字段与已发布快照分离，编辑草稿不影响普通用户正在阅读的版本。
   db.run(`
@@ -607,6 +608,62 @@ function createTables() {
 
   // 团队协同增量结构：保留旧表和数据，只新增字段、领域表和索引。
   applyCollaborationSchema(db);
+}
+
+function migratePromptTemplateDefaults() {
+  const definitions = new Map(PROMPT_TEMPLATE_DEFAULTS.map(definition => [definition.key, definition]));
+  const stmt = db.prepare(`
+    SELECT key, template, variables_json, mock_data_json, default_template, default_mock_data_json
+    FROM prompt_templates
+  `);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+
+  rows.forEach(row => {
+    const definition = definitions.get(row.key);
+    if (!definition) return;
+    const defaultMockData = JSON.stringify(definition.mockData);
+    const currentMockData = parseJsonObject(row.mock_data_json);
+    const templateWasDefault = row.template === row.default_template;
+    const mockWasDefault = row.mock_data_json === row.default_mock_data_json;
+    const nextTemplate = templateWasDefault ? definition.template : row.template;
+    const nextMockData = mockWasDefault
+      ? definition.mockData
+      : { ...definition.mockData, ...currentMockData };
+    const nextMockJson = JSON.stringify(nextMockData);
+    const nextVariablesJson = JSON.stringify(definition.variables);
+    if (
+      row.default_template === definition.template
+      && row.default_mock_data_json === defaultMockData
+      && row.template === nextTemplate
+      && row.mock_data_json === nextMockJson
+      && row.variables_json === nextVariablesJson
+    ) return;
+    db.run(`
+      UPDATE prompt_templates
+         SET template = ?, variables_json = ?, mock_data_json = ?,
+             default_template = ?, default_mock_data_json = ?, updated_at = ?
+       WHERE key = ?
+    `, [
+      nextTemplate,
+      nextVariablesJson,
+      nextMockJson,
+      definition.template,
+      defaultMockData,
+      new Date().toISOString(),
+      row.key
+    ]);
+  });
+}
+
+function parseJsonObject(value) {
+  try {
+    const parsed = JSON.parse(value || '{}');
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch (error) {
+    return {};
+  }
 }
 
 // 将 role 字段从单值字符串迁移为 JSON 数组格式
