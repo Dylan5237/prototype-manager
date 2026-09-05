@@ -19,12 +19,23 @@ function processIsAlive(pid) {
   }
 }
 
+function readLockOwner(lockFile) {
+  const value = fs.readFileSync(lockFile, 'utf8').trim();
+  if (!/^\d+$/.test(value)) return null;
+  const owner = Number(value);
+  return Number.isSafeInteger(owner) && owner > 0 ? owner : null;
+}
+
 function removeStaleLock(lockFile, staleMs = DEFAULT_STALE_MS) {
   try {
     const stat = fs.statSync(lockFile);
+    const owner = readLockOwner(lockFile);
+    if (owner !== null) {
+      if (processIsAlive(owner)) return false;
+      fs.rmSync(lockFile, { force: true });
+      return true;
+    }
     if (Date.now() - stat.mtimeMs < staleMs) return false;
-    const owner = Number.parseInt(fs.readFileSync(lockFile, 'utf8').trim(), 10);
-    if (processIsAlive(owner)) return false;
     fs.rmSync(lockFile, { force: true });
     return true;
   } catch (error) {

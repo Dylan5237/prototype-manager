@@ -104,11 +104,11 @@ const MCP_ONBOARDING_TEMPLATE = `请执行“伏羲平台 MCP 接入任务”。
 {{bootstrapManifestJson}}
 
 请严格执行以下步骤；任何一步失败立即停止，不要声称接入成功：
-0. 只读识别当前 AI 工具名称、版本、操作系统、MCP 配置文件绝对路径和 Skill/Rules 目录，完成“识别当前 AI 客户端”。不要扫描无关目录，不要假定固定客户端路径。如果无法确认，报告 CLIENT_CONFIG_REQUIRED。
-1. 创建用户级持久化目录和临时目录。把上面的 manifest 写入临时绝对路径 <manifestPath>，不要把 manifest 写入业务仓库；不要输出其中的 token、连接码或其他凭据。
+0. 只读识别当前 AI 工具名称、版本和操作系统，完成“识别当前 AI 客户端”。如果当前工具是 WorkBuddy，不要自行推断、覆盖或传入 MCP 配置路径和 Skill 目标路径，bootstrap 会使用内置确定性路径：<用户目录>/.workbuddy/mcp.json 与 <用户目录>/.workbuddy/skills/fuxi-prototype；未知客户端才识别其绝对路径。如果无法确认客户端，报告 CLIENT_CONFIG_REQUIRED。
+1. 创建用户级持久化目录和临时目录。必须在实际执行 bootstrap.js install 的同一个 shell/terminal execution context、同一权限上下文中创建 manifest，并在创建后立即执行 install；不要用 File/Write 工具写 manifest 后再交给另一个 shell 或提权上下文。把 manifest 写入临时绝对路径 <manifestPath>，不要写入业务仓库；不要输出其中的 token、连接码或其他凭据。
 2. 仅为取得 bootstrap.js，使用你的 HTTP 能力按 mcpUrl 下载一次 MCP ZIP 到临时目录，并解压到临时目录；不要下载或解压 Skill ZIP，不要检查无关文件。确认存在 <MCP包解压目录>/fuxi-platform-mcp/src/bootstrap.js。
 3. 运行唯一安装入口（不要再单独运行 preflight 或重复执行子步骤）：
-   node <MCP包解压目录>/fuxi-platform-mcp/src/bootstrap.js install --manifest <manifestPath> --client <clientName> --mcp-config <MCP配置绝对路径> --skill-target <Skill绝对目录> --mcp-zip <MCP ZIP绝对路径> --cleanup-manifest
+   如果当前工具是 WorkBuddy，严格使用：node <MCP包解压目录>/fuxi-platform-mcp/src/bootstrap.js install --manifest <manifestPath> --client workbuddy --mcp-zip <MCP ZIP绝对路径> --cleanup-manifest；不得传 --mcp-config 或 --skill-target。对于未知客户端，仅在 bootstrap 无法确定路径时，才按识别结果补充这两个参数。
    该程序会校验已下载的 MCP ZIP，同时自行下载并校验 Skill ZIP，完成备份、安装、配置合并和首次 MCP 自检；不要手工下载 Skill ZIP，不要重复下载 MCP ZIP。
 4. 只解析安装程序输出的最终 JSON：必须是 status=COMPLETE 且 mcpConnected=true、skillReady=true；reason=ALREADY_COMPLETE 也视为幂等成功。出现 BOOTSTRAP_LOCKED、AUTHENTICATION_FAILED 或其他失败时，报告 step/code/message 后停止。
 5. 如果 reloadRequired=true，让当前 AI 工具重载 MCP 配置；无法自动重载时只报告 RELOAD_REQUIRED，不要轮询、不要重复安装。重载完成后，调用伏羲 MCP 工具 check_connection({}) 一次，必须得到 ok=true 且 authentication=verified。
