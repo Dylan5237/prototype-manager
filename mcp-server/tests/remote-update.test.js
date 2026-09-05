@@ -43,6 +43,9 @@ test.beforeEach(async () => {
   fs.mkdirSync(path.join(sourceRoot, 'skill'), { recursive: true });
   fs.cpSync(path.join(__dirname, '..', 'src', 'server.js'), path.join(sourceRoot, 'mcp', 'src', 'server.js'));
   fs.cpSync(path.join(__dirname, '..', 'src', 'fuxi-zip.js'), path.join(sourceRoot, 'mcp', 'src', 'fuxi-zip.js'));
+  fs.cpSync(path.join(__dirname, '..', 'src', 'launcher.js'), path.join(sourceRoot, 'mcp', 'src', 'launcher.js'));
+  fs.cpSync(path.join(__dirname, '..', 'src', 'bootstrap.js'), path.join(sourceRoot, 'mcp', 'src', 'bootstrap.js'));
+  fs.cpSync(path.join(__dirname, '..', 'src', 'local-lock.js'), path.join(sourceRoot, 'mcp', 'src', 'local-lock.js'));
   fs.cpSync(path.join(__dirname, '..', 'package.json'), path.join(sourceRoot, 'mcp', 'package.json'));
   fs.writeFileSync(path.join(sourceRoot, 'skill', 'SKILL.md'), '---\nname: fuxi-prototype\n---\n\n# Test Skill\n');
   fs.mkdirSync(process.env.FUXI_SKILL_TARGET, { recursive: true });

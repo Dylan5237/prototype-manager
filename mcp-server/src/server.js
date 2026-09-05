@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { performance } = require('node:perf_hooks');
 const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
+const { acquireFileLock } = require('./local-lock');
 
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 const MCP_VERSION = (() => {
@@ -14,10 +15,12 @@ const SKILL_VERSION = process.env.FUXI_SKILL_VERSION || 'unknown';
 let cachedToken = process.env.FUXI_TOKEN || '';
 const CREDENTIALS_FILE = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
 const DEVICE_LABEL = `${os.hostname()} (${process.platform})`;
+const REFRESH_LOCK_FILE = `${CREDENTIALS_FILE}.refresh.lock`;
 let refreshToken = '';
 let sessionId = null;
 let sessionExpiresAt = null;
-let accessExpiresAt = 0;
+const initialAccessExpiresAt = Number(process.env.FUXI_ACCESS_EXPIRES_AT || 0);
+let accessExpiresAt = Number.isFinite(initialAccessExpiresAt) ? initialAccessExpiresAt : 0;
 let nextId = 1;
 const deliveryCache = new Map();
 
@@ -488,25 +491,41 @@ async function request(apiPath, options = {}) {
 
 let credentialsLoaded = false;
 let connectCodeConsumed = false;
+let tokenPromise = null;
+let refreshPromise = null;
 
-function readCredentials() {
+function readCredentialData() {
   try {
     const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
-    const data = JSON.parse(raw);
-    if (data && data.apiUrl === API_URL && typeof data.refreshToken === 'string' && data.refreshToken) {
-      refreshToken = data.refreshToken;
-      sessionId = data.sessionId || null;
-      sessionExpiresAt = data.sessionExpiresAt || null;
-      return true;
-    }
-  } catch (e) {}
-  return false;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function applyCredentialData(data) {
+  if (!data || data.apiUrl !== API_URL || typeof data.refreshToken !== 'string' || !data.refreshToken) return false;
+  refreshToken = data.refreshToken;
+  sessionId = data.sessionId || null;
+  sessionExpiresAt = data.sessionExpiresAt || null;
+  return true;
+}
+
+function readCredentials() {
+  return applyCredentialData(readCredentialData());
+}
+
+function loadCredentialsIfNeeded() {
+  if (credentialsLoaded) return;
+  credentialsLoaded = true;
+  readCredentials();
 }
 
 function writeCredentials() {
+  const temp = `${CREDENTIALS_FILE}.tmp-${process.pid}-${Date.now()}`;
   try {
     fs.mkdirSync(path.dirname(CREDENTIALS_FILE), { recursive: true });
-    fs.writeFileSync(CREDENTIALS_FILE, JSON.stringify({
+    fs.writeFileSync(temp, JSON.stringify({
       apiUrl: API_URL,
       refreshToken,
       sessionId,
@@ -514,8 +533,10 @@ function writeCredentials() {
       deviceLabel: DEVICE_LABEL,
       updatedAt: new Date().toISOString()
     }, null, 2), { mode: 0o600 });
+    fs.renameSync(temp, CREDENTIALS_FILE);
   } catch (e) {
     // 持久化失败不阻断当前进程：凭据仍留在内存中可用到进程退出。
+    try { fs.rmSync(temp, { force: true }); } catch (cleanupError) {}
   }
 }
 
@@ -536,29 +557,48 @@ async function connectWithCode(code) {
   return cachedToken;
 }
 
-async function refreshAccessToken() {
-  const body = await request('/api/auth/mcp/refresh', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
-    body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
+async function refreshAccessTokenInternal() {
+  const unlock = await acquireFileLock(REFRESH_LOCK_FILE, {
+    errorCode: 'AUTHENTICATION_BUSY',
+    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
+  });
+  try {
+    // 另一个 MCP 进程可能刚刚轮换过 token；锁内重新读取，避免使用旧 token。
+    applyCredentialData(readCredentialData());
+    if (!refreshToken) throw new ToolError('AUTHENTICATION_REQUIRED', 'No refresh token is available');
+    const body = await request('/api/auth/mcp/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
+      body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
   });
   const data = body.data;
   cachedToken = data.accessToken;
   accessExpiresAt = Date.now() + data.expiresIn * 1000;
   refreshToken = data.refreshToken;
-  sessionId = data.sessionId;
-  sessionExpiresAt = data.sessionExpiresAt || null;
-  writeCredentials();
-  return cachedToken;
+    sessionId = data.sessionId;
+    sessionExpiresAt = data.sessionExpiresAt || null;
+    writeCredentials();
+    return cachedToken;
+  } finally {
+    unlock();
+  }
 }
 
-async function getToken() {
+async function refreshAccessToken() {
+  if (refreshPromise) return refreshPromise;
+  const pending = refreshAccessTokenInternal();
+  refreshPromise = pending;
+  try {
+    return await pending;
+  } finally {
+    if (refreshPromise === pending) refreshPromise = null;
+  }
+}
+
+async function getTokenInternal() {
   if (cachedToken && accessExpiresAt > Date.now() + 5000) return cachedToken;
 
-  if (!credentialsLoaded) {
-    credentialsLoaded = true;
-    readCredentials();
-  }
+  loadCredentialsIfNeeded();
 
   if (refreshToken) return refreshAccessToken();
 
@@ -585,6 +625,18 @@ async function getToken() {
     'AUTHENTICATION_REQUIRED',
     'FUXI_CONNECT_CODE, FUXI_TOKEN, or FUXI_USERNAME/FUXI_PASSWORD is required'
   );
+}
+
+async function getToken() {
+  if (cachedToken && accessExpiresAt > Date.now() + 5000) return cachedToken;
+  if (tokenPromise) return tokenPromise;
+  const pending = getTokenInternal();
+  tokenPromise = pending;
+  try {
+    return await pending;
+  } finally {
+    if (tokenPromise === pending) tokenPromise = null;
+  }
 }
 
 async function authed(apiPath, options = {}) {
@@ -955,6 +1007,7 @@ async function deliverProject(args) {
 async function callTool(name, args) {
   if (name === 'check_connection') {
     const data = await request('/api/health');
+    loadCredentialsIfNeeded();
     let authentication = 'unconfigured';
     let runtime = { mcpVersion: MCP_VERSION, skillVersion: SKILL_VERSION };
     let update = null;

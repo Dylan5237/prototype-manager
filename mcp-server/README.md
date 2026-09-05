@@ -3,10 +3,11 @@
 This MCP server exposes Fuxi prototype-management operations to agents through structured tools.
 
 The package also contains `src/bootstrap.js`, a deterministic first-install CLI. It is not an MCP tool
-and does not create a separate Fuxi client. The AI host downloads the package with its native HTTP and
-Node.js capabilities, runs `preflight`, then `install`; the installer backs up and updates the host
-configuration, installs `fuxi-prototype`, performs the first MCP `check_connection` self-test, and emits
-one JSON result. The host reload is reported separately as `reloadRequired`.
+and does not create a separate Fuxi client. The AI host downloads the MCP ZIP once to obtain `bootstrap.js`,
+then runs one `install` command; the installer validates the local MCP ZIP, downloads and validates the Skill
+ZIP, backs up and updates the host configuration, installs `fuxi-prototype`, performs the first MCP
+`check_connection` self-test, and emits one JSON result. The host reload is reported separately as
+`reloadRequired`. Repeated installs short-circuit after verifying the completed local installation.
 
 ## Configuration
 
@@ -30,10 +31,11 @@ without re-entering the code. The refresh token rotates on every refresh and the
 platform's MCP session list.
 
 For deferred updates, configure the AI client to start `src/launcher.js` instead of `src/server.js`. The launcher
-uses the existing device session to claim a scheduled update, downloads the fixed MCP/Skill ZIP artifacts, verifies
-their SHA-256 digests, runs local Smoke checks, replaces the native Skill directory, and only then starts the MCP
-server. Update logs are written to stderr so MCP JSON-RPC stdout remains clean. If no update is available, it starts
-the current installation unchanged.
+uses the existing device session to claim a scheduled update, downloads the fixed MCP/Skill ZIP artifacts in
+parallel, verifies their SHA-256 digests, runs local Smoke checks, replaces the native Skill directory, and only
+then starts the MCP server. Startup passes the already refreshed short-lived access token to the child server;
+refresh token rotation is protected by a process lock and in-process single-flight. Update logs are written to
+stderr so MCP JSON-RPC stdout remains clean. If no update is available, it starts the current installation unchanged.
 
 ## Tools
 

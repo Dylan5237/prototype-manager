@@ -9,6 +9,8 @@ const path = require('node:path');
 const { buildZip } = require('../src/fuxi-zip');
 const {
   BootstrapError,
+  acquireBootstrapLock,
+  clientTargets,
   extractPackage,
   install,
   mergeMcpConfig,
@@ -75,12 +77,38 @@ test('preflight requires explicit paths for an unknown client and reports existi
   }
 });
 
+test('clientTargets resolves the verified WorkBuddy native paths without broad discovery', () => {
+  const manifest = { schema: 'fuxi-bootstrap/2', bootstrapId: 'workbuddy-1', apiUrl: 'http://127.0.0.1', client: { name: 'workbuddy' } };
+  const targets = clientTargets(manifest);
+  assert.equal(targets.name, 'workbuddy');
+  assert.equal(targets.mcpConfig, path.join(os.homedir(), '.workbuddy', 'mcp.json'));
+  assert.equal(targets.skillTarget, path.join(os.homedir(), '.workbuddy', 'skills', 'fuxi-prototype'));
+});
+
 test('mergeMcpConfig preserves existing MCP entries and replaces only Fuxi', () => {
   const existing = { settings: { keep: true }, mcpServers: { other: { command: 'node', args: ['other.js'] } } };
   const merged = mergeMcpConfig(existing, { command: 'node', args: ['launcher.js'] });
   assert.deepEqual(merged.settings, existing.settings);
   assert.deepEqual(merged.mcpServers.other, existing.mcpServers.other);
   assert.deepEqual(merged.mcpServers['fuxi-platform'], { command: 'node', args: ['launcher.js'] });
+});
+
+test('bootstrap install uses a shared lock and returns idempotent success for a completed install', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-lock-'));
+  try {
+    const lockFile = path.join(root, 'install', 'update.lock');
+    const release = acquireBootstrapLock(lockFile);
+    try {
+      assert.throws(
+        () => acquireBootstrapLock(lockFile),
+        error => error instanceof BootstrapError && error.code === 'BOOTSTRAP_LOCKED'
+      );
+    } finally {
+      release();
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('extractPackage rejects unsafe ZIP entries before writing outside staging', () => {
@@ -110,6 +138,7 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
       ['src/server.js', fakeMcpServer()],
       ['src/launcher.js', '#!/usr/bin/env node\n'],
       ['src/bootstrap.js', '#!/usr/bin/env node\n'],
+      ['src/local-lock.js', 'module.exports = {};\n'],
       ['package.json', '{"name":"fuxi-platform-mcp","version":"test"}\n']
     ]);
     const skillZip = packageZip(root, 'fuxi-prototype', [['SKILL.md', '---\nname: fuxi-prototype\n---\n']]);
@@ -157,6 +186,7 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     assert.equal(state.status, 'COMPLETE');
     assert.equal(state.mcpConnected, true);
     assert.equal(state.skillReady, true);
+    assert.equal(typeof state.timings.totalMs, 'number');
     const configured = JSON.parse(fs.readFileSync(config, 'utf8'));
     assert.deepEqual(configured.mcpServers.other, { command: 'node' });
     assert.equal(configured.mcpServers['fuxi-platform'].env.FUXI_CONNECT_CODE, undefined);
@@ -164,6 +194,19 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     const verified = verify(state.statePath);
     assert.equal(verified.ok, true);
     assert.equal(verified.checks.config, true);
+    assert.equal(requestCount, 2);
+
+    const repeated = await install(manifest, {
+      'mcp-config': config,
+      'skill-target': skillTarget,
+      'install-root': installRoot,
+      state: path.join(installRoot, 'state.json'),
+      'mcp-zip': mcpZipPath,
+      'skill-zip': skillZipPath,
+      'timeout-ms': 5000
+    });
+    assert.equal(repeated.status, 'COMPLETE');
+    assert.equal(repeated.reason, 'ALREADY_COMPLETE');
     assert.equal(requestCount, 2);
 
     const localConfig = path.join(root, 'client-local', 'mcp.json');

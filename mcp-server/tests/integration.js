@@ -328,13 +328,11 @@ async function main() {
     assert(bootstrap.data.prompt.includes('AUTHORIZATION_REQUIRED'));
     assert(bootstrap.data.prompt.includes('AUTHENTICATION_FAILED'));
     assert(!bootstrap.data.prompt.includes('admin123'));
-    assert(bootstrap.data.prompt.includes('让AI创建原型'));
-    assert(bootstrap.data.prompt.includes('修改独立原型'));
-    assert(bootstrap.data.prompt.includes('修改项目中的原型'));
-    assert(bootstrap.data.prompt.includes('候选上传后由项目负责人预览并采用'));
-    assert(bootstrap.data.prompt.includes('静态交付检查'));
+    assert(bootstrap.data.prompt.includes('伏羲平台快速入门'));
+    assert(bootstrap.data.prompt.includes('仅为取得 bootstrap.js'));
+    assert(bootstrap.data.prompt.includes('运行唯一安装入口'));
     assert(bootstrap.data.prompt.includes('FUXI_MCP_TARGET'));
-    assert(bootstrap.data.prompt.includes('重启或刷新 AI 客户端'));
+    assert(bootstrap.data.prompt.includes('重载 MCP 配置'));
     assert(!bootstrap.data.prompt.includes('.cursor/skills'));
     assert(bootstrap.data.connectCode);
     assert(bootstrap.data.connectCodeExpiresAt);
@@ -343,12 +341,13 @@ async function main() {
     assert.equal(bootstrap.data.bootstrapManifest.artifacts.skill.url, bootstrap.data.skillUrl);
     assert(bootstrap.data.prompt.includes('src/bootstrap.js'));
     assert(bootstrap.data.prompt.includes('--mcp-zip'));
-    assert(bootstrap.data.prompt.includes('--skill-zip'));
+    assert(!bootstrap.data.prompt.includes('--skill-zip'));
     const connectCodeRemainingMs = Date.parse(bootstrap.data.connectCodeExpiresAt) - Date.now();
     assert(connectCodeRemainingMs > 18 * 60 * 1000 && connectCodeRemainingMs <= 20 * 60 * 1000 + 5000);
     assert(bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
     assert(bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
-    assert(bootstrap.data.prompt.indexOf('使用安装 token 下载 Skill ZIP') < bootstrap.data.prompt.indexOf('优先调用 check_connection'));
+    assert(bootstrap.data.prompt.indexOf('仅为取得 bootstrap.js') < bootstrap.data.prompt.indexOf('运行唯一安装入口'));
+    assert(bootstrap.data.prompt.indexOf('运行唯一安装入口') < bootstrap.data.prompt.indexOf('重载 MCP 配置'));
 
     // 一次性连接码兑换 access + refresh token，并登记设备会话
     const connectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
