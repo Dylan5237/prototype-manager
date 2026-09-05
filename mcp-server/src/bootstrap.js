@@ -20,6 +20,12 @@ const PACKAGE_ROOTS = {
   mcp: 'fuxi-platform-mcp',
   skill: 'fuxi-prototype'
 };
+const MCP_PATH_ENV_KEYS = new Set([
+  'FUXI_CREDENTIALS_FILE',
+  'FUXI_MCP_TARGET',
+  'FUXI_INSTALL_ROOT',
+  'FUXI_SKILL_TARGET'
+]);
 const FORBIDDEN_ENTRY_SEGMENTS = new Set([
   '.git', '.svn', '.hg', 'node_modules', '.npmrc', '.env',
   '.credentials.json', 'credentials.json', 'mcp-credentials.json',
@@ -37,6 +43,23 @@ class BootstrapError extends Error {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeApiUrl(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
+function normalizePathForComparison(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const normalized = path.normalize(value.trim());
+  const resolved = path.resolve(normalized);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function samePath(left, right) {
+  const normalizedLeft = normalizePathForComparison(left);
+  const normalizedRight = normalizePathForComparison(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
 
 function sha256(buffer) {
@@ -364,7 +387,7 @@ function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot, 
   const launcher = path.join(mcpRoot, 'src', 'launcher.js');
   const server = path.join(mcpRoot, 'src', 'server.js');
   const env = {
-    FUXI_API_URL: String(manifest.apiUrl).replace(/\/+$/, ''),
+    FUXI_API_URL: normalizeApiUrl(manifest.apiUrl),
     FUXI_CREDENTIALS_FILE: credentialsFile,
     FUXI_MCP_TARGET: server,
     FUXI_INSTALL_ROOT: installRoot,
@@ -372,6 +395,39 @@ function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot, 
   };
   if (connectCode) env.FUXI_CONNECT_CODE = connectCode;
   return { command: process.execPath, args: [launcher], env };
+}
+
+function mcpEntryMatchesState(entry, state, manifest) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (!state || !state.mcpRoot || !state.skillTarget || !state.credentialsFile || !state.installRoot) return false;
+
+  const expected = mcpEntry(
+    { apiUrl: manifest.apiUrl },
+    state.mcpRoot,
+    state.skillTarget,
+    state.credentialsFile,
+    state.installRoot,
+    null
+  );
+  if (!samePath(entry.command, expected.command)) return false;
+  if (!Array.isArray(entry.args) || entry.args.length !== expected.args.length || !entry.args.every((value, index) => samePath(value, expected.args[index]))) {
+    return false;
+  }
+  if (!entry.env || typeof entry.env !== 'object' || Array.isArray(entry.env)) return false;
+
+  const expectedEnv = expected.env;
+  for (const [key, expectedValue] of Object.entries(expectedEnv)) {
+    if (key === 'FUXI_MCP_TARGET' && !Object.prototype.hasOwnProperty.call(entry.env, key)) continue;
+    const actualValue = entry.env[key];
+    if (MCP_PATH_ENV_KEYS.has(key)) {
+      if (!samePath(actualValue, expectedValue)) return false;
+    } else if (key === 'FUXI_API_URL') {
+      if (normalizeApiUrl(actualValue) !== normalizeApiUrl(expectedValue)) return false;
+    } else if (actualValue !== expectedValue) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function mergeMcpConfig(config, entry) {
@@ -498,12 +554,12 @@ function readCompletedInstall(stateFile, manifest) {
   try {
     const state = readJson(stateFile);
     if (state.status !== 'COMPLETE' || state.mcpConnected !== true) return null;
-    if (state.apiUrl && String(state.apiUrl).replace(/\/+$/, '') !== String(manifest.apiUrl).replace(/\/+$/, '')) return null;
-    const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
-    const configReady = Boolean(config && config.mcpServers && config.mcpServers['fuxi-platform']);
+    if (state.apiUrl && normalizeApiUrl(state.apiUrl) !== normalizeApiUrl(manifest.apiUrl)) return null;
     const mcpReady = Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js')) && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js')));
     const skillReady = Boolean(state.skillTarget && fs.existsSync(path.join(state.skillTarget, 'SKILL.md')));
-    if (!configReady || !mcpReady || !skillReady) return null;
+    const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
+    const configEntry = config && config.mcpServers && config.mcpServers['fuxi-platform'];
+    if (!mcpReady || !skillReady || !mcpEntryMatchesState(configEntry, state, manifest)) return null;
     return state;
   } catch (error) {
     return null;
@@ -654,7 +710,7 @@ function verify(stateFile) {
   if (state.mcpConfig && fs.existsSync(state.mcpConfig)) {
     try {
       const config = readConfig(state.mcpConfig);
-      configHasFuxi = Boolean(config.mcpServers && config.mcpServers['fuxi-platform']);
+      configHasFuxi = Boolean(config.mcpServers && mcpEntryMatchesState(config.mcpServers['fuxi-platform'], state, { apiUrl: state.apiUrl }));
     } catch (error) {}
   }
   const checks = {

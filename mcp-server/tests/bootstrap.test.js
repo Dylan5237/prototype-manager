@@ -209,6 +209,40 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     assert.equal(repeated.reason, 'ALREADY_COMPLETE');
     assert.equal(requestCount, 2);
 
+    const launcherTampered = JSON.parse(fs.readFileSync(config, 'utf8'));
+    launcherTampered.mcpServers['fuxi-platform'].args = [path.join(root, 'runtime', 'bootstrap-mcp', 'wrong-launcher.js')];
+    fs.writeFileSync(config, JSON.stringify(launcherTampered, null, 2));
+    const launcherRepaired = await install(manifest, {
+      'mcp-config': config,
+      'skill-target': skillTarget,
+      'install-root': installRoot,
+      state: path.join(installRoot, 'state.json'),
+      'mcp-zip': mcpZipPath,
+      'skill-zip': skillZipPath,
+      'timeout-ms': 5000
+    });
+    assert.equal(launcherRepaired.status, 'COMPLETE');
+    assert.notEqual(launcherRepaired.reason, 'ALREADY_COMPLETE');
+    const repairedLauncherConfig = JSON.parse(fs.readFileSync(config, 'utf8'));
+    assert.deepEqual(repairedLauncherConfig.mcpServers['fuxi-platform'].args, [path.join(installRoot, 'bootstrap-mcp', 'fuxi-platform-mcp', 'src', 'launcher.js')]);
+
+    const envTampered = JSON.parse(fs.readFileSync(config, 'utf8'));
+    envTampered.mcpServers['fuxi-platform'].env.FUXI_SKILL_TARGET = path.join(root, 'wrong-skill-target');
+    fs.writeFileSync(config, JSON.stringify(envTampered, null, 2));
+    const envRepaired = await install(manifest, {
+      'mcp-config': config,
+      'skill-target': skillTarget,
+      'install-root': installRoot,
+      state: path.join(installRoot, 'state.json'),
+      'mcp-zip': mcpZipPath,
+      'skill-zip': skillZipPath,
+      'timeout-ms': 5000
+    });
+    assert.equal(envRepaired.status, 'COMPLETE');
+    assert.notEqual(envRepaired.reason, 'ALREADY_COMPLETE');
+    const repairedEnvConfig = JSON.parse(fs.readFileSync(config, 'utf8'));
+    assert.equal(repairedEnvConfig.mcpServers['fuxi-platform'].env.FUXI_SKILL_TARGET, skillTarget);
+
     const localConfig = path.join(root, 'client-local', 'mcp.json');
     const localSkillTarget = path.join(root, 'client-local', 'skills', 'fuxi-prototype');
     fs.mkdirSync(path.dirname(localConfig), { recursive: true });
