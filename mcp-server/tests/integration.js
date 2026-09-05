@@ -333,6 +333,10 @@ async function main() {
     assert(bootstrap.data.prompt.includes('运行唯一安装入口'));
     assert(bootstrap.data.prompt.includes('FUXI_MCP_TARGET'));
     assert(bootstrap.data.prompt.includes('重载 MCP 配置'));
+    assert(bootstrap.data.prompt.includes('同一个 shell/terminal execution context'));
+    assert(bootstrap.data.prompt.includes('如果当前工具是 WorkBuddy'));
+    assert(bootstrap.data.prompt.includes('--client workbuddy'));
+    assert(bootstrap.data.prompt.includes('不得传 --mcp-config 或 --skill-target'));
     assert(!bootstrap.data.prompt.includes('.cursor/skills'));
     assert(bootstrap.data.connectCode);
     assert(bootstrap.data.connectCodeExpiresAt);

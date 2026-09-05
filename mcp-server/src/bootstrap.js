@@ -62,6 +62,34 @@ function samePath(left, right) {
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
 
+function workbuddyDefaultMcpConfig() {
+  return path.join(os.homedir(), '.workbuddy', 'mcp.json');
+}
+
+function workbuddyDefaultSkillTarget() {
+  return path.join(os.homedir(), '.workbuddy', 'skills', PACKAGE_ROOTS.skill);
+}
+
+function validateSkillTarget(skillTarget, clientName) {
+  const resolved = absolute(skillTarget, 'skillTarget');
+  if (path.basename(resolved).toLowerCase() !== PACKAGE_ROOTS.skill.toLowerCase()) {
+    throw new BootstrapError('INVALID_SKILL_TARGET', `Skill target must be the ${PACKAGE_ROOTS.skill} package directory`, { client: clientName });
+  }
+  if (String(clientName || '').toLowerCase() === 'workbuddy' && !samePath(resolved, workbuddyDefaultSkillTarget())) {
+    throw new BootstrapError('INVALID_SKILL_TARGET', 'WorkBuddy Skill target must use its built-in fuxi-prototype directory', { client: clientName });
+  }
+  return resolved;
+}
+
+function skillTargetReady(skillTarget, clientName) {
+  try {
+    const resolved = validateSkillTarget(skillTarget, clientName);
+    return fs.existsSync(path.join(resolved, 'SKILL.md'));
+  } catch (error) {
+    return false;
+  }
+}
+
 function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
@@ -141,6 +169,18 @@ function clientTargets(manifest, options = {}) {
 
   let mcpConfig = configValue;
   let skillTarget = skillValue;
+  if (name === 'workbuddy') {
+    const defaultMcpConfig = workbuddyDefaultMcpConfig();
+    const defaultSkillTarget = workbuddyDefaultSkillTarget();
+    if (configValue && !samePath(configValue, defaultMcpConfig)) {
+      throw new BootstrapError('INVALID_MCP_CONFIG', 'WorkBuddy MCP config must use its built-in path', { client: name });
+    }
+    if (skillValue && !samePath(skillValue, defaultSkillTarget)) {
+      throw new BootstrapError('INVALID_SKILL_TARGET', 'WorkBuddy Skill target must use its built-in fuxi-prototype directory', { client: name });
+    }
+    mcpConfig = defaultMcpConfig;
+    skillTarget = defaultSkillTarget;
+  }
   if (!mcpConfig && name === 'cursor') {
     const candidates = [
       path.join(os.homedir(), '.cursor', 'mcp.json'),
@@ -163,7 +203,7 @@ function clientTargets(manifest, options = {}) {
   return {
     name,
     mcpConfig: absolute(mcpConfig, 'mcpConfig'),
-    skillTarget: absolute(skillTarget, 'skillTarget'),
+    skillTarget: validateSkillTarget(skillTarget, name),
     format: client.configFormat || 'json'
   };
 }
@@ -532,7 +572,7 @@ function buildState({ manifest, plan, state, mcp, skill, mcpRoot, credentialsFil
     credentialsFile,
     installRoot,
     mcpConnected: Boolean(selfTestResult),
-    skillReady: fs.existsSync(path.join(plan.skillTarget, 'SKILL.md')),
+    skillReady: skillTargetReady(plan.skillTarget, plan.client),
     reloadRequired: true,
     postReloadVerified: false,
     artifacts: {
@@ -556,7 +596,7 @@ function readCompletedInstall(stateFile, manifest) {
     if (state.status !== 'COMPLETE' || state.mcpConnected !== true) return null;
     if (state.apiUrl && normalizeApiUrl(state.apiUrl) !== normalizeApiUrl(manifest.apiUrl)) return null;
     const mcpReady = Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js')) && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js')));
-    const skillReady = Boolean(state.skillTarget && fs.existsSync(path.join(state.skillTarget, 'SKILL.md')));
+    const skillReady = Boolean(state.skillTarget && skillTargetReady(state.skillTarget, state.client));
     const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
     const configEntry = config && config.mcpServers && config.mcpServers['fuxi-platform'];
     if (!mcpReady || !skillReady || !mcpEntryMatchesState(configEntry, state, manifest)) return null;
@@ -591,6 +631,11 @@ async function install(manifest, options = {}) {
   const startedAt = Date.now();
   const mark = (name, started) => { timings[name] = Date.now() - started; };
   try {
+    step = 'PRECHECK';
+    let stageStarted = Date.now();
+    plan = preflight(manifest, options);
+    mark('preflightMs', stageStarted);
+
     const existing = readCompletedInstall(state, manifest);
     if (existing) {
       return {
@@ -600,11 +645,6 @@ async function install(manifest, options = {}) {
         timings: { totalMs: Date.now() - startedAt, idempotentMs: Date.now() - startedAt }
       };
     }
-
-    step = 'PRECHECK';
-    let stageStarted = Date.now();
-    plan = preflight(manifest, options);
-    mark('preflightMs', stageStarted);
 
     ensureDirectory(staging);
     ensureDirectory(backupRoot);
@@ -717,7 +757,7 @@ function verify(stateFile) {
     state: state.status === 'COMPLETE',
     mcpServer: Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js'))),
     launcher: Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js'))),
-    skill: Boolean(state.skillTarget && fs.existsSync(path.join(state.skillTarget, 'SKILL.md'))),
+    skill: Boolean(state.skillTarget && skillTargetReady(state.skillTarget, state.client)),
     config: configHasFuxi
   };
   return { ok: Object.values(checks).every(Boolean), status: checks.state ? 'COMPLETE' : 'FAILED', checks, reloadRequired: state.reloadRequired !== false, postReloadVerified: Boolean(state.postReloadVerified) };

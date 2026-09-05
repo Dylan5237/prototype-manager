@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { once } = require('node:events');
+const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -7,6 +9,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { buildZip } = require('../src/fuxi-zip');
+const { acquireFileLockSync } = require('../src/local-lock');
 const {
   BootstrapError,
   acquireBootstrapLock,
@@ -106,6 +109,61 @@ test('bootstrap install uses a shared lock and returns idempotent success for a 
     } finally {
       release();
     }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('local lock immediately reclaims a fresh lock owned by a dead PID', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-local-lock-dead-'));
+  try {
+    const lockFile = path.join(root, 'install', 'update.lock');
+    const child = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' });
+    await once(child, 'exit');
+    fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+    fs.writeFileSync(lockFile, `${child.pid}\n`);
+
+    const release = acquireFileLockSync(lockFile, { staleMs: 60 * 60 * 1000 });
+    assert.equal(fs.existsSync(lockFile), true);
+    release();
+    assert.equal(fs.existsSync(lockFile), false);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('local lock preserves a fresh lock owned by a live PID', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-local-lock-live-'));
+  try {
+    const lockFile = path.join(root, 'install', 'update.lock');
+    fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+    fs.writeFileSync(lockFile, `${process.pid}\n`);
+
+    assert.throws(
+      () => acquireFileLockSync(lockFile, { staleMs: 0 }),
+      error => error && error.code === 'LOCKED'
+    );
+    assert.equal(fs.readFileSync(lockFile, 'utf8'), `${process.pid}\n`);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('local lock uses staleMs as fallback for invalid owner content', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-local-lock-invalid-'));
+  try {
+    const lockFile = path.join(root, 'install', 'update.lock');
+    fs.mkdirSync(path.dirname(lockFile), { recursive: true });
+    fs.writeFileSync(lockFile, 'not-a-pid\n');
+
+    assert.throws(
+      () => acquireFileLockSync(lockFile, { staleMs: 60 * 60 * 1000 }),
+      error => error && error.code === 'LOCKED'
+    );
+    const staleAt = new Date(Date.now() - 60 * 60 * 1000 - 1000);
+    fs.utimesSync(lockFile, staleAt, staleAt);
+    const release = acquireFileLockSync(lockFile, { staleMs: 60 * 60 * 1000 });
+    release();
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -243,6 +301,50 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     const repairedEnvConfig = JSON.parse(fs.readFileSync(config, 'utf8'));
     assert.equal(repairedEnvConfig.mcpServers['fuxi-platform'].env.FUXI_SKILL_TARGET, skillTarget);
 
+    const originalHome = os.homedir;
+    const workbuddyHome = path.join(root, 'workbuddy-home');
+    const workbuddyConfig = path.join(workbuddyHome, '.workbuddy', 'mcp.json');
+    const workbuddySkillsRoot = path.join(workbuddyHome, '.workbuddy', 'skills');
+    const workbuddySibling = writeFixture(workbuddyHome, '.workbuddy/skills/other-skill/SKILL.md', 'keep this skill\n');
+    const workbuddyInstallRoot = path.join(root, 'runtime-workbuddy');
+    const workbuddyCredentials = path.join(workbuddyHome, '.fuxi', 'mcp-credentials.json');
+    const workbuddyManifest = {
+      ...manifest,
+      bootstrapId: 'workbuddy-install-1',
+      client: { name: 'workbuddy' }
+    };
+    os.homedir = () => workbuddyHome;
+    try {
+      fs.mkdirSync(path.dirname(workbuddyConfig), { recursive: true });
+      fs.mkdirSync(workbuddySkillsRoot, { recursive: true });
+      const workbuddyState = await install(workbuddyManifest, {
+        'install-root': workbuddyInstallRoot,
+        'credentials-file': workbuddyCredentials,
+        state: path.join(workbuddyInstallRoot, 'state.json'),
+        'mcp-zip': mcpZipPath,
+        'skill-zip': skillZipPath,
+        'timeout-ms': 5000
+      });
+      assert.equal(workbuddyState.status, 'COMPLETE');
+      assert.equal(workbuddyState.skillReady, true);
+      assert.equal(workbuddyState.mcpConfig, workbuddyConfig);
+      assert.equal(workbuddyState.skillTarget, path.join(workbuddySkillsRoot, 'fuxi-prototype'));
+      assert.equal(fs.existsSync(path.join(workbuddySkillsRoot, 'fuxi-prototype', 'SKILL.md')), true);
+      assert.equal(fs.readFileSync(workbuddySibling, 'utf8'), 'keep this skill\n');
+
+      const workbuddyRepeated = await install(workbuddyManifest, {
+        'install-root': workbuddyInstallRoot,
+        'credentials-file': workbuddyCredentials,
+        state: path.join(workbuddyInstallRoot, 'state.json'),
+        'mcp-zip': mcpZipPath,
+        'skill-zip': skillZipPath,
+        'timeout-ms': 5000
+      });
+      assert.equal(workbuddyRepeated.reason, 'ALREADY_COMPLETE');
+    } finally {
+      os.homedir = originalHome;
+    }
+
     const localConfig = path.join(root, 'client-local', 'mcp.json');
     const localSkillTarget = path.join(root, 'client-local', 'skills', 'fuxi-prototype');
     fs.mkdirSync(path.dirname(localConfig), { recursive: true });
@@ -261,6 +363,66 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     assert.equal(requestCount, 2);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('install rejects the WorkBuddy skills container before any destructive operation', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-workbuddy-guard-'));
+  const originalHome = os.homedir;
+  const home = path.join(root, 'home');
+  os.homedir = () => home;
+  try {
+    const skillsRoot = path.join(home, '.workbuddy', 'skills');
+    const otherSkill = writeFixture(home, '.workbuddy/skills/other-skill/SKILL.md', 'preserve\n');
+    const installRoot = path.join(root, 'runtime');
+    const statePath = path.join(installRoot, 'state.json');
+    const manifest = { schema: 'fuxi-bootstrap/2', bootstrapId: 'guard-workbuddy', apiUrl: 'http://127.0.0.1', client: { name: 'workbuddy' } };
+
+    await assert.rejects(
+      () => install(manifest, {
+        'skill-target': skillsRoot,
+        'install-root': installRoot,
+        'credentials-file': path.join(home, '.fuxi', 'mcp-credentials.json'),
+        state: statePath
+      }),
+      error => error instanceof BootstrapError && error.code === 'INVALID_SKILL_TARGET'
+    );
+    assert.equal(fs.readFileSync(otherSkill, 'utf8'), 'preserve\n');
+    const failed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    assert.equal(failed.status, 'FAILED');
+    assert.notEqual(failed.skillReady, true);
+  } finally {
+    os.homedir = originalHome;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('install rejects a non-package skill basename before touching the existing target', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-skill-basename-'));
+  try {
+    const target = path.join(root, 'skills', 'not-fuxi');
+    const otherSkill = writeFixture(root, 'skills/other-skill/SKILL.md', 'preserve\n');
+    const config = path.join(root, 'client', 'mcp.json');
+    const installRoot = path.join(root, 'runtime');
+    const statePath = path.join(installRoot, 'state.json');
+    const manifest = { schema: 'fuxi-bootstrap/2', bootstrapId: 'guard-basename', apiUrl: 'http://127.0.0.1', client: { name: 'generic' } };
+
+    await assert.rejects(
+      () => install(manifest, {
+        'mcp-config': config,
+        'skill-target': target,
+        'install-root': installRoot,
+        'credentials-file': path.join(root, 'credentials.json'),
+        state: statePath
+      }),
+      error => error instanceof BootstrapError && error.code === 'INVALID_SKILL_TARGET'
+    );
+    assert.equal(fs.readFileSync(otherSkill, 'utf8'), 'preserve\n');
+    const failed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
+    assert.equal(failed.status, 'FAILED');
+    assert.notEqual(failed.skillReady, true);
+  } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
