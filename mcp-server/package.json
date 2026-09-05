@@ -5,8 +5,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "check": "node --check src/server.js && node --check src/fuxi-zip.js && node --check src/update-runtime.js && node --check src/launcher.js && node --check src/bootstrap.js && node --check tests/integration.js && node --check tests/bootstrap.test.js && node --check tests/remote-update.test.js && node --check tests/performance/phase20-baseline.js && node --check tests/performance/phase24-local-baseline.js && node --check tests/performance/phase24-16077-baseline.js && node --check tests/update-spike/updater.js && node --check tests/update-spike/launcher.js && node --check tests/update-spike/cursor-launcher.js && node --check tests/update-spike/run-spike.js",
+    "check": "node --check src/server.js && node --check src/fuxi-zip.js && node --check src/local-lock.js && node --check src/update-runtime.js && node --check src/launcher.js && node --check src/bootstrap.js && node --check tests/integration.js && node --check tests/bootstrap.test.js && node --check tests/auth-concurrency.test.js && node --check tests/remote-update.test.js && node --check tests/performance/phase20-baseline.js && node --check tests/performance/phase24-local-baseline.js && node --check tests/performance/phase24-16077-baseline.js && node --check tests/update-spike/updater.js && node --check tests/update-spike/launcher.js && node --check tests/update-spike/cursor-launcher.js && node --check tests/update-spike/run-spike.js",
     "test:bootstrap": "node --test --test-concurrency=1 tests/bootstrap.test.js",
+    "test:auth-concurrency": "node --test --test-concurrency=1 tests/auth-concurrency.test.js",
     "test:integration": "node tests/integration.js",
     "test:remote-update": "node --test --test-concurrency=1 tests/remote-update.test.js",
     "test:update-spike": "node tests/update-spike/run-spike.js",

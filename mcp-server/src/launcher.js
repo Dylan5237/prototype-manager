@@ -32,7 +32,7 @@ async function main() {
 
   let child;
   try {
-    child = startMcp(startup.p, startup.current);
+    child = startMcp(startup.p, startup.current, startup.auth);
   } catch (error) {
     process.stderr.write(`[fuxi-update] MCP start failed: ${error.code || error.message}\n`);
     process.exitCode = 1;

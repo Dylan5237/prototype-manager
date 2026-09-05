@@ -8,16 +8,24 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { parseZipBuffer } = require('./fuxi-zip');
+const { acquireFileLockSync } = require('./local-lock');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 10000;
 const DEFAULT_TIMEOUT_MS = 15000;
 const DEFAULT_INSTALL_ROOT = path.join(os.homedir(), '.fuxi', 'agent-runtime');
 const DEFAULT_CREDENTIALS_FILE = path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
+const SHARED_INSTALL_LOCK = path.join('install', 'update.lock');
 const PACKAGE_ROOTS = {
   mcp: 'fuxi-platform-mcp',
   skill: 'fuxi-prototype'
 };
+const MCP_PATH_ENV_KEYS = new Set([
+  'FUXI_CREDENTIALS_FILE',
+  'FUXI_MCP_TARGET',
+  'FUXI_INSTALL_ROOT',
+  'FUXI_SKILL_TARGET'
+]);
 const FORBIDDEN_ENTRY_SEGMENTS = new Set([
   '.git', '.svn', '.hg', 'node_modules', '.npmrc', '.env',
   '.credentials.json', 'credentials.json', 'mcp-credentials.json',
@@ -35,6 +43,23 @@ class BootstrapError extends Error {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function normalizeApiUrl(value) {
+  return String(value || '').replace(/\/+$/, '');
+}
+
+function normalizePathForComparison(value) {
+  if (typeof value !== 'string' || !value.trim()) return null;
+  const normalized = path.normalize(value.trim());
+  const resolved = path.resolve(normalized);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function samePath(left, right) {
+  const normalizedLeft = normalizePathForComparison(left);
+  const normalizedRight = normalizePathForComparison(right);
+  return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
 }
 
 function sha256(buffer) {
@@ -83,6 +108,20 @@ function writeJsonAtomic(file, value) {
   fs.renameSync(temp, file);
 }
 
+function acquireBootstrapLock(lockFile) {
+  try {
+    return acquireFileLockSync(lockFile, {
+      errorCode: 'BOOTSTRAP_LOCKED',
+      message: '另一个伏羲接入或更新任务正在执行'
+    });
+  } catch (error) {
+    if (error.code === 'BOOTSTRAP_LOCKED') {
+      throw new BootstrapError(error.code, error.message, { lockFile });
+    }
+    throw error;
+  }
+}
+
 function readManifest(file) {
   const manifest = readJson(absolute(file, 'manifest'));
   if (!manifest || manifest.schema !== 'fuxi-bootstrap/2') {
@@ -109,8 +148,14 @@ function clientTargets(manifest, options = {}) {
     ].filter(Boolean);
     mcpConfig = candidates.find(candidate => fs.existsSync(candidate)) || candidates[0];
   }
+  if (!mcpConfig && name === 'workbuddy') {
+    mcpConfig = path.join(os.homedir(), '.workbuddy', 'mcp.json');
+  }
   if (!skillTarget && name === 'cursor') {
     skillTarget = path.join(os.homedir(), '.cursor', 'skills', 'fuxi-prototype');
+  }
+  if (!skillTarget && name === 'workbuddy') {
+    skillTarget = path.join(os.homedir(), '.workbuddy', 'skills', 'fuxi-prototype');
   }
   if (!mcpConfig) throw new BootstrapError('CLIENT_CONFIG_REQUIRED', 'MCP configuration path was not identified', { client: name });
   if (!skillTarget) throw new BootstrapError('CLIENT_SKILL_TARGET_REQUIRED', 'Skill installation path was not identified', { client: name });
@@ -216,7 +261,7 @@ function extractPackage(buffer, targetDir, packageType) {
   const rootFiles = extracted.filter(entry => entry.startsWith(rootPrefix));
   const packageRoot = rootFiles.length ? path.join(targetDir, expectedRoot) : targetDir;
   const required = packageType === 'mcp'
-    ? ['src/server.js', 'src/launcher.js', 'src/bootstrap.js', 'package.json']
+    ? ['src/server.js', 'src/launcher.js', 'src/bootstrap.js', 'src/local-lock.js', 'package.json']
     : ['SKILL.md'];
   for (const requiredFile of required) {
     if (!fs.existsSync(path.join(packageRoot, requiredFile))) {
@@ -342,7 +387,7 @@ function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot, 
   const launcher = path.join(mcpRoot, 'src', 'launcher.js');
   const server = path.join(mcpRoot, 'src', 'server.js');
   const env = {
-    FUXI_API_URL: String(manifest.apiUrl).replace(/\/+$/, ''),
+    FUXI_API_URL: normalizeApiUrl(manifest.apiUrl),
     FUXI_CREDENTIALS_FILE: credentialsFile,
     FUXI_MCP_TARGET: server,
     FUXI_INSTALL_ROOT: installRoot,
@@ -350,6 +395,39 @@ function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot, 
   };
   if (connectCode) env.FUXI_CONNECT_CODE = connectCode;
   return { command: process.execPath, args: [launcher], env };
+}
+
+function mcpEntryMatchesState(entry, state, manifest) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (!state || !state.mcpRoot || !state.skillTarget || !state.credentialsFile || !state.installRoot) return false;
+
+  const expected = mcpEntry(
+    { apiUrl: manifest.apiUrl },
+    state.mcpRoot,
+    state.skillTarget,
+    state.credentialsFile,
+    state.installRoot,
+    null
+  );
+  if (!samePath(entry.command, expected.command)) return false;
+  if (!Array.isArray(entry.args) || entry.args.length !== expected.args.length || !entry.args.every((value, index) => samePath(value, expected.args[index]))) {
+    return false;
+  }
+  if (!entry.env || typeof entry.env !== 'object' || Array.isArray(entry.env)) return false;
+
+  const expectedEnv = expected.env;
+  for (const [key, expectedValue] of Object.entries(expectedEnv)) {
+    if (key === 'FUXI_MCP_TARGET' && !Object.prototype.hasOwnProperty.call(entry.env, key)) continue;
+    const actualValue = entry.env[key];
+    if (MCP_PATH_ENV_KEYS.has(key)) {
+      if (!samePath(actualValue, expectedValue)) return false;
+    } else if (key === 'FUXI_API_URL') {
+      if (normalizeApiUrl(actualValue) !== normalizeApiUrl(expectedValue)) return false;
+    } else if (actualValue !== expectedValue) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function mergeMcpConfig(config, entry) {
@@ -438,7 +516,7 @@ function selfTest(serverPath, env, timeoutMs = DEFAULT_TIMEOUT_MS) {
   });
 }
 
-function buildState({ manifest, plan, state, mcp, skill, mcpRoot, credentialsFile, installRoot, selfTestResult, error }) {
+function buildState({ manifest, plan, state, mcp, skill, mcpRoot, credentialsFile, installRoot, selfTestResult, timings, error }) {
   return {
     schema: 'fuxi-bootstrap-state/1',
     bootstrapId: manifest.bootstrapId,
@@ -465,16 +543,34 @@ function buildState({ manifest, plan, state, mcp, skill, mcpRoot, credentialsFil
       mcpVersion: selfTestResult.runtime && selfTestResult.runtime.mcpVersion,
       skillVersion: selfTestResult.runtime && selfTestResult.runtime.skillVersion
     } : null,
+    timings: timings || null,
     failure: error ? { code: error.code || 'BOOTSTRAP_FAILED', message: error.message, step: error.step || null } : null,
     updatedAt: nowIso()
   };
 }
 
+function readCompletedInstall(stateFile, manifest) {
+  if (!fs.existsSync(stateFile)) return null;
+  try {
+    const state = readJson(stateFile);
+    if (state.status !== 'COMPLETE' || state.mcpConnected !== true) return null;
+    if (state.apiUrl && normalizeApiUrl(state.apiUrl) !== normalizeApiUrl(manifest.apiUrl)) return null;
+    const mcpReady = Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js')) && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js')));
+    const skillReady = Boolean(state.skillTarget && fs.existsSync(path.join(state.skillTarget, 'SKILL.md')));
+    const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
+    const configEntry = config && config.mcpServers && config.mcpServers['fuxi-platform'];
+    if (!mcpReady || !skillReady || !mcpEntryMatchesState(configEntry, state, manifest)) return null;
+    return state;
+  } catch (error) {
+    return null;
+  }
+}
+
 async function install(manifest, options = {}) {
-  const plan = preflight(manifest, options);
   const installRoot = absolute(options['install-root'] || manifest.installRoot || process.env.FUXI_INSTALL_ROOT || DEFAULT_INSTALL_ROOT, 'installRoot');
   const credentialsFile = absolute(options['credentials-file'] || manifest.credentialsFile || process.env.FUXI_CREDENTIALS_FILE || DEFAULT_CREDENTIALS_FILE, 'credentialsFile');
   const state = absolute(options.state || manifest.stateFile || path.join(installRoot, 'bootstrap-state.json'), 'state');
+  const unlock = acquireBootstrapLock(path.join(installRoot, SHARED_INSTALL_LOCK));
   const staging = path.join(installRoot, 'bootstrap', manifest.bootstrapId);
   const mcpInstallRoot = path.join(installRoot, 'bootstrap-mcp', 'fuxi-platform-mcp');
   const backupRoot = path.join(staging, 'backup');
@@ -490,7 +586,26 @@ async function install(manifest, options = {}) {
   let mcpInstalled = false;
   let selfTestStarted = false;
   let step = 'BACKUP';
+  let plan = null;
+  const timings = {};
+  const startedAt = Date.now();
+  const mark = (name, started) => { timings[name] = Date.now() - started; };
   try {
+    const existing = readCompletedInstall(state, manifest);
+    if (existing) {
+      return {
+        ...existing,
+        reason: 'ALREADY_COMPLETE',
+        nextAction: existing.postReloadVerified ? '伏羲 MCP 已接入并验证，无需重复安装' : '如客户端尚未重载，请重启或刷新 AI 客户端后调用 check_connection({})',
+        timings: { totalMs: Date.now() - startedAt, idempotentMs: Date.now() - startedAt }
+      };
+    }
+
+    step = 'PRECHECK';
+    let stageStarted = Date.now();
+    plan = preflight(manifest, options);
+    mark('preflightMs', stageStarted);
+
     ensureDirectory(staging);
     ensureDirectory(backupRoot);
     backupFileOrDirectory(plan.mcpConfig, mcpConfigBackup);
@@ -499,6 +614,7 @@ async function install(manifest, options = {}) {
     backupFileOrDirectory(credentialsFile, credentialsBackup);
 
     step = 'DOWNLOAD_VERIFY';
+    stageStarted = Date.now();
     const token = manifest.installToken || process.env.FUXI_INSTALL_TOKEN || '';
     const localMcpZip = options['mcp-zip'] ? absolute(options['mcp-zip'], 'mcpZip') : null;
     const localSkillZip = options['skill-zip'] ? absolute(options['skill-zip'], 'skillZip') : null;
@@ -512,8 +628,10 @@ async function install(manifest, options = {}) {
     ]);
     const mcpExtracted = extractPackage(fs.readFileSync(mcpInfo.path), path.join(staging, 'mcp'), 'mcp');
     const skillExtracted = extractPackage(fs.readFileSync(skillInfo.path), path.join(staging, 'skill'), 'skill');
+    mark('downloadVerifyMs', stageStarted);
 
     step = 'INSTALL';
+    stageStarted = Date.now();
     removePath(mcpInstallRoot);
     ensureDirectory(path.dirname(mcpInstallRoot));
     copyTree(mcpExtracted.packageRoot, mcpInstallRoot);
@@ -523,14 +641,18 @@ async function install(manifest, options = {}) {
     ensureDirectory(path.dirname(plan.skillTarget));
     copyTree(skillExtracted.packageRoot, plan.skillTarget);
     skillInstalled = true;
+    mark('installMs', stageStarted);
 
     step = 'CONFIGURE';
+    stageStarted = Date.now();
     const config = readConfig(plan.mcpConfig);
     const entry = mcpEntry(manifest, mcpInstallRoot, plan.skillTarget, credentialsFile, installRoot, manifest.connectCode);
     writeConfig(plan.mcpConfig, mergeMcpConfig(config, entry));
     configWritten = true;
+    mark('configureMs', stageStarted);
 
     step = 'CONNECT';
+    stageStarted = Date.now();
     selfTestStarted = true;
     selfTestResult = await selfTest(path.join(mcpInstallRoot, 'src', 'server.js'), {
       ...process.env,
@@ -542,8 +664,10 @@ async function install(manifest, options = {}) {
       FUXI_SKILL_TARGET: plan.skillTarget,
       FUXI_SKILL_VERSION: manifest.skillVersion || 'unknown'
     }, Number(options['timeout-ms'] || DEFAULT_TIMEOUT_MS));
+    mark('connectMs', stageStarted);
 
     step = 'VERIFY';
+    stageStarted = Date.now();
     const finalConfig = readConfig(plan.mcpConfig);
     if (finalConfig.mcpServers && finalConfig.mcpServers['fuxi-platform']) {
       const finalEntry = { ...finalConfig.mcpServers['fuxi-platform'] };
@@ -555,21 +679,28 @@ async function install(manifest, options = {}) {
     }
     removePath(path.join(staging, 'mcp.zip'));
     removePath(path.join(staging, 'skill.zip'));
-    const result = buildState({ manifest, plan, state, mcp: mcpInfo, skill: skillInfo, mcpRoot: mcpInstallRoot, credentialsFile, installRoot, selfTestResult });
+    mark('verifyMs', stageStarted);
+    timings.totalMs = Date.now() - startedAt;
+    const result = buildState({ manifest, plan, state, mcp: mcpInfo, skill: skillInfo, mcpRoot: mcpInstallRoot, credentialsFile, installRoot, selfTestResult, timings });
     writeJsonAtomic(state, result);
     removePath(staging);
     return result;
   } catch (error) {
     const wrapped = error instanceof BootstrapError ? error : new BootstrapError('BOOTSTRAP_FAILED', error.message);
     wrapped.step = wrapped.step || step;
-    if (configWritten || fs.existsSync(mcpConfigBackup)) restoreBackup(mcpConfigBackup, plan.mcpConfig);
-    if (skillInstalled || fs.existsSync(skillBackup)) restoreBackup(skillBackup, plan.skillTarget);
+    if (plan && (configWritten || fs.existsSync(mcpConfigBackup))) restoreBackup(mcpConfigBackup, plan.mcpConfig);
+    if (plan && (skillInstalled || fs.existsSync(skillBackup))) restoreBackup(skillBackup, plan.skillTarget);
     if (mcpInstalled || fs.existsSync(mcpBackup)) restoreBackup(mcpBackup, mcpInstallRoot);
     if (selfTestStarted || selfTestResult || fs.existsSync(credentialsBackup)) restoreBackup(credentialsBackup, credentialsFile);
-    const failed = buildState({ manifest, plan, state, mcp: mcpInfo, skill: skillInfo, mcpRoot: mcpInstallRoot, credentialsFile, installRoot, selfTestResult, error: wrapped });
+    timings.totalMs = Date.now() - startedAt;
+    const failed = plan
+      ? buildState({ manifest, plan, state, mcp: mcpInfo, skill: skillInfo, mcpRoot: mcpInstallRoot, credentialsFile, installRoot, selfTestResult, timings, error: wrapped })
+      : { schema: 'fuxi-bootstrap-state/1', bootstrapId: manifest.bootstrapId, status: 'FAILED', step: wrapped.step, statePath: state, installRoot, timings, failure: { code: wrapped.code, message: wrapped.message, step: wrapped.step }, updatedAt: nowIso() };
     writeJsonAtomic(state, failed);
     wrapped.details = { ...wrapped.details, state, recovery: 'Read the state file and use a new bootstrap manifest after correcting the failure.' };
     throw wrapped;
+  } finally {
+    try { removePath(staging); } finally { unlock(); }
   }
 }
 
@@ -579,7 +710,7 @@ function verify(stateFile) {
   if (state.mcpConfig && fs.existsSync(state.mcpConfig)) {
     try {
       const config = readConfig(state.mcpConfig);
-      configHasFuxi = Boolean(config.mcpServers && config.mcpServers['fuxi-platform']);
+      configHasFuxi = Boolean(config.mcpServers && mcpEntryMatchesState(config.mcpServers['fuxi-platform'], state, { apiUrl: state.apiUrl }));
     } catch (error) {}
   }
   const checks = {
@@ -637,6 +768,10 @@ async function main(argv = process.argv.slice(2)) {
   } catch (error) {
     process.stdout.write(`${JSON.stringify(publicError(error), null, 2)}\n`);
     return 1;
+  } finally {
+    if (parsed.values['cleanup-manifest'] && parsed.values.manifest) {
+      try { fs.rmSync(absolute(parsed.values.manifest, 'manifest'), { force: true }); } catch (error) {}
+    }
   }
 }
 
@@ -655,6 +790,7 @@ module.exports = {
   downloadArtifact,
   mergeMcpConfig,
   mcpEntry,
+  acquireBootstrapLock,
   selfTest,
   install,
   verify,

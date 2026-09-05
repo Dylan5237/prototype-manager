@@ -696,6 +696,14 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 16077 已部署 release `20260904-094353-730a24ab` 并完成接入提示词真实生成回读：published `quick-start` v1.0 已注入，两个变量均已替换且未使用兜底；未登录 bootstrap 仍为 `401`。后续若增加 MCP 动态帮助工具，必须复用 published 服务层并重新评估平台与 Skill 两仓库契约。
 
+### 阶段 29: MCP 首次接入性能与进程并发优化
+
+状态: `implemented`（本地代码与回归测试完成，尚未部署测试环境）
+
+详见 [PHASE29_MCP_ONBOARDING_PERFORMANCE.md](PHASE29_MCP_ONBOARDING_PERFORMANCE.md)。本阶段将首次接入收敛为“获取 MCP ZIP 以启动 Bootstrap + 一次 `bootstrap.js install` + 一次客户端重载后验证”，由安装器负责 Skill 下载、制品校验、备份、幂等和共享安装锁；MCP 运行时增加凭据文件首检、进程内 token single-flight、跨进程 refresh 文件锁和原子凭据写入，launcher 将已刷新 access token 传给子进程并并行下载后续更新制品。
+
+平台仓库新增 `mcp-server/src/local-lock.js`；配套 `prototype-manager-skills` 同步更新 `fuxi-prototype/SKILL.md` 与 `references/workflow-contract.md`，不改变 MCP 工具 schema。当前本地验证通过，16077/16088 尚未发布。
+
 ## 更新规则
 
 每完成一个阶段，必须更新:

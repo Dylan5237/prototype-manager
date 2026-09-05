@@ -7,6 +7,13 @@ const ARTIFACTS = {
   mcp: {
     fileName: 'mcp.zip',
     expectedEntry: /(?:^|\/)src\/server\.js$/,
+    requiredEntries: [
+      /(?:^|\/)src\/server\.js$/,
+      /(?:^|\/)src\/launcher\.js$/,
+      /(?:^|\/)src\/bootstrap\.js$/,
+      /(?:^|\/)src\/local-lock\.js$/,
+      /(?:^|\/)package\.json$/
+    ],
     rootName: 'fuxi-platform-mcp'
   },
   skill: {
@@ -114,16 +121,20 @@ function validateZip(filePath, kind) {
     name: assertSafeZipEntry(entry.entryName),
     isDirectory: entry.isDirectory
   }));
-  if (!entries.some(entry => !entry.isDirectory && definition.expectedEntry.test(entry.name))) {
+  const fileEntries = entries.filter(entry => !entry.isDirectory);
+  const missingEntries = (definition.requiredEntries || [definition.expectedEntry])
+    .filter(pattern => !fileEntries.some(entry => pattern.test(entry.name)));
+  if (missingEntries.length) {
     const error = new Error(`${kind} ZIP 缺少必要入口`);
     error.code = 'ARTIFACT_ENTRY_MISSING';
+    error.details = { kind, missingCount: missingEntries.length };
     error.status = 400;
     throw error;
   }
   return {
     size: fs.statSync(filePath).size,
     sha256: sha256File(filePath),
-    entries: entries.filter(entry => !entry.isDirectory).map(entry => entry.name)
+    entries: fileEntries.map(entry => entry.name)
   };
 }
 

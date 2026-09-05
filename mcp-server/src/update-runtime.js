@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { parseZipBuffer } = require('./fuxi-zip');
+const { acquireFileLock, acquireFileLockSync } = require('./local-lock');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const FORBIDDEN_SEGMENTS = new Set([
@@ -74,22 +75,10 @@ function sha256File(file) {
 }
 
 function acquireLock(lockFile) {
-  ensureDir(path.dirname(lockFile));
-  let handle;
-  try {
-    handle = fs.openSync(lockFile, 'wx');
-    fs.writeSync(handle, `${process.pid}\n`);
-  } catch (error) {
-    if (error.code === 'EEXIST') {
-      const locked = new Error('本地更新正在执行');
-      locked.code = 'UPDATE_LOCKED';
-      throw locked;
-    }
-    throw error;
-  }
-  return () => {
-    try { fs.closeSync(handle); } finally { fs.rmSync(lockFile, { force: true }); }
-  };
+  return acquireFileLockSync(lockFile, {
+    errorCode: 'UPDATE_LOCKED',
+    message: '本地更新正在执行'
+  });
 }
 
 function safeEntry(entryName) {
@@ -243,33 +232,53 @@ function writeCredentials(credentialsFile, credentials) {
 }
 
 async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
-  const credentials = readCredentials(credentialsFile);
-  const token = process.env.FUXI_TOKEN || '';
-  if (token && credentials) return { token, sessionId: credentials.sessionId, credentials };
-  if (!credentials) return null;
-  const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken: credentials.refreshToken, deviceLabel })
+  const unlock = await acquireFileLock(`${credentialsFile}.refresh.lock`, {
+    errorCode: 'AUTHENTICATION_BUSY',
+    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
   });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body || body.success === false) {
-    const error = new Error('设备会话刷新失败');
-    error.code = response.status === 401 ? 'AUTHENTICATION_FAILED' : 'SESSION_REFRESH_FAILED';
-    throw error;
+  try {
+    const credentials = readCredentials(credentialsFile);
+    const token = process.env.FUXI_TOKEN || '';
+    if (token && credentials) {
+      return {
+        token,
+        sessionId: credentials.sessionId,
+        accessExpiresAt: Number(process.env.FUXI_ACCESS_EXPIRES_AT || 0),
+        credentials
+      };
+    }
+    if (!credentials) return null;
+    const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: credentials.refreshToken, deviceLabel })
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body || body.success === false) {
+      const error = new Error('设备会话刷新失败');
+      error.code = response.status === 401 ? 'AUTHENTICATION_FAILED' : 'SESSION_REFRESH_FAILED';
+      throw error;
+    }
+    const data = body.data || {};
+    const next = {
+      ...credentials,
+      apiUrl,
+      refreshToken: data.refreshToken,
+      sessionId: data.sessionId || credentials.sessionId,
+      sessionExpiresAt: data.sessionExpiresAt || credentials.sessionExpiresAt || null,
+      deviceLabel,
+      updatedAt: nowIso()
+    };
+    writeCredentials(credentialsFile, next);
+    return {
+      token: data.accessToken,
+      sessionId: next.sessionId,
+      accessExpiresAt: data.expiresAt ? Date.parse(data.expiresAt) : Date.now() + Number(data.expiresIn || 0) * 1000,
+      credentials: next
+    };
+  } finally {
+    unlock();
   }
-  const data = body.data || {};
-  const next = {
-    ...credentials,
-    apiUrl,
-    refreshToken: data.refreshToken,
-    sessionId: data.sessionId || credentials.sessionId,
-    sessionExpiresAt: data.sessionExpiresAt || credentials.sessionExpiresAt || null,
-    deviceLabel,
-    updatedAt: nowIso()
-  };
-  writeCredentials(credentialsFile, next);
-  return { token: data.accessToken, sessionId: next.sessionId, credentials: next };
 }
 
 async function claimUpdate({ apiUrl, token, sessionId }) {
@@ -370,8 +379,10 @@ async function applyRelease({ p, apiUrl, token, intent, manifest }) {
     updateState(p, { status: 'VERIFYING', releaseId });
     const stagingMcp = path.join(staging, 'mcp.zip');
     const stagingSkill = path.join(staging, 'skill.zip');
-    await downloadArtifact({ apiUrl, token, artifact: manifest.artifacts.mcp, targetFile: stagingMcp });
-    await downloadArtifact({ apiUrl, token, artifact: manifest.artifacts.skill, targetFile: stagingSkill });
+    await Promise.all([
+      downloadArtifact({ apiUrl, token, artifact: manifest.artifacts.mcp, targetFile: stagingMcp }),
+      downloadArtifact({ apiUrl, token, artifact: manifest.artifacts.skill, targetFile: stagingSkill })
+    ]);
     const unpackRoot = ensureDir(path.join(staging, 'unpacked'));
     const mcpPackage = packageRoot(extractZip(stagingMcp, path.join(unpackRoot, 'mcp')), 'fuxi-platform-mcp');
     const skillPackage = packageRoot(extractZip(stagingSkill, path.join(unpackRoot, 'skill')), 'fuxi-prototype');
@@ -467,7 +478,7 @@ function resolveCurrentTarget(p) {
   return null;
 }
 
-function startMcp(p, current) {
+function startMcp(p, current, auth = null) {
   if (!current || !current.mcpPath) {
     const error = new Error('没有可启动的 MCP 版本');
     error.code = 'MCP_CURRENT_MISSING';
@@ -486,6 +497,10 @@ function startMcp(p, current) {
     FUXI_MCP_VERSION: current.mcpVersion || 'unknown',
     FUXI_INSTALL_ROOT: p.root
   };
+  if (auth && auth.token) {
+    env.FUXI_TOKEN = auth.token;
+    if (auth.accessExpiresAt) env.FUXI_ACCESS_EXPIRES_AT = String(auth.accessExpiresAt);
+  }
   return spawn(process.execPath, [server], { stdio: 'inherit', env });
 }
 
