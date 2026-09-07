@@ -146,8 +146,10 @@ test('canonical loader refuses a standalone artifact whose SHA-256 does not matc
   let server;
   try {
     const standalone = Buffer.from(buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') }));
+    let bootstrapRequests = 0;
     server = http.createServer((req, res) => {
       if (req.url === '/bootstrap') {
+        bootstrapRequests += 1;
         res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': standalone.length });
         res.end(standalone);
         return;
@@ -167,6 +169,55 @@ test('canonical loader refuses a standalone artifact whose SHA-256 does not matc
     const result = await runShell(command, { ...process.env, FUXI_TEST_ROOT: root });
     assert(result.error);
     assert.match(`${result.stdout}${result.stderr}`, /BOOTSTRAP_DIGEST_MISMATCH/);
+    assert.equal(bootstrapRequests, 1);
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('canonical loader retries transient standalone download failures before starting Bootstrap', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-standalone-loader-retry-'));
+  let server;
+  let bootstrapRequests = 0;
+  let sessionRequests = 0;
+  try {
+    const standalone = Buffer.from(buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') }));
+    server = http.createServer((req, res) => {
+      if (req.url === '/bootstrap') {
+        bootstrapRequests += 1;
+        if (bootstrapRequests < 3) {
+          res.writeHead(503);
+          res.end('temporary');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': standalone.length });
+        res.end(standalone);
+        return;
+      }
+      if (req.url === '/session') {
+        sessionRequests += 1;
+        res.writeHead(401);
+        res.end('invalid session');
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const command = renderCanonicalBootstrapCommand({
+      bootstrapUrl: `${baseUrl}/bootstrap`,
+      sessionEndpoint: `${baseUrl}/session`,
+      bootstrapSha256: require('node:crypto').createHash('sha256').update(standalone).digest('hex'),
+      session: 'opaque-session',
+      client: 'generic'
+    });
+    const result = await runShell(command, { ...process.env, FUXI_TEST_ROOT: root });
+    assert(result.error);
+    assert.match(`${result.stdout}${result.stderr}`, /BOOTSTRAP_SESSION_INVALID/);
+    assert.equal(bootstrapRequests, 3);
+    assert.equal(sessionRequests, 1);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });

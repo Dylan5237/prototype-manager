@@ -321,7 +321,6 @@ async function main() {
     });
     const bootstrap = await bootstrapResponse.json();
     assert.equal(bootstrapResponse.status, 200);
-    assert.equal(bootstrap.data.skillName, 'fuxi-prototype');
     assert(bootstrap.data.prompt.includes('check_connection'));
     assert(bootstrap.data.prompt.includes('deliver_project'));
     assert(bootstrap.data.prompt.includes('识别当前 AI 客户端'));
@@ -339,20 +338,14 @@ async function main() {
     assert(!bootstrap.data.prompt.includes('--skill-zip'));
     assert(!bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
     assert(!bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
-    assert(bootstrap.data.connectCode);
-    assert(bootstrap.data.connectCodeExpiresAt);
+    assert.equal(bootstrap.data.token, undefined);
+    assert.equal(bootstrap.data.connectCode, undefined);
+    assert.equal(bootstrap.data.bootstrapManifest, undefined);
+    assert.equal(bootstrap.data.skillUrl, undefined);
+    assert.equal(bootstrap.data.mcpUrl, undefined);
     assert(bootstrap.data.bootstrapSession.credential);
     assert(bootstrap.data.canonicalBootstrap.command.includes('bootstrap-package'));
     assert(bootstrap.data.canonicalBootstrap.command.includes('connect --session'));
-    assert.equal(bootstrap.data.bootstrapManifest.schema, 'fuxi-bootstrap/2');
-    assert.equal(bootstrap.data.bootstrapManifest.expiresAt, bootstrap.data.bootstrapSession.expiresAt);
-    assert.equal(bootstrap.data.bootstrapManifest.artifacts.mcp.url, bootstrap.data.mcpUrl);
-    assert.equal(bootstrap.data.bootstrapManifest.artifacts.skill.url, bootstrap.data.skillUrl);
-    assert.match(bootstrap.data.bootstrapManifest.artifacts.mcp.sha256, /^[a-f0-9]{64}$/);
-    assert.match(bootstrap.data.bootstrapManifest.artifacts.skill.sha256, /^[a-f0-9]{64}$/);
-    assert.match(bootstrap.data.bootstrapManifest.versions.mcp, /^\S+$/);
-    assert.match(bootstrap.data.bootstrapManifest.versions.skill, /^\S+$/);
-    assert.equal(bootstrap.data.bootstrapManifest.versions.minNode, '18.0.0');
     const standaloneResponse = await fetch(bootstrap.data.canonicalBootstrap.url);
     const standaloneBuffer = Buffer.from(await standaloneResponse.arrayBuffer());
     assert.equal(standaloneResponse.status, 200);
@@ -365,17 +358,19 @@ async function main() {
     assert.equal(sessionManifest.data.manifest.schema, 'fuxi-bootstrap/2');
     assert.equal(sessionManifest.data.manifest.bootstrapId, bootstrap.data.bootstrapSession.bootstrapId);
     assert.equal(sessionManifest.data.manifest.expiresAt, bootstrap.data.bootstrapSession.expiresAt);
-    assert.equal(sessionManifest.data.manifest.artifacts.mcp.sha256, bootstrap.data.bootstrapManifest.artifacts.mcp.sha256);
-    assert.equal(sessionManifest.data.manifest.artifacts.skill.sha256, bootstrap.data.bootstrapManifest.artifacts.skill.sha256);
-    assert.deepEqual(sessionManifest.data.manifest.versions, bootstrap.data.bootstrapManifest.versions);
-    const connectCodeRemainingMs = Date.parse(bootstrap.data.connectCodeExpiresAt) - Date.now();
+    assert.match(sessionManifest.data.manifest.artifacts.mcp.sha256, /^[a-f0-9]{64}$/);
+    assert.match(sessionManifest.data.manifest.artifacts.skill.sha256, /^[a-f0-9]{64}$/);
+    assert.match(sessionManifest.data.manifest.versions.mcp, /^\S+$/);
+    assert.match(sessionManifest.data.manifest.versions.skill, /^\S+$/);
+    assert.equal(sessionManifest.data.manifest.versions.minNode, '18.0.0');
+    const connectCodeRemainingMs = Date.parse(sessionManifest.data.manifest.connectCodeExpiresAt) - Date.now();
     assert(connectCodeRemainingMs > 18 * 60 * 1000 && connectCodeRemainingMs <= 20 * 60 * 1000 + 5000);
 
     // 一次性连接码兑换 access + refresh token，并登记设备会话
     const connectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: bootstrap.data.connectCode, deviceLabel: 'integration-test-device' })
+      body: JSON.stringify({ code: sessionManifest.data.manifest.connectCode, deviceLabel: 'integration-test-device' })
     });
     const connected = await connectResponse.json();
     assert.equal(connectResponse.status, 200);
@@ -389,7 +384,7 @@ async function main() {
     const reusedConnectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code: bootstrap.data.connectCode })
+      body: JSON.stringify({ code: sessionManifest.data.manifest.connectCode })
     });
     assert.equal(reusedConnectResponse.status, 409);
     const reusedConnect = await reusedConnectResponse.json();
@@ -460,8 +455,8 @@ async function main() {
     assert.equal(revoked.result.isError, true);
     assert.equal(revoked.body.error.code, 'SESSION_REVOKED');
 
-    const packageHeaders = { Authorization: `Bearer ${bootstrap.data.token}` };
-    const skillPackageResponse = await fetch(bootstrap.data.skillUrl, { headers: packageHeaders });
+    const packageHeaders = { Authorization: `Bearer ${sessionManifest.data.manifest.installToken}` };
+    const skillPackageResponse = await fetch(sessionManifest.data.manifest.artifacts.skill.url, { headers: packageHeaders });
     assert.equal(skillPackageResponse.status, 200);
     const skillPackage = new AdmZip(Buffer.from(await skillPackageResponse.arrayBuffer()));
     const skillEntries = skillPackage.getEntries().map(entry => entry.entryName);
@@ -469,7 +464,7 @@ async function main() {
     assert(skillEntries.includes('fuxi-prototype/references/workflow.md'));
     assert(!skillEntries.some(name => name.includes('.npmrc') || name.includes('node_modules')));
 
-    const mcpPackageResponse = await fetch(bootstrap.data.mcpUrl, { headers: packageHeaders });
+    const mcpPackageResponse = await fetch(sessionManifest.data.manifest.artifacts.mcp.url, { headers: packageHeaders });
     assert.equal(mcpPackageResponse.status, 200);
     const mcpPackage = new AdmZip(Buffer.from(await mcpPackageResponse.arrayBuffer()));
     const mcpEntries = mcpPackage.getEntries().map(entry => entry.entryName);
@@ -478,6 +473,32 @@ async function main() {
     assert(mcpEntries.includes('fuxi-platform-mcp/src/fuxi-zip.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/package.json'));
     assert(!mcpEntries.some(name => name.includes('/tests/')));
+
+    // 源目录变化后，新会话绑定新制品；旧会话仍返回创建时的不可变字节。
+    const originalSkillBytes = Buffer.from(await (await fetch(sessionManifest.data.manifest.artifacts.skill.url, { headers: packageHeaders })).arrayBuffer());
+    fs.writeFileSync(path.join(distributedSkillDir, 'SKILL.md'), '---\nname: fuxi-prototype\nversion: 2.0.0\n---\n# Updated Skill\n');
+    const nextBootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const nextBootstrap = await nextBootstrapResponse.json();
+    assert.equal(nextBootstrapResponse.status, 200);
+    assert.notEqual(nextBootstrap.data.bootstrapSession.bootstrapId, bootstrap.data.bootstrapSession.bootstrapId);
+    const nextSessionResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session?client=workbuddy`, {
+      headers: { Authorization: `Bearer ${nextBootstrap.data.bootstrapSession.credential}` }
+    });
+    const nextSession = await nextSessionResponse.json();
+    assert.equal(nextSessionResponse.status, 200);
+    assert.notEqual(nextSession.data.manifest.artifacts.skill.sha256, sessionManifest.data.manifest.artifacts.skill.sha256);
+    assert.notEqual(nextSession.data.manifest.versions.skill, sessionManifest.data.manifest.versions.skill);
+    const oldSkillReplay = await fetch(sessionManifest.data.manifest.artifacts.skill.url, { headers: packageHeaders });
+    assert.equal(oldSkillReplay.status, 200);
+    assert.deepEqual(Buffer.from(await oldSkillReplay.arrayBuffer()), originalSkillBytes);
+    const nextSkillResponse = await fetch(nextSession.data.manifest.artifacts.skill.url, {
+      headers: { Authorization: `Bearer ${nextSession.data.manifest.installToken}` }
+    });
+    const nextSkillBytes = Buffer.from(await nextSkillResponse.arrayBuffer());
+    assert.equal(nextSkillResponse.status, 200);
+    assert.equal(require('crypto').createHash('sha256').update(nextSkillBytes).digest('hex'), nextSession.data.manifest.artifacts.skill.sha256);
 
     const expiredBootstrapToken = jwt.sign(
       { id: login.data.user.id, username: 'admin', roles: ['admin'] },

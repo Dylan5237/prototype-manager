@@ -35,7 +35,7 @@ const EXCLUDED_NAMES = new Set([
   '.git', '.npmrc', '.credentials.json', 'node_modules', 'dist', 'build',
   'coverage', 'tests', 'standalone'
 ]);
-const packageBufferCache = new Map();
+const BOOTSTRAP_SNAPSHOT_ROOT = path.resolve(__dirname, '../data/bootstrap-sessions');
 
 function publicBaseUrl(req) {
   const forwarded = req.headers['x-forwarded-proto'];
@@ -103,14 +103,10 @@ function sendZipBuffer(res, filename, buffer) {
   res.send(buffer);
 }
 
-function packageBuffer(kind, sourceRoot, prefix) {
-  const cacheKey = `${kind}:${sourceRoot}`;
-  if (!packageBufferCache.has(cacheKey)) {
-    const zip = new AdmZip();
-    addDirectory(zip, sourceRoot, prefix);
-    packageBufferCache.set(cacheKey, zip.toBuffer());
-  }
-  return packageBufferCache.get(cacheKey);
+function packageBuffer(sourceRoot, prefix) {
+  const zip = new AdmZip();
+  addDirectory(zip, sourceRoot, prefix);
+  return zip.toBuffer();
 }
 
 function standaloneBootstrapBuffer() {
@@ -125,6 +121,75 @@ function standaloneBootstrapBuffer() {
 
 function artifactMetadata(buffer) {
   return { sha256: sha256(buffer), size: buffer.length };
+}
+
+function bootstrapSnapshotDirectory(bootstrapId) {
+  const value = String(bootstrapId || '').trim();
+  if (!/^[a-f0-9-]{36}$/i.test(value)) return null;
+  return path.join(BOOTSTRAP_SNAPSHOT_ROOT, value);
+}
+
+function writeSnapshotFile(file, content) {
+  const temp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(temp, content, { mode: 0o600 });
+  fs.renameSync(temp, file);
+}
+
+function createBootstrapSnapshot({ bootstrapId, expiresAt, mcp, skill, standalone, versions }) {
+  const directory = bootstrapSnapshotDirectory(bootstrapId);
+  if (!directory) throw new Error('Bootstrap snapshot id is invalid');
+  if (fs.existsSync(BOOTSTRAP_SNAPSHOT_ROOT)) {
+    for (const entry of fs.readdirSync(BOOTSTRAP_SNAPSHOT_ROOT, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const candidate = path.join(BOOTSTRAP_SNAPSHOT_ROOT, entry.name, 'metadata.json');
+      try {
+        const metadata = JSON.parse(fs.readFileSync(candidate, 'utf8'));
+        if (Date.parse(metadata.expiresAt) <= Date.now()) fs.rmSync(path.dirname(candidate), { recursive: true, force: true });
+      } catch (error) {}
+    }
+  }
+  fs.mkdirSync(directory, { recursive: true });
+  writeSnapshotFile(path.join(directory, 'mcp.zip'), mcp);
+  writeSnapshotFile(path.join(directory, 'skill.zip'), skill);
+  writeSnapshotFile(path.join(directory, 'fuxi-bootstrap.cjs'), standalone);
+  const metadata = {
+    schema: 'fuxi-bootstrap-snapshot/1',
+    bootstrapId,
+    expiresAt,
+    versions,
+    artifacts: {
+      mcp: artifactMetadata(mcp),
+      skill: artifactMetadata(skill),
+      standalone: artifactMetadata(standalone)
+    }
+  };
+  writeSnapshotFile(path.join(directory, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`);
+  return { directory, metadata };
+}
+
+function readBootstrapSnapshot(bootstrapId) {
+  const directory = bootstrapSnapshotDirectory(bootstrapId);
+  if (!directory || !fs.existsSync(directory)) return null;
+  try {
+    const metadata = JSON.parse(fs.readFileSync(path.join(directory, 'metadata.json'), 'utf8'));
+    if (metadata.schema !== 'fuxi-bootstrap-snapshot/1' || metadata.bootstrapId !== bootstrapId) return null;
+    if (Date.parse(metadata.expiresAt) <= Date.now()) return null;
+    const files = {
+      mcp: path.join(directory, 'mcp.zip'),
+      skill: path.join(directory, 'skill.zip'),
+      standalone: path.join(directory, 'fuxi-bootstrap.cjs')
+    };
+    if (!Object.values(files).every(file => fs.existsSync(file))) return null;
+    return { directory, metadata, files };
+  } catch (error) {
+    return null;
+  }
+}
+
+function readSnapshotArtifact(bootstrapId, kind) {
+  const snapshot = readBootstrapSnapshot(bootstrapId);
+  if (!snapshot || !snapshot.files[kind]) return null;
+  return fs.readFileSync(snapshot.files[kind]);
 }
 
 function componentVersion(root, relative, fallback = 'unknown') {
@@ -165,42 +230,30 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
     });
   }
 
-  const expiresIn = 60 * 60;
-  const token = generateToken(user, { expiresIn: `${expiresIn}s` });
-  const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-  const connect = createConnectCode(user.id);
   const baseUrl = publicBaseUrl(req);
   const bootstrapSession = createBootstrapSession({ userId: user.id, apiUrl: baseUrl });
-  const skillUrl = `${baseUrl}/api/integrations/skill-package`;
-  const mcpUrl = `${baseUrl}/api/integrations/mcp-package`;
-  const bootstrapUrl = `${baseUrl}/api/integrations/bootstrap-package`;
-  const bootstrapSessionUrl = `${baseUrl}/api/integrations/bootstrap-session`;
-  const mcpArtifact = artifactMetadata(packageBuffer('mcp', mcpDir, 'fuxi-platform-mcp'));
-  const skillArtifact = artifactMetadata(packageBuffer('skill', skillDir, SKILL_NAME));
+  const mcpBuffer = packageBuffer(mcpDir, 'fuxi-platform-mcp');
+  const skillBuffer = packageBuffer(skillDir, SKILL_NAME);
   const versions = {
     mcp: componentVersion(mcpDir, 'package.json'),
     skill: skillVersion(skillDir),
     minNode: '18.0.0'
   };
-  const bootstrapManifest = {
-    schema: 'fuxi-bootstrap/2',
+  const snapshot = createBootstrapSnapshot({
     bootstrapId: bootstrapSession.bootstrapId,
-    apiUrl: baseUrl,
     expiresAt: bootstrapSession.expiresAt,
-    installToken: token,
-    connectCode: connect.code,
-    connectCodeExpiresAt: connect.expiresAt,
-    artifacts: {
-      mcp: { url: mcpUrl, sha256: mcpArtifact.sha256, size: mcpArtifact.size },
-      skill: { url: skillUrl, sha256: skillArtifact.sha256, size: skillArtifact.size }
-    },
-    versions,
-    client: { name: 'auto' }
-  };
+    mcp: mcpBuffer,
+    skill: skillBuffer,
+    standalone,
+    versions
+  });
+  const bootstrapIdQuery = `?bootstrapId=${encodeURIComponent(bootstrapSession.bootstrapId)}`;
+  const bootstrapUrl = `${baseUrl}/api/integrations/bootstrap-package${bootstrapIdQuery}`;
+  const bootstrapSessionUrl = `${baseUrl}/api/integrations/bootstrap-session`;
   const canonicalBootstrapCommand = renderCanonicalBootstrapCommand({
     bootstrapUrl,
     sessionEndpoint: bootstrapSessionUrl,
-    bootstrapSha256: sha256(standalone),
+    bootstrapSha256: snapshot.metadata.artifacts.standalone.sha256,
     session: bootstrapSession.credential,
     client: 'auto'
   });
@@ -218,12 +271,6 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
     success: true,
     data: {
       prompt,
-      token,
-      expiresIn,
-      expiresAt,
-      connectCode: connect.code,
-      connectCodeExpiresAt: connect.expiresAt,
-      bootstrapManifest,
       bootstrapSession: {
         credential: bootstrapSession.credential,
         bootstrapId: bootstrapSession.bootstrapId,
@@ -232,12 +279,9 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
       canonicalBootstrap: {
         command: canonicalBootstrapCommand,
         url: bootstrapUrl,
-        sha256: sha256(standalone),
+        sha256: snapshot.metadata.artifacts.standalone.sha256,
         sessionEndpoint: bootstrapSessionUrl
       },
-      skillName: SKILL_NAME,
-      skillUrl,
-      mcpUrl,
       apiUrl: baseUrl
     }
   });
@@ -245,7 +289,9 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
 
 // 独立 Bootstrap 只包含安装器代码，不携带用户凭据；使用摘要由平台生成的命令校验完整性。
 router.get('/bootstrap-package', (req, res) => {
-  const buffer = standaloneBootstrapBuffer();
+  const buffer = req.query.bootstrapId
+    ? readSnapshotArtifact(req.query.bootstrapId, 'standalone')
+    : standaloneBootstrapBuffer();
   if (!buffer) {
     return res.status(503).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: '独立 Bootstrap 制品不可用' });
   }
@@ -269,21 +315,13 @@ router.get('/bootstrap-session', (req, res) => {
   if (!['auto', 'workbuddy', 'cursor'].includes(requestedClient)) {
     return res.status(400).json({ success: false, code: 'UNSUPPORTED_CLIENT', message: '当前 Bootstrap 仅支持 WorkBuddy、Cursor 或 auto' });
   }
-  const mcpDir = configuredMcpDir();
-  const skillDir = configuredSkillDir();
-  const standalone = standaloneBootstrapBuffer();
-  if (!mcpDir || !skillDir || !standalone) {
-    return res.status(503).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: '平台制品源目录不可用' });
+  const snapshot = readBootstrapSnapshot(session.bootstrapId);
+  if (!snapshot) {
+    return res.status(410).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: 'Bootstrap 会话制品不存在或已失效' });
   }
-  const mcpArtifact = artifactMetadata(packageBuffer('mcp', mcpDir, 'fuxi-platform-mcp'));
-  const skillArtifact = artifactMetadata(packageBuffer('skill', skillDir, SKILL_NAME));
-  const versions = {
-    mcp: componentVersion(mcpDir, 'package.json'),
-    skill: skillVersion(skillDir),
-    minNode: '18.0.0'
-  };
   const token = generateToken(user, { expiresIn: '3600s' });
   const connect = createConnectCode(user.id);
+  const bootstrapIdQuery = `?bootstrapId=${encodeURIComponent(session.bootstrapId)}`;
   const manifest = {
     schema: 'fuxi-bootstrap/2',
     bootstrapId: session.bootstrapId,
@@ -293,10 +331,10 @@ router.get('/bootstrap-session', (req, res) => {
     connectCode: connect.code,
     connectCodeExpiresAt: connect.expiresAt,
     artifacts: {
-      mcp: { url: `${session.apiUrl}/api/integrations/mcp-package`, ...mcpArtifact },
-      skill: { url: `${session.apiUrl}/api/integrations/skill-package`, ...skillArtifact }
+      mcp: { url: `${session.apiUrl}/api/integrations/mcp-package${bootstrapIdQuery}`, ...snapshot.metadata.artifacts.mcp },
+      skill: { url: `${session.apiUrl}/api/integrations/skill-package${bootstrapIdQuery}`, ...snapshot.metadata.artifacts.skill }
     },
-    versions,
+    versions: snapshot.metadata.versions,
     client: { name: requestedClient }
   };
   res.json({ success: true, data: { manifest, expiresAt: session.expiresAt, connectCodeExpiresAt: connect.expiresAt } });
@@ -460,18 +498,30 @@ router.get('/git-provider/health', requireAuth, requireRole(['admin']), async (r
 
 router.get('/skill-package', requireAuth, (req, res) => {
   const skillDir = configuredSkillDir();
-  if (!skillDir) {
+  if (!skillDir && !req.query.bootstrapId) {
     return res.status(503).json({ success: false, code: 'SKILL_DISTRIBUTION_UNAVAILABLE', message: 'Skill 分发目录未配置' });
   }
-  sendZipBuffer(res, `${SKILL_NAME}.zip`, packageBuffer('skill', skillDir, SKILL_NAME));
+  const buffer = req.query.bootstrapId
+    ? readSnapshotArtifact(req.query.bootstrapId, 'skill')
+    : packageBuffer(skillDir, SKILL_NAME);
+  if (!buffer) {
+    return res.status(410).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: 'Bootstrap 会话制品不存在或已失效' });
+  }
+  sendZipBuffer(res, `${SKILL_NAME}.zip`, buffer);
 });
 
 router.get('/mcp-package', requireAuth, (req, res) => {
   const mcpDir = configuredMcpDir();
-  if (!mcpDir) {
+  if (!mcpDir && !req.query.bootstrapId) {
     return res.status(503).json({ success: false, code: 'MCP_DISTRIBUTION_UNAVAILABLE', message: 'MCP 分发目录不可用' });
   }
-  sendZipBuffer(res, 'fuxi-platform-mcp.zip', packageBuffer('mcp', mcpDir, 'fuxi-platform-mcp'));
+  const buffer = req.query.bootstrapId
+    ? readSnapshotArtifact(req.query.bootstrapId, 'mcp')
+    : packageBuffer(mcpDir, 'fuxi-platform-mcp');
+  if (!buffer) {
+    return res.status(410).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: 'Bootstrap 会话制品不存在或已失效' });
+  }
+  sendZipBuffer(res, 'fuxi-platform-mcp.zip', buffer);
 });
 
 module.exports = router;

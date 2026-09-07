@@ -27,7 +27,61 @@ function quoteCommandArg(value) {
 }
 
 function renderCanonicalBootstrapCommand({ bootstrapUrl, sessionEndpoint, bootstrapSha256, session, client = 'auto' }) {
-  const loaderSource = `const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const crypto=require('node:crypto');const {spawn}=require('node:child_process');const [bootstrapUrl,expectedSha,sessionEndpoint,command,sessionFlag,session,clientFlag,client]=process.argv.slice(1);const fail=(code)=>{const e=new Error(code);e.code=code;throw e;};async function run(){if(!bootstrapUrl||!expectedSha||!sessionEndpoint||command!=='connect'||sessionFlag!=='--session'||!session||clientFlag!=='--client'||!client)fail('BOOTSTRAP_ARGUMENTS_INVALID');const response=await fetch(bootstrapUrl);if(!response.ok)fail('BOOTSTRAP_DOWNLOAD_HTTP_'+response.status);const data=Buffer.from(await response.arrayBuffer());const actualSha=crypto.createHash('sha256').update(data).digest('hex');if(actualSha!==expectedSha.toLowerCase())fail('BOOTSTRAP_DIGEST_MISMATCH');const file=path.join(os.tmpdir(),'fuxi-bootstrap-'+crypto.randomUUID()+'.cjs');fs.writeFileSync(file,data,{mode:0o700});try{const child=spawn(process.execPath,[file,command,sessionFlag,session,'--endpoint',sessionEndpoint,clientFlag,client],{stdio:'inherit',env:process.env});const exitCode=await new Promise((resolve,reject)=>{child.once('error',reject);child.once('close',code=>resolve(code===null?1:code));});if(exitCode)process.exitCode=exitCode;}finally{try{fs.rmSync(file,{force:true});}catch(error){}}}run().catch(error=>{process.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'LOAD',error:{code:error.code||'BOOTSTRAP_LOADER_FAILED',message:'Bootstrap loader failed'}})+'\\n');process.exitCode=1;});`;
+  const loaderSource = `const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const crypto = require('node:crypto');
+const { spawn } = require('node:child_process');
+const MAX_ATTEMPTS = 3;
+const TIMEOUT_MS = 15000;
+const BACKOFF_MS = 250;
+const [bootstrapUrl, expectedSha, sessionEndpoint, command, sessionFlag, session, clientFlag, client] = process.argv.slice(1);
+function failure(code, retryable = false) { const error = new Error(code); error.code = code; error.retryable = retryable; return error; }
+function isRetryable(error) { return Boolean(error && (error.retryable || error.name === 'TypeError' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT')); }
+function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+async function downloadStandalone() {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+    try {
+      const response = await fetch(bootstrapUrl, { signal: controller.signal });
+      if (!response.ok) {
+        const status = response.status;
+        throw failure('BOOTSTRAP_DOWNLOAD_HTTP_' + status, status === 408 || status === 429 || status >= 500);
+      }
+      const data = Buffer.from(await response.arrayBuffer());
+      if (data.length > 100 * 1024 * 1024) throw failure('BOOTSTRAP_ARTIFACT_TOO_LARGE');
+      return data;
+    } catch (error) {
+      lastError = error.name === 'AbortError' ? failure('BOOTSTRAP_DOWNLOAD_TIMEOUT', true) : error;
+      if (!isRetryable(lastError) || attempt === MAX_ATTEMPTS) throw lastError;
+      await sleep(BACKOFF_MS * attempt);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
+}
+async function run() {
+  if (!bootstrapUrl || !/^[a-f0-9]{64}$/i.test(expectedSha || '') || !sessionEndpoint || command !== 'connect' || sessionFlag !== '--session' || !session || clientFlag !== '--client' || !client) throw failure('BOOTSTRAP_ARGUMENTS_INVALID');
+  const data = await downloadStandalone();
+  const actualSha = crypto.createHash('sha256').update(data).digest('hex');
+  if (actualSha !== expectedSha.toLowerCase()) throw failure('BOOTSTRAP_DIGEST_MISMATCH');
+  const file = path.join(os.tmpdir(), 'fuxi-bootstrap-' + crypto.randomUUID() + '.cjs');
+  fs.writeFileSync(file, data, { mode: 0o700 });
+  try {
+    const child = spawn(process.execPath, [file, command, sessionFlag, session, '--endpoint', sessionEndpoint, clientFlag, client], { stdio: 'inherit', env: process.env });
+    const exitCode = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code === null ? 1 : code)); });
+    process.exitCode = exitCode;
+  } finally {
+    try { fs.rmSync(file, { force: true }); } catch (error) {}
+  }
+}
+run().catch(error => {
+  process.stdout.write(JSON.stringify({ ok: false, status: 'FAILED', step: 'LOAD', error: { code: error.code || 'BOOTSTRAP_LOADER_FAILED', message: 'Bootstrap loader failed' } }) + '\\n');
+  process.exitCode = 1;
+});`;
   const encodedSource = Buffer.from(loaderSource, 'utf8').toString('base64');
   return `node -e "eval(Buffer.from('${encodedSource}','base64').toString())" -- ${[
     bootstrapUrl,
