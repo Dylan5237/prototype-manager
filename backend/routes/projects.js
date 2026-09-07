@@ -112,6 +112,28 @@ function formatMenuConfig(menuConfig) {
   return menuConfig || { items: [] };
 }
 
+function validateMenuConfig(menuConfig) {
+  const paths = new Set();
+  const leaves = new Set();
+  function walk(nodes, ancestors = []) {
+    if (!Array.isArray(nodes)) throw new Error('菜单 children 必须是数组');
+    const siblingKeys = new Set();
+    for (const node of nodes) {
+      if (!node || !String(node.key || '').trim() || !String(node.label || '').trim()) throw new Error('菜单 key 和名称不能为空');
+      if (siblingKeys.has(node.key)) throw new Error('同级菜单 key 不能重复');
+      siblingKeys.add(node.key);
+      const segments = [...ancestors, node.key];
+      if (segments.length > 3) throw new Error('项目菜单最多支持三级');
+      const path = segments.join('/');
+      paths.add(path);
+      const children = Array.isArray(node.children) ? node.children : [];
+      if (children.length) walk(children, segments); else leaves.add(path);
+    }
+  }
+  walk(menuConfig?.items || []);
+  return { paths, leaves };
+}
+
 // =================== 轻协作 MVP API ===================
 
 router.post('/handoffs/redeem', requireAuth, (req, res) => {
@@ -450,12 +472,20 @@ router.get('/:id', requireAuth, requireProjectAccess, (req, res) => {
 
 // 更新项目
 router.put('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  const { name, description, menuConfig } = req.body;
+  const { name, description, menuConfig, bindingMigrations = [] } = req.body;
   try {
+    const formattedMenu = menuConfig !== undefined ? formatMenuConfig(menuConfig) : undefined;
+    const menuIndex = formattedMenu ? validateMenuConfig(formattedMenu) : null;
+    if (!Array.isArray(bindingMigrations)) return res.status(400).json({ success: false, message: 'bindingMigrations 必须是数组' });
+    for (const migration of bindingMigrations) {
+      if (!migration?.bindingId || !migration.fromPath || !migration.toPath) return res.status(400).json({ success: false, message: '绑定迁移参数不完整' });
+      if (menuIndex && !menuIndex.leaves.has(migration.toPath)) return res.status(400).json({ success: false, message: '绑定只能迁移到叶子菜单节点' });
+    }
     const project = updateProject(req.params.id, {
       name: name !== undefined ? name.trim() : undefined,
       description,
-      menuConfig: menuConfig !== undefined ? formatMenuConfig(menuConfig) : undefined
+      menuConfig: formattedMenu,
+      bindingMigrations
     });
     recordUsageEvent({
       eventType: 'project_updated',
@@ -466,7 +496,8 @@ router.put('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res)
     });
     res.json({ success: true, data: project });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const status = /菜单|绑定/.test(err.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 

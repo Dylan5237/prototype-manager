@@ -92,13 +92,7 @@
         <el-button text @click="menuDrawerOpen = false" aria-label="关闭项目菜单"><el-icon><Close /></el-icon></el-button>
       </div>
       <div class="drawer-scroll menu-tree">
-        <div v-for="group in project.menu_config?.items" :key="group.key" class="menu-group">
-          <div class="group-label">{{ group.label }}</div>
-          <button v-for="item in group.children" :key="item.key" type="button" :class="['menu-item', { active: isActive(group, item) }]" @click="selectMenu(group, item)">
-            <span class="item-label">{{ item.label }}</span>
-            <span class="item-meta"><el-tag v-if="bindingFor(group, item)" size="small" effect="plain" type="success">已绑定</el-tag><el-tag v-if="getCheckoutStatus(group, item)" :type="getCheckoutStatus(group, item).type" size="small" effect="plain">{{ getCheckoutStatus(group, item).text }}</el-tag></span>
-          </button>
-        </div>
+        <ProjectMenuTree :nodes="project.menu_config?.items" :active-path="activePath" :state-for="menuStateForPath" @select="selectMenuNode" />
         <el-empty v-if="!hasMenu" description="暂无菜单配置" />
       </div>
       <div class="drawer-footer"><span>当前路径</span><strong>{{ activePathLabel || '未选择' }}</strong></div>
@@ -161,7 +155,9 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowRight, Menu, List, FullScreen, Link, MagicStick, Monitor, Cellphone, Iphone, Close, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
+import { findFirstBoundMenu, findMenuByPath, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings } from '../utils/project-menu'
 import { getProject, getProjectPortal, getProjectChanges, createPrototypeChange, updateProjectChange, deleteProjectChange, adoptProjectChange, rejectProjectChange, checkoutPrototype, checkinPrototype, releaseCheckout } from '../api/projects'
+import ProjectMenuTree from '../components/project/ProjectMenuTree.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -171,6 +167,7 @@ const role = ref(null)
 const loading = ref(false)
 const activeGroup = ref(null)
 const activeItem = ref(null)
+const activeAncestors = ref([])
 const menuDrawerOpen = ref(false)
 const reviewDrawerOpen = ref(false)
 const focusMode = ref(false)
@@ -192,9 +189,9 @@ const creatingChange = ref(false)
 
 const canManage = computed(() => role.value === 'owner' || role.value === 'admin')
 const canEdit = computed(() => canManage.value || role.value === 'editor')
-const hasMenu = computed(() => project.value.menu_config?.items?.some(group => group.children?.length > 0))
-const activePath = computed(() => activeGroup.value && activeItem.value ? `${activeGroup.value.key}/${activeItem.value.key}` : null)
-const activePathLabel = computed(() => activeGroup.value && activeItem.value ? `${activeGroup.value.label} / ${activeItem.value.label}` : '')
+const hasMenu = computed(() => listMenuLeaves(project.value.menu_config).length > 0)
+const activePath = computed(() => activeItem.value ? menuNodePath(activeAncestors.value, activeItem.value) : null)
+const activePathLabel = computed(() => activeItem.value ? menuNodeLabelPath(activeAncestors.value, activeItem.value) : '')
 const currentBinding = computed(() => activePath.value ? project.value.prototypes?.find(binding => binding.menu_path === activePath.value) || null : null)
 const ownerName = computed(() => {
   const owner = project.value.members?.find(member => member.role === 'owner')
@@ -236,7 +233,7 @@ async function loadProject() {
       data = res.data.data
       role.value = null
     }
-    project.value = data || { menu_config: { items: [] }, prototypes: [] }
+    project.value = data ? { ...data, menu_config: normalizeMenuConfigForBindings(data.menu_config, data.prototypes) } : { menu_config: { items: [] }, prototypes: [] }
     role.value = data?.role ?? role.value
     selectRequestedMenu()
   } catch (error) {
@@ -250,27 +247,20 @@ function selectRequestedMenu() {
   const requestedPath = Array.isArray(route.query.menuPath) ? route.query.menuPath[0] : route.query.menuPath
   const requestedPrototypeId = Array.isArray(route.query.prototypeId) ? route.query.prototypeId[0] : route.query.prototypeId
   const binding = project.value.prototypes?.find(item => (requestedPath && item.menu_path === requestedPath) || (requestedPrototypeId && item.prototype_id === requestedPrototypeId))
-  const target = findMenuByPath(binding?.menu_path || requestedPath)
-  if (target) return selectMenu(target.group, target.item, { persist: false })
-  const first = project.value.menu_config?.items?.flatMap(group => (group.children || []).map(item => ({ group, item })))?.[0]
-  if (first) selectMenu(first.group, first.item, { persist: false })
+  const target = findMenuByPath(project.value.menu_config, binding?.menu_path || requestedPath)
+  if (target) return selectMenuNode({node:target.node,ancestors:target.ancestors}, {persist:false})
+  const first = findFirstBoundMenu(project.value.menu_config, project.value.prototypes) || listMenuLeaves(project.value.menu_config)[0]
+  if (first) selectMenuNode(first, {persist:false})
 }
 
-function findMenuByPath(path) {
-  if (!path) return null
-  for (const group of project.value.menu_config?.items || []) {
-    for (const item of group.children || []) if (`${group.key}/${item.key}` === path) return { group, item }
-  }
-  return null
-}
-
-function selectMenu(group, item, { persist = true } = {}) {
-  activeGroup.value = group
-  activeItem.value = item
+function selectMenuNode({node,ancestors}, { persist = true } = {}) {
+  activeAncestors.value = ancestors || []
+  activeGroup.value = ancestors?.[0] || node
+  activeItem.value = node
   previewMode.value = 'formal'
   selectedChange.value = null
   if (persist) {
-    const query = { ...route.query, menuPath: `${group.key}/${item.key}` }
+    const query = { ...route.query, menuPath: menuNodePath(ancestors,node) }
     delete query.prototypeId
     router.replace({ query })
     menuDrawerOpen.value = false
@@ -301,12 +291,11 @@ function previewCandidate() { if (selectedChange.value?.preview_path) previewMod
 function toggleFocus() { focusMode.value = !focusMode.value }
 function backToProject() { router.push({ name: 'project', params: { id: route.params.id }, query: activePath.value ? { menuPath: activePath.value } : {} }) }
 function goPrototype(id) { router.push(`/prototype/${id}`) }
-function bindingFor(group, item) { return project.value.prototypes?.find(binding => binding.menu_path === `${group.key}/${item.key}`) || null }
-function isActive(group, item) { return activeGroup.value?.key === group.key && activeItem.value?.key === item.key }
-function getCheckoutStatus(group, item) {
-  const checkout = bindingFor(group, item)?.checkout
-  if (!checkout) return null
-  return checkout.user_id === authStore.user?.id ? { type: 'success', text: '我签出' } : { type: 'warning', text: `${checkout.nickname || checkout.username || '其他成员'}签出` }
+function menuStateForPath(path) {
+  const binding=project.value.prototypes?.find(item=>item.menu_path===path)
+  if(!binding)return {text:'未绑定',tone:'empty'}
+  if(binding.checkout)return {text:binding.checkout.user_id===authStore.user?.id?'我签出':'签出中',tone:'warn'}
+  return {text:'稳定',tone:'stable'}
 }
 function changeStatusMeta(status) {
   const map = { editing: { label: '进行中', type: 'info' }, preview_pending: { label: '交付状态整理中', type: 'info' }, ready: { label: '待确认', type: 'warning' }, invalid: { label: '预览失败', type: 'danger' }, adopted: { label: '已采用', type: 'success' }, rejected: { label: '已退回', type: 'danger' }, stale: { label: '已过期', type: 'warning' }, cancelled: { label: '已取消', type: 'info' } }

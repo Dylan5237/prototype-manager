@@ -10,6 +10,8 @@ const {
   getProjects,
   getProjectsPage,
   getPrototypeProjectBinding,
+  getProjectById,
+  updateProject,
   PrototypeProjectConflictError
 } = require('../services/db-projects');
 
@@ -47,6 +49,25 @@ test('allows multiple menu positions in one project but rejects cross-project ow
       && error.code === 'PROTOTYPE_ALREADY_BOUND'
       && error.details.existingProjectId === 'project-1'
   );
+});
+
+test('updates a three-level menu and migrates an existing binding atomically', () => {
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' });
+  updateProject('project-1', {
+    menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [{ key: 'entity', label: '实体建模', children: [] }] }] }] },
+    bindingMigrations: [{ bindingId: binding.id, fromPath: 'design/domain', toPath: 'design/domain/entity' }]
+  });
+  assert.equal(getPrototypeProjectBinding('prototype-1').menu_positions[0].menu_path, 'design/domain/entity');
+  assert.equal(getProjectById('project-1').menu_config.items[0].children[0].children[0].label, '实体建模');
+});
+
+test('rolls back menu changes when a binding migration is stale', () => {
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' });
+  assert.throws(() => updateProject('project-1', {
+    menuConfig: { items: [{ key: 'changed', label: '不应保存', children: [] }] },
+    bindingMigrations: [{ bindingId: binding.id, fromPath: 'wrong/path', toPath: 'changed' }]
+  }), /原型绑定已发生变化/);
+  assert.deepEqual(getProjectById('project-1').menu_config, { items: [] });
 });
 
 test('returns project summary fields for the project list', () => {

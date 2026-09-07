@@ -125,7 +125,7 @@ function getProjectById(id) {
   return project;
 }
 
-function updateProject(id, { name, description, menuConfig }) {
+function updateProject(id, { name, description, menuConfig, bindingMigrations = [] }) {
   const fields = [];
   const values = [];
   if (name !== undefined) { fields.push('name = ?'); values.push(name); }
@@ -134,8 +134,23 @@ function updateProject(id, { name, description, menuConfig }) {
   fields.push('updated_at = ?');
   values.push(now());
   values.push(id);
-  if (fields.length === 1) return getProjectById(id);
-  run(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values);
+  const db = getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    db.run(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values);
+    for (const migration of bindingMigrations) {
+      const existing = queryOne(`SELECT id, menu_path FROM project_prototypes WHERE id = ? AND project_id = ?`, [migration.bindingId, id]);
+      if (!existing || existing.menu_path !== migration.fromPath) {
+        throw new Error('原型绑定已发生变化，请刷新项目后重试');
+      }
+      db.run(`UPDATE project_prototypes SET menu_path = ? WHERE id = ? AND project_id = ?`, [migration.toPath, migration.bindingId, id]);
+    }
+    db.run('COMMIT');
+    saveDatabase();
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
   return getProjectById(id);
 }
 
