@@ -37,7 +37,7 @@
 测试环境使用当前本地工作树，直接执行：
 
 ```powershell
-.\quick-deploy-test.ps1 -ConfirmTestDeploy DEPLOY_FUXI_TEST
+.\deploy-test-from-gitlab.ps1 -ConfirmTestDeploy DEPLOY_FUXI_TEST
 ```
 
 它使用 `-Lightweight` 构建并部署到 16077，完整 MCP 回归留给人工验收；正式环境禁止复用这条入口。

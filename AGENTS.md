@@ -10,10 +10,9 @@
 ## Git 操作规范
 
 - 仓库 `zoesoftgitlab` 是伏羲平台 GitLab 远端；`origin` 是 GitHub，不作为伏羲生产源码来源。
-- 平台当前集成和生产源码分支是 `main`；开发分支使用 `codex/` 前缀。
-- 本项目不使用本地 `master` 或 GitLab `develop` 作为平台发布目标；本地 `master` 当前跟踪旧的 GitHub 分支，GitLab `develop` 不是已配置的远端分支。
-- 平台变更应先在本地合并或快进到 `main`，再按当前会话确认后推送 `zoesoftgitlab/main`；禁止推送 GitHub `origin` 作为生产同步。
-- 生产发布只能从 GitLab `main` 新鲜构建；测试环境可以使用已确认的本地提交，但不得将测试分支直接当作正式源码来源。
+- 平台分支分层：`main` 是生产源码，`develop` 是测试集成源码，`feat/*` 是特性开发；本地、GitLab 和 GitHub 保持同名分支，但 GitLab 是部署事实源。
+- 平台变更先在 `feat/*` 开发并评审，再合入 `develop`；16077 只允许从 GitLab `develop` 新鲜克隆构建。验证后再按独立确认合入并推送 GitLab `main`。
+- 生产发布只能从 GitLab `main` 新鲜构建；GitHub 仅作镜像与协作，不作为 16077/16088 发布来源。
 - 提交遵循 Conventional Commits：`type(scope): 中文标题`；body 写现象/根因 -> 改法；footer 使用 `Co-Authored-By: Codex <noreply@openai.com>`。
 - 一个独立任务一个 commit；commit 前按改动范围执行必要的 `npm test`、`npm run build`、MCP 检查或文档检查。
 - 不执行 force push，不用 reset/clean/checkout 覆盖用户改动；不把凭证、密码或长期 token 写入仓库。
@@ -62,5 +61,5 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 ## 测试环境部署约定
 
 - 用户已于 2026-09-02 明确授权后续 16077 测试环境部署无需逐次确认；执行仍必须使用本 Skill 的安全脚本和 `DEPLOY_FUXI_TEST` 门禁参数。该授权不包含 16088 生产发布、远程推送、删除或回滚。
-- `16077` 后续默认走轻量部署：`build-release.ps1 -Lightweight` 仍执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；跳过每次全量 MCP 集成回归，由用户人工测试。
+- `16077` 后续统一运行 `deploy-test-from-gitlab.ps1`（或其兼容包装 `quick-deploy-test.ps1`）：新鲜克隆平台 GitLab `develop` 与 Skill GitLab `main`，再执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；禁止直接打包任意 worktree。
 - 只有准备发布 `16088` 时才使用完整构建、MCP 校验/集成、生产基线和发布验收门禁。

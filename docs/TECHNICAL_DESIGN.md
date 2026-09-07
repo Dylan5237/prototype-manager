@@ -192,7 +192,7 @@ MCP 是天然内置的（源码在平台仓库 `mcp-server/`）；Skill 通过 `
 | Backend | Node.js `20.20.2`，端口 `3001` |
 | Frontend | Nginx 端口 `16088`（原 80 被 k3s Traefik CNI 占用），root 在 legacy 项目路径下 |
 | Nginx config | `/etc/nginx/sites-available/fuxi` |
-| 发布来源分支 | `main`（内网 GitLab） |
+| 发布来源分支 | 16077：`develop`（内网 GitLab）；16088：`main`（内网 GitLab） |
 
 持久化路径（生产数据当前在 legacy 项目树下）：
 

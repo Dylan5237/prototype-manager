@@ -29,7 +29,7 @@ The dependency is logical rather than a copied path. If `linux-server-ops` is un
 
 1. Read [production-topology.md](references/production-topology.md) before any production operation.
 2. For inspection, run `scripts/probe-production.ps1`. It must remain read-only.
-3. For the normal 16077 loop, run `scripts/quick-deploy-test.ps1 -ConfirmTestDeploy DEPLOY_FUXI_TEST`: it packages the current clean worktrees with `-Lightweight` and immediately deploys the immutable archive to test. Use `scripts/build-release.ps1 -Lightweight` plus `scripts/deploy-test.ps1` separately when you need to inspect or promote a specific archive.
+3. For the normal 16077 loop, run `scripts/deploy-test-from-gitlab.ps1 -ConfirmTestDeploy DEPLOY_FUXI_TEST` (or the compatibility wrapper `quick-deploy-test.ps1`). It fresh-clones platform `develop` and Skill `main` from GitLab, builds with `-Lightweight`, and deploys the immutable archive. Never package a feature worktree directly for 16077.
 4. Verify the new behavior on `16077` before touching production. The test loop skips full MCP integration verification and leaves that acceptance to manual testing.
 5. For production, use only `scripts/deploy-production-from-gitlab.ps1`. It clones both configured GitLab repositories at `main` into a temporary workspace, installs dependencies, runs the full build/check/integration gates, and passes the resulting archive to `deploy-release.ps1`.
 6. After test verification, run `scripts/capture-production-baseline.ps1` with authenticated platform credentials. Baselines older than one hour are rejected.
@@ -43,7 +43,8 @@ The dependency is logical rather than a copied path. If `linux-server-ops` is un
 All PowerShell scripts expose help with `Get-Help <script> -Detailed` and fail closed.
 
 - `build-release.ps1`: build a release from two supplied clean repositories; by default run full local verification, with `-Lightweight` build the frontend only, and optionally write machine-readable output with `-ResultPath`.
-- `quick-deploy-test.ps1`: build the current local worktrees with the lightweight profile and immediately delegate deployment to isolated `16077`.
+- `deploy-test-from-gitlab.ps1`: fresh-clone platform GitLab `develop` and Skill GitLab `main`, build with the lightweight profile, and delegate deployment to isolated `16077`.
+- `quick-deploy-test.ps1`: compatibility wrapper for `deploy-test-from-gitlab.ps1`; it no longer packages local worktrees.
 - `deploy-production-from-gitlab.ps1`: fresh-clone the platform and Skill GitLab repositories at `main`, install dependencies, run the full build, and delegate the guarded production switch.
 - `probe-production.ps1`: execute bundled read-only Bash probe over pinned PuTTY SSH.
 - `preview-cleanup.ps1`: generate a read-only JSON inventory of local/test/production releases, backups, temporary artifacts, worktrees, and acceptance prototypes; it never deletes or switches anything.
