@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1120" width="1600" height="1120">
+  <style>
+    text{font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;fill:#111827}.title{font-size:28px;font-weight:700}.subtitle{font-size:14px;fill:#6b7280}.group{font-size:16px;font-weight:700}.name{font-size:15px;font-weight:700}.attr{font-size:12px;fill:#4b5563}.rel{font-size:12px;font-weight:600}.card{stroke-width:1.5}.defect{font-size:13px;fill:#991b1b}.small{font-size:11px;fill:#6b7280}
+  </style>
+  <defs>
+    <marker id="blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2563eb"/></marker>
+    <marker id="green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#16a34a"/></marker>
+    <marker id="purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#9333ea"/></marker>
+    <marker id="red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#dc2626"/></marker>
+  </defs>
+  <rect width="1600" height="1120" fill="#ffffff"/>
+  <text x="52" y="48" class="title">伏羲平台项目模块 · 合理实体关系图</text>
+  <text x="52" y="74" class="subtitle">目标本体模型：稳定实体 ID 承载关系；任务、候选、审核各自独立。红色虚线表示当前实现缺陷。</text>
+
+  <rect x="40" y="100" width="350" height="410" rx="16" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5"/>
+  <text x="62" y="130" class="group" fill="#1d4ed8">身份与权限域</text>
+  <g><rect class="card" x="70" y="155" width="135" height="92" rx="9" fill="#fff" stroke="#93c5fd"/><text x="88" y="181" class="name">用户 User</text><text x="88" y="204" class="attr">id / username</text><text x="88" y="224" class="attr">nickname / status</text></g>
+  <g><rect class="card" x="245" y="155" width="115" height="92" rx="9" fill="#fff" stroke="#93c5fd"/><text x="263" y="181" class="name">平台角色</text><text x="263" y="204" class="attr">role_id</text><text x="263" y="224" class="attr">permissions</text></g>
+  <g><rect class="card" x="70" y="295" width="290" height="98" rx="9" fill="#fff" stroke="#60a5fa"/><text x="88" y="321" class="name">项目成员关系 ProjectMembership</text><text x="88" y="344" class="attr">project_id (FK) · user_id (FK)</text><text x="88" y="365" class="attr">project_role · joined_at · status</text></g>
+  <g><rect class="card" x="70" y="425" width="290" height="62" rx="9" fill="#fff" stroke="#60a5fa"/><text x="88" y="452" class="name">项目角色 ProjectRole</text><text x="88" y="474" class="attr">owner / manager / member / viewer</text></g>
+  <path d="M205 201 H245" stroke="#2563eb" stroke-width="1.7" marker-end="url(#blue)"/><text x="210" y="193" class="rel" fill="#2563eb">N:N</text>
+  <path d="M137 247 V295" stroke="#2563eb" stroke-width="1.7" marker-end="url(#blue)"/><text x="145" y="273" class="rel" fill="#2563eb">1:N</text>
+  <path d="M215 393 V425" stroke="#2563eb" stroke-width="1.7" marker-end="url(#blue)"/><text x="222" y="414" class="rel" fill="#2563eb">使用</text>
+
+  <rect x="420" y="100" width="520" height="410" rx="16" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1.5"/>
+  <text x="442" y="130" class="group" fill="#15803d">项目结构域</text>
+  <g><rect class="card" x="455" y="155" width="170" height="100" rx="9" fill="#fff" stroke="#86efac"/><text x="474" y="181" class="name">项目 Project</text><text x="474" y="204" class="attr">id / name / owner_id</text><text x="474" y="225" class="attr">status / collaboration_mode</text></g>
+  <g><rect class="card" x="705" y="155" width="200" height="125" rx="9" fill="#fff" stroke="#4ade80"/><text x="724" y="181" class="name">工作节点 ProjectNode</text><text x="724" y="204" class="attr">id / project_id / parent_id</text><text x="724" y="225" class="attr">name / type(group|work)</text><text x="724" y="246" class="attr">sort_order / status</text><text x="724" y="267" class="attr">稳定 ID，不以路径作身份</text></g>
+  <g><rect class="card" x="455" y="330" width="200" height="105" rx="9" fill="#fff" stroke="#4ade80"/><text x="474" y="356" class="name">节点责任 NodeAssignment</text><text x="474" y="379" class="attr">node_id (FK) · user_id (FK)</text><text x="474" y="400" class="attr">role(owner|contributor)</text><text x="474" y="421" class="attr">有效期 / 状态</text></g>
+  <g><rect class="card" x="705" y="330" width="200" height="105" rx="9" fill="#fff" stroke="#4ade80"/><text x="724" y="356" class="name">节点原型绑定 PrototypeBinding</text><text x="724" y="379" class="attr">id / node_id (FK)</text><text x="724" y="400" class="attr">prototype_id (FK)</text><text x="724" y="421" class="attr">绑定状态 / 创建时间</text></g>
+  <path d="M625 205 H705" stroke="#16a34a" stroke-width="2" marker-end="url(#green)"/><text x="648" y="196" class="rel" fill="#15803d">1:N 包含</text>
+  <path d="M805 280 V315 H670 V215 H705" fill="none" stroke="#16a34a" stroke-width="1.6" marker-end="url(#green)"/><text x="682" y="308" class="rel" fill="#15803d">0..1 父节点</text>
+  <path d="M705 240 H675 V382 H655" fill="none" stroke="#16a34a" stroke-width="1.7" marker-end="url(#green)"/><text x="666" y="360" class="rel" fill="#15803d">1:N 分工</text>
+  <path d="M805 280 V330" stroke="#16a34a" stroke-width="1.7" marker-end="url(#green)"/><text x="814" y="311" class="rel" fill="#15803d">0..1 绑定</text>
+  <path d="M390 344 H455" stroke="#2563eb" stroke-width="1.7" marker-end="url(#blue)"/><text x="397" y="335" class="rel" fill="#2563eb">属于项目</text>
+  <path d="M360 455 H400 V383 H455" fill="none" stroke="#2563eb" stroke-width="1.7" marker-end="url(#blue)"/><text x="367" y="423" class="rel" fill="#2563eb">人员分工</text>
+
+  <rect x="970" y="100" width="330" height="410" rx="16" fill="#faf5ff" stroke="#e9d5ff" stroke-width="1.5"/>
+  <text x="992" y="130" class="group" fill="#7e22ce">原型资产域</text>
+  <g><rect class="card" x="1005" y="155" width="260" height="105" rx="9" fill="#fff" stroke="#d8b4fe"/><text x="1024" y="181" class="name">原型 Prototype</text><text x="1024" y="204" class="attr">id / name / owner_id</text><text x="1024" y="225" class="attr">entry_file / lifecycle_status</text><text x="1024" y="246" class="attr">独立可复用制品</text></g>
+  <g><rect class="card" x="1005" y="315" width="260" height="105" rx="9" fill="#fff" stroke="#c084fc"/><text x="1024" y="341" class="name">正式版本 PrototypeVersion</text><text x="1024" y="364" class="attr">id / prototype_id / semver</text><text x="1024" y="385" class="attr">artifact_digest / entry_file</text><text x="1024" y="406" class="attr">created_by / created_at</text></g>
+  <path d="M905 382 H955 V208 H1005" fill="none" stroke="#9333ea" stroke-width="2" marker-end="url(#purple)"/><text x="927" y="286" class="rel" fill="#7e22ce">N:1</text>
+  <path d="M1135 260 V315" stroke="#9333ea" stroke-width="2" marker-end="url(#purple)"/><text x="1144" y="291" class="rel" fill="#7e22ce">1:N 版本化</text>
+
+  <rect x="40" y="540" width="1260" height="490" rx="16" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+  <text x="62" y="572" class="group" fill="#c2410c">任务与交付域</text>
+  <g><rect class="card" x="75" y="610" width="205" height="125" rx="9" fill="#fff" stroke="#fdba74"/><text x="94" y="636" class="name">项目任务 ProjectTask</text><text x="94" y="659" class="attr">id / node_id / binding_id</text><text x="94" y="680" class="attr">requested_by / title / goal</text><text x="94" y="701" class="attr">base_version_id / status</text><text x="94" y="722" class="attr">review_policy / due_at</text></g>
+  <g><rect class="card" x="340" y="610" width="190" height="105" rx="9" fill="#fff" stroke="#fdba74"/><text x="359" y="636" class="name">任务分派 TaskAssignment</text><text x="359" y="659" class="attr">task_id / user_id</text><text x="359" y="680" class="attr">role / status / assigned_at</text><text x="359" y="701" class="attr">负责人和参与者</text></g>
+  <g><rect class="card" x="590" y="610" width="190" height="105" rx="9" fill="#fff" stroke="#fdba74"/><text x="609" y="636" class="name">Agent 交接 AgentHandoff</text><text x="609" y="659" class="attr">task_id / issued_for_user</text><text x="609" y="680" class="attr">code_hash / scopes / expires_at</text><text x="609" y="701" class="attr">一次性操作授权</text></g>
+  <g><rect class="card" x="840" y="610" width="205" height="125" rx="9" fill="#fff" stroke="#fb923c"/><text x="859" y="636" class="name">候选提交 CandidateSubmission</text><text x="859" y="659" class="attr">id / task_id / submitted_by</text><text x="859" y="680" class="attr">artifact_digest / entry_file</text><text x="859" y="701" class="attr">sequence / status</text><text x="859" y="722" class="attr">支持一个任务多次提交</text></g>
+  <g><rect class="card" x="1090" y="610" width="175" height="105" rx="9" fill="#fff" stroke="#fb923c"/><text x="1109" y="636" class="name">候选校验 Validation</text><text x="1109" y="659" class="attr">submission_id / mode</text><text x="1109" y="680" class="attr">result / errors / duration</text><text x="1109" y="701" class="attr">可重复、可追溯</text></g>
+  <g><rect class="card" x="840" y="810" width="205" height="105" rx="9" fill="#fff" stroke="#fb923c"/><text x="859" y="836" class="name">审核决定 ReviewDecision</text><text x="859" y="859" class="attr">submission_id / reviewer_id</text><text x="859" y="880" class="attr">decision / note / reviewed_at</text><text x="859" y="901" class="attr">采用 / 退回记录</text></g>
+  <g><rect class="card" x="590" y="810" width="190" height="105" rx="9" fill="#fff" stroke="#fdba74"/><text x="609" y="836" class="name">签出 Checkout</text><text x="609" y="859" class="attr">binding_id / user_id</text><text x="609" y="880" class="attr">active / expires_at / note</text><text x="609" y="901" class="attr">占用具体工作位</text></g>
+  <g><rect class="card" x="340" y="810" width="190" height="105" rx="9" fill="#fff" stroke="#fdba74"/><text x="359" y="836" class="name">项目快照 ProjectSnapshot</text><text x="359" y="859" class="attr">project_id / created_by</text><text x="359" y="880" class="attr">结构、绑定与版本清单</text><text x="359" y="901" class="attr">可恢复聚合快照</text></g>
+  <g><rect class="card" x="75" y="810" width="205" height="105" rx="9" fill="#fff" stroke="#fdba74"/><text x="94" y="836" class="name">审计事件 AuditEvent</text><text x="94" y="859" class="attr">actor_id / action</text><text x="94" y="880" class="attr">resource_type / resource_id</text><text x="94" y="901" class="attr">result / metadata / occurred_at</text></g>
+  <path d="M280 663 H340" stroke="#ea580c" stroke-width="2" marker-end="url(#blue)"/><text x="289" y="654" class="rel" fill="#c2410c">1:N 分派</text>
+  <path d="M530 663 H590" stroke="#ea580c" stroke-width="2" marker-end="url(#blue)"/><text x="542" y="654" class="rel" fill="#c2410c">1:N 授权</text>
+  <path d="M780 663 H840" stroke="#ea580c" stroke-width="2" marker-end="url(#blue)"/><text x="787" y="654" class="rel" fill="#c2410c">1:N 提交</text>
+  <path d="M1045 663 H1090" stroke="#ea580c" stroke-width="2" marker-end="url(#blue)"/><text x="1049" y="654" class="rel" fill="#c2410c">1:N</text>
+  <path d="M942 735 V810" stroke="#ea580c" stroke-width="2" marker-end="url(#blue)"/><text x="951" y="775" class="rel" fill="#c2410c">1:N 审核</text>
+  <path d="M840 862 H800 V760 H280 V700" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#blue)"/><text x="548" y="752" class="rel" fill="#6b7280">决定任务完成状态</text>
+  <path d="M75 670 H52 V885 H75" fill="none" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#blue)"/><text x="57" y="790" class="small" transform="rotate(-90 57 790)">全链路留痕</text>
+  <path d="M555 435 V530 H177 V610" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#green)"/><text x="289" y="523" class="rel" fill="#15803d">工作节点 1:N 拥有任务</text>
+  <path d="M805 435 V520 H685 V610" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#green)"/><text x="695" y="512" class="rel" fill="#15803d">绑定 1:N 交接/签出</text>
+  <path d="M942 915 V950 H1135 V420" fill="none" stroke="#9333ea" stroke-width="2" marker-end="url(#purple)"/><text x="1050" y="944" class="rel" fill="#7e22ce">采用后生成正式版本</text>
+  <path d="M177 735 V810" stroke="#6b7280" stroke-width="1.4" stroke-dasharray="5 4" marker-end="url(#blue)"/><text x="186" y="775" class="rel" fill="#6b7280">记录</text>
+
+  <rect x="1330" y="100" width="235" height="930" rx="16" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5"/>
+  <text x="1352" y="132" class="group" fill="#b91c1c">当前实现缺陷</text>
+  <g transform="translate(1352 165)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">缺少 ProjectNode 表</text><text x="24" y="34" class="small">菜单仅为 menu_config JSON</text></g>
+  <g transform="translate(1352 235)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">缺少节点负责人关系</text><text x="24" y="34" class="small">界面显示的是项目 owner</text></g>
+  <g transform="translate(1352 305)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">任务挂在项目+原型</text><text x="24" y="34" class="small">未关联节点或具体绑定</text></g>
+  <g transform="translate(1352 375)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">created_by 职责过载</text><text x="24" y="34" class="small">发起/领取/提交均是同一人</text></g>
+  <g transform="translate(1352 445)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">任务与候选混表</text><text x="24" y="34" class="small">一个任务只能保留当前候选</text></g>
+  <g transform="translate(1352 515)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">两套状态机拼接</text><text x="24" y="34" class="small">change + handoff 才能解释阶段</text></g>
+  <g transform="translate(1352 585)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">解绑后任务失去上下文</text><text x="24" y="34" class="small">任务不会随绑定迁移</text></g>
+  <g transform="translate(1352 655)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">基线只存版本号</text><text x="24" y="34" class="small">未稳定引用 version_id</text></g>
+  <g transform="translate(1352 725)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">项目任务与独立任务重复</text><text x="24" y="34" class="small">两套 handoff/change 服务</text></g>
+  <g transform="translate(1352 795)"><circle cx="8" cy="7" r="6" fill="#dc2626"/><text x="24" y="12" class="defect">路径被当成节点身份</text><text x="24" y="34" class="small">重命名/移动需要同步字符串</text></g>
+  <g transform="translate(50 1060)"><line x1="0" y1="8" x2="34" y2="8" stroke="#2563eb" stroke-width="2" marker-end="url(#blue)"/><text x="43" y="13" class="small">身份/授权关系</text><line x1="160" y1="8" x2="194" y2="8" stroke="#16a34a" stroke-width="2" marker-end="url(#green)"/><text x="203" y="13" class="small">项目结构关系</text><line x1="320" y1="8" x2="354" y2="8" stroke="#9333ea" stroke-width="2" marker-end="url(#purple)"/><text x="363" y="13" class="small">制品/版本关系</text><line x1="480" y1="8" x2="514" y2="8" stroke="#dc2626" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#red)"/><text x="523" y="13" class="small">当前缺陷或错误关联</text></g>
+</svg>

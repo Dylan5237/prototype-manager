@@ -525,3 +525,11 @@
 - [x] 记录 release、备份和实际回读结果后关闭 BL-010。
 
 详细设计与验收门禁见 [PHASE28_HELP_PROMPT_SNAPSHOT.md](PHASE28_HELP_PROMPT_SNAPSHOT.md)。
+
+## 阶段 29：完整项目管理模块
+
+状态：`in-progress`（2026-09-07）
+
+阶段 22 已交付项目列表、工作台、两/三级 JSON 菜单、原型绑定、轻协作候选、签出和快照的页面增量，但不等同于完整项目管理。当前缺少稳定工作节点、节点负责人、任务分派和多候选实体，解绑还会静默删除签出。
+
+阶段 29 以 [PROJECT_MANAGEMENT_ACCEPTANCE_BOUNDARY.md](PROJECT_MANAGEMENT_ACCEPTANCE_BOUNDARY.md) 为唯一完成合同，按 `29.0 合同冻结 → 29.1 安全解绑 → 29.2 稳定节点与分工 → 29.3 任务 v2 → 29.4 多候选与审核 → 29.5 快照/审计/性能 → 29.6 双仓与 16077 验收` 推进。任何子阶段完成都不能将 BL-011 标记为 completed；16088 发布、移动端、甘特/工时/预算和 GitLab Provider 不在本阶段范围。
