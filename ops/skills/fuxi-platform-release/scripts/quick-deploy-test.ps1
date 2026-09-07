@@ -4,7 +4,7 @@ Compatibility wrapper for the GitLab develop test deployment entrypoint.
 
 .DESCRIPTION
 Test releases no longer package local worktrees. This wrapper delegates to
-deploy-test-from-gitlab.ps1, which fresh-clones platform develop and Skill main.
+deploy-test-from-gitlab.ps1, which fresh-clones platform and Skill develop.
 #>
 [CmdletBinding()]
 param(

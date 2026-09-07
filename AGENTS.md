@@ -19,7 +19,7 @@
 
 ## 伏羲平台与配套 Skill 的双边分析规则
 
-- 配套 Skill 独立仓库路径：`D:\_projects\skills\prototype-manager-skills`；Skill 入口为 `fuxi-prototype`，当前分支为 `main`。
+- 配套 Skill 独立仓库路径：`D:\_projects\skills\prototype-manager-skills`；Skill 入口为 `fuxi-prototype`；测试集成使用 GitLab `develop`，生产使用 GitLab `main`。
 - 任何需求先同时分析 FuxiPlatform 与配套 Skill 两个仓库的影响，不能只看平台或只看 Skill。
 - 重点检查双方的 API/工具契约、入口目录、分发包、版本/hash、运行时配置和验收链路；判断需求是否需要一边改、两边改或仅记录不改。
 - 涉及平台接口、MCP 工具、Skill 入口、ZIP 分发、运行时 profile 或安装流程时，默认按跨仓库变更评估；不能因改动集中在一边就跳过另一边分析。
@@ -61,5 +61,5 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 ## 测试环境部署约定
 
 - 用户已于 2026-09-02 明确授权后续 16077 测试环境部署无需逐次确认；执行仍必须使用本 Skill 的安全脚本和 `DEPLOY_FUXI_TEST` 门禁参数。该授权不包含 16088 生产发布、远程推送、删除或回滚。
-- `16077` 后续统一运行 `deploy-test-from-gitlab.ps1`（或其兼容包装 `quick-deploy-test.ps1`）：新鲜克隆平台 GitLab `develop` 与 Skill GitLab `main`，再执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；禁止直接打包任意 worktree。
+- `16077` 后续统一运行 `deploy-test-from-gitlab.ps1`（或其兼容包装 `quick-deploy-test.ps1`）：新鲜克隆平台与 Skill 的 GitLab `develop`，再执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；禁止直接打包任意 worktree。
 - 只有准备发布 `16088` 时才使用完整构建、MCP 校验/集成、生产基线和发布验收门禁。

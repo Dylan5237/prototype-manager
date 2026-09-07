@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-Clones the platform GitLab develop branch and Skill GitLab main branch, then deploys a lightweight release to 16077.
+Clones the platform and Skill GitLab develop branches, then deploys a lightweight release to 16077.
 
 .DESCRIPTION
 This is the only high-level test release entrypoint. It never packages the current
@@ -12,7 +12,7 @@ param(
   [string]$PlatformRepositoryUrl = 'http://192.168.2.145:11980/fuxi/fuxi-platform',
   [string]$SkillsRepositoryUrl = 'http://192.168.2.145:11980/fuxi/fuxi-prototype-skills',
   [string]$PlatformBranch = 'develop',
-  [string]$SkillsBranch = 'main',
+  [string]$SkillsBranch = 'develop',
   [string]$PlatformRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..\..')).Path,
   [string]$OutputDirectory,
   [Parameter(Mandatory)][string]$ConfirmTestDeploy,
@@ -21,7 +21,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($PlatformBranch -cne 'develop') { throw 'Test releases are restricted to the platform develop branch.' }
-if ($SkillsBranch -cne 'main') { throw 'Test releases are restricted to the Skill main branch.' }
+if ($SkillsBranch -cne 'develop') { throw 'Test releases are restricted to the Skill develop branch.' }
 if ($ConfirmTestDeploy -cne 'DEPLOY_FUXI_TEST') { throw 'Test deployment confirmation must be DEPLOY_FUXI_TEST.' }
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $PlatformRoot '.release' }
 $buildScript = Join-Path $PSScriptRoot 'build-release.ps1'
