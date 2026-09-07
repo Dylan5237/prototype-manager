@@ -118,7 +118,7 @@ function getChangeContext(change) {
   const prototype = getPrototypeById(change.prototype_id);
   const binding = queryOne(`
     SELECT menu_path FROM project_prototypes
-    WHERE project_id = ? AND prototype_id = ?
+    WHERE project_id = ? AND prototype_id = ? AND unbound_at IS NULL
     LIMIT 1
   `, [change.project_id, change.prototype_id]);
   return { project, prototype, binding };
@@ -213,7 +213,7 @@ class LightweightCollaborationService {
     this.authorization.assertCan(actor, ACTIONS.START_CHANGE, { type: 'change', projectId, prototypeId });
     const prototype = getPrototypeById(prototypeId);
     const binding = queryOne(
-      'SELECT id FROM project_prototypes WHERE project_id = ? AND prototype_id = ? LIMIT 1',
+      'SELECT id FROM project_prototypes WHERE project_id = ? AND prototype_id = ? AND unbound_at IS NULL LIMIT 1',
       [projectId, prototypeId]
     );
     if (!prototype || !binding) {

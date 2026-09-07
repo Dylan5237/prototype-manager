@@ -41,6 +41,8 @@ function applyCollaborationSchema(db) {
   ensureColumn(db, 'prototypes', 'repo_path', 'TEXT');
   ensureColumn(db, 'prototypes', 'default_branch', "TEXT NOT NULL DEFAULT 'main'");
   ensureColumn(db, 'prototypes', 'collaboration_status', "TEXT NOT NULL DEFAULT 'legacy'");
+  ensureColumn(db, 'project_prototypes', 'unbound_at', 'TEXT');
+  ensureColumn(db, 'project_prototypes', 'unbound_by', 'INTEGER');
 
   ensureColumn(db, 'prototype_versions', 'commit_sha', 'TEXT');
   ensureColumn(db, 'prototype_versions', 'build_id', 'TEXT');
@@ -290,6 +292,7 @@ function applyCollaborationSchema(db) {
   `);
 
   db.run(`CREATE INDEX IF NOT EXISTS idx_prototypes_project ON prototypes(project_id)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_project_prototypes_active ON project_prototypes(project_id, menu_path, unbound_at)`);
   db.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_prototypes_repo_identity
     ON prototypes(repo_provider, repo_external_id)

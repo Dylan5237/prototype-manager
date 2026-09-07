@@ -11,6 +11,9 @@ const {
   getProjectsPage,
   getPrototypeProjectBinding,
   getProjectById,
+  getProjectPrototypes,
+  getProjectPrototypeById,
+  removeProjectPrototype,
   updateProject,
   PrototypeProjectConflictError
 } = require('../services/db-projects');
@@ -68,6 +71,25 @@ test('rolls back menu changes when a binding migration is stale', () => {
     bindingMigrations: [{ bindingId: binding.id, fromPath: 'wrong/path', toPath: 'changed' }]
   }), /原型绑定已发生变化/);
   assert.deepEqual(getProjectById('project-1').menu_config, { items: [] });
+});
+
+test('unbind preserves history and allows the same binding to be restored', () => {
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain/entity' });
+  removeProjectPrototype(binding.id, { projectId: 'project-1', userId: 1 });
+  assert.equal(getProjectPrototypes('project-1').length, 0);
+  assert.ok(getProjectPrototypeById(binding.id).unbound_at);
+  const restored = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain/entity' });
+  assert.equal(restored.id, binding.id);
+  assert.equal(restored.unbound_at, null);
+});
+
+test('unbind is blocked by active checkout or unfinished changes', () => {
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain/entity' });
+  database.run(`INSERT INTO project_checkouts (project_id, project_prototype_id, user_id, checked_out_at, expires_at, status) VALUES (?, ?, ?, ?, ?, 'active')`, ['project-1', binding.id, 1, '2026-09-07T00:00:00.000Z', '2099-09-07T00:00:00.000Z']);
+  assert.throws(() => removeProjectPrototype(binding.id, { projectId: 'project-1', userId: 1 }), error => error.code === 'BINDING_HAS_ACTIVE_CHECKOUT');
+  database.run(`UPDATE project_checkouts SET status = 'released' WHERE project_prototype_id = ?`, [binding.id]);
+  database.run(`INSERT INTO prototype_changes (id, project_id, prototype_id, title, requirement, created_by, branch_name, base_sha, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, ['change-active', 'project-1', 'prototype-1', '未完成任务', '要求', 1, 'no-git/change-active', 'version:0', 'editing', '2026-09-07T00:00:00.000Z', '2026-09-07T00:00:00.000Z']);
+  assert.throws(() => removeProjectPrototype(binding.id, { projectId: 'project-1', userId: 1 }), error => error.code === 'BINDING_HAS_ACTIVE_CHANGES');
 });
 
 test('returns project summary fields for the project list', () => {

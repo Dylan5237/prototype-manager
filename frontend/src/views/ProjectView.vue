@@ -60,6 +60,7 @@
                   <div class="card-actions">
                     <el-button type="primary" @click="enterWorkspace">进入原型工作台</el-button>
                     <el-button text @click="goPrototype(currentBinding.prototype_id)"><el-icon><Link /></el-icon>原型详情</el-button>
+                    <el-button v-if="canManage" text type="danger" :loading="unbinding" @click="handleUnbind">解绑原型</el-button>
                   </div>
                 </div>
               </div>
@@ -404,6 +405,7 @@ const prototypesPageSize = 20
 const prototypeKeyword = ref('')
 const selectedPrototypeId = ref('')
 const binding = ref(false)
+const unbinding = ref(false)
 let prototypeSearchTimer = null
 
 const snapshotVisible = ref(false)
@@ -813,6 +815,25 @@ async function handleBind() {
     ElMessage.error(message)
   } finally {
     binding.value = false
+  }
+}
+
+async function handleUnbind() {
+  if (!currentBinding.value) return
+  try {
+    await ElMessageBox.confirm(
+      `只解除「${activePathLabel.value}」与「${currentBinding.value.prototype_name}」的项目绑定；原型、正式版本和历史记录不会删除。`,
+      '解绑原型',
+      { type: 'warning', confirmButtonText: '确认解绑', cancelButtonText: '取消' }
+    )
+    unbinding.value = true
+    await removeProjectPrototype(route.params.id, currentBinding.value.id)
+    ElMessage.success('已解除绑定，原型和历史记录保持不变')
+    await loadProject()
+  } catch (error) {
+    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '解绑失败')
+  } finally {
+    unbinding.value = false
   }
 }
 

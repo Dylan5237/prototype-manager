@@ -23,6 +23,16 @@ class PrototypeProjectConflictError extends Error {
   }
 }
 
+class BindingRemovalConflictError extends Error {
+  constructor(details) {
+    super(details.activeCheckout ? '原型仍处于签出状态，请先签入或释放签出' : '原型仍有未完成任务或待确认候选，请先处理后再解绑');
+    this.name = 'BindingRemovalConflictError';
+    this.code = details.activeCheckout ? 'BINDING_HAS_ACTIVE_CHECKOUT' : 'BINDING_HAS_ACTIVE_CHANGES';
+    this.status = 409;
+    this.details = details;
+  }
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -48,7 +58,7 @@ function createProject({ name, description, menuConfig, createdBy }) {
 function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingOnly } = {}) {
   const selectSql = `
     SELECT p.*, u.nickname as creator_name,
-      (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id) AS prototype_count,
+      (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id AND pp.unbound_at IS NULL) AS prototype_count,
       (1 + (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id)) AS member_count,
       (SELECT COUNT(*) FROM prototype_changes c
         WHERE c.project_id = p.id AND c.status = 'ready') AS pending_candidate_count,
@@ -139,7 +149,7 @@ function updateProject(id, { name, description, menuConfig, bindingMigrations = 
   try {
     db.run(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values);
     for (const migration of bindingMigrations) {
-      const existing = queryOne(`SELECT id, menu_path FROM project_prototypes WHERE id = ? AND project_id = ?`, [migration.bindingId, id]);
+      const existing = queryOne(`SELECT id, menu_path FROM project_prototypes WHERE id = ? AND project_id = ? AND unbound_at IS NULL`, [migration.bindingId, id]);
       if (!existing || existing.menu_path !== migration.fromPath) {
         throw new Error('原型绑定已发生变化，请刷新项目后重试');
       }
@@ -162,13 +172,17 @@ function softDeleteProject(id) {
 
 function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
   const t = now();
-  const existing = findBinding(projectId, prototypeId, menuPath);
-  if (existing) return existing;
+  const existing = findBinding(projectId, prototypeId, menuPath, { includeUnbound: true });
+  if (existing && !existing.unbound_at) return existing;
+  if (existing?.unbound_at) {
+    run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, sort_order = ?, created_at = ? WHERE id = ?`, [sortOrder, t, existing.id]);
+    return getProjectPrototypeById(existing.id);
+  }
   const otherProject = queryOne(`
     SELECT pp.project_id, p.name AS project_name
     FROM project_prototypes pp
     LEFT JOIN projects p ON p.id = pp.project_id
-    WHERE pp.prototype_id = ? AND pp.project_id <> ?
+    WHERE pp.prototype_id = ? AND pp.project_id <> ? AND pp.unbound_at IS NULL
     ORDER BY pp.id ASC
     LIMIT 1
   `, [prototypeId, projectId]);
@@ -187,10 +201,11 @@ function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
   return getProjectPrototypeById(id);
 }
 
-function findBinding(projectId, prototypeId, menuPath) {
+function findBinding(projectId, prototypeId, menuPath, { includeUnbound = false } = {}) {
   return queryOne(`
     SELECT * FROM project_prototypes
     WHERE project_id = ? AND prototype_id = ? AND menu_path = ?
+      ${includeUnbound ? '' : 'AND unbound_at IS NULL'}
   `, [projectId, prototypeId, menuPath]);
 }
 
@@ -208,7 +223,7 @@ function getProjectPrototypes(projectId) {
     FROM project_prototypes pp
     LEFT JOIN prototypes p ON pp.prototype_id = p.id
     LEFT JOIN users u ON p.created_by = u.id
-    WHERE pp.project_id = ?
+    WHERE pp.project_id = ? AND pp.unbound_at IS NULL
     ORDER BY pp.sort_order ASC, pp.id ASC
   `, [projectId]);
 }
@@ -220,7 +235,7 @@ function getPrototypeProjectBinding(prototypeId) {
       p.created_by AS project_owner_id
     FROM project_prototypes pp
     LEFT JOIN projects p ON p.id = pp.project_id
-    WHERE pp.prototype_id = ? AND p.deleted_at IS NULL
+    WHERE pp.prototype_id = ? AND p.deleted_at IS NULL AND pp.unbound_at IS NULL
     ORDER BY pp.project_id, pp.sort_order, pp.id
   `, [prototypeId]);
   if (!rows.length) return null;
@@ -244,16 +259,23 @@ function updateProjectPrototype(id, { menuPath, sortOrder }) {
   const values = [];
   if (menuPath !== undefined) { fields.push('menu_path = ?'); values.push(menuPath); }
   if (sortOrder !== undefined) { fields.push('sort_order = ?'); values.push(sortOrder); }
+  const activeBinding = queryOne(`SELECT id FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
+  if (!activeBinding) return null;
   if (fields.length === 0) return getProjectPrototypeById(id);
   values.push(id);
-  run(`UPDATE project_prototypes SET ${fields.join(', ')} WHERE id = ?`, values);
+  run(`UPDATE project_prototypes SET ${fields.join(', ')} WHERE id = ? AND unbound_at IS NULL`, values);
   return getProjectPrototypeById(id);
 }
 
-function removeProjectPrototype(id) {
-  // 先清理该绑定上的签出记录
-  run(`DELETE FROM project_checkouts WHERE project_prototype_id = ?`, [id]);
-  run(`DELETE FROM project_prototypes WHERE id = ?`, [id]);
+function removeProjectPrototype(id, { projectId, userId } = {}) {
+  const binding = queryOne(`SELECT * FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
+  if (!binding || (projectId && String(binding.project_id) !== String(projectId))) return null;
+  const activeCheckout = queryOne(`SELECT id, user_id, expires_at FROM project_checkouts WHERE project_prototype_id = ? AND status = 'active' AND expires_at > ?`, [id, now()]);
+  const activeChanges = query(`SELECT id, title, status FROM prototype_changes WHERE project_id = ? AND prototype_id = ? AND status IN ('editing','preview_pending','ready','invalid') ORDER BY updated_at DESC`, [binding.project_id, binding.prototype_id]);
+  if (activeCheckout || activeChanges.length) throw new BindingRemovalConflictError({ activeCheckout, activeChanges });
+  const unboundAt = now();
+  run(`UPDATE project_prototypes SET unbound_at = ?, unbound_by = ? WHERE id = ? AND unbound_at IS NULL`, [unboundAt, userId || null, id]);
+  return { ...binding, unbound_at: unboundAt, unbound_by: userId || null };
 }
 
 // =================== 项目成员 ===================
@@ -419,14 +441,19 @@ function restoreSnapshot(snapshotId, { restoredBy }) {
   // 更新项目菜单
   updateProject(projectId, { menuConfig });
 
-  // 重建绑定关系：先删除旧绑定（保留快照中存在的）
-  run(`DELETE FROM project_prototypes WHERE project_id = ?`, [projectId]);
+  // 重建当前绑定视图，但保留历史绑定、签出与审计引用。
   const t = now();
+  run(`UPDATE project_prototypes SET unbound_at = ?, unbound_by = ? WHERE project_id = ? AND unbound_at IS NULL`, [t, restoredBy || null, projectId]);
   bindings.forEach((b, idx) => {
-    run(`
-      INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `, [projectId, b.prototypeId, b.menuPath, idx, t]);
+    const historical = findBinding(projectId, b.prototypeId, b.menuPath, { includeUnbound: true });
+    if (historical) {
+      run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, sort_order = ? WHERE id = ?`, [idx, historical.id]);
+    } else {
+      run(`
+        INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `, [projectId, b.prototypeId, b.menuPath, idx, t]);
+    }
   });
 
   // 回滚每个原型到快照版本
@@ -472,6 +499,7 @@ module.exports = {
 
   bindPrototype,
   PrototypeProjectConflictError,
+  BindingRemovalConflictError,
   getPrototypeProjectBinding,
   getProjectPrototypeById,
   getProjectPrototypes,

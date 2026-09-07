@@ -6,7 +6,7 @@ const { requireAuth, isAdminUser } = require('../middleware/auth');
 const {
   createProject, getProjectsPage, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
-  PrototypeProjectConflictError,
+  PrototypeProjectConflictError, BindingRemovalConflictError,
   addProjectMember, getProjectMember, getProjectMembers, removeProjectMember,
   checkoutPrototype, checkinPrototype, forceReleaseCheckout, getActiveCheckout, getProjectCheckouts,
   createSnapshot, getProjectSnapshots, getSnapshotById, restoreSnapshot, deleteSnapshot
@@ -584,7 +584,15 @@ router.delete('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 
   if (!existing || existing.project_id !== req.params.id) {
     return res.status(404).json({ success: false, message: '绑定不存在' });
   }
-  removeProjectPrototype(ppId);
+  try {
+    const removed = removeProjectPrototype(ppId, { projectId: req.params.id, userId: req.user.id });
+    if (!removed) return res.status(404).json({ success: false, message: '绑定不存在或已解绑' });
+  } catch (error) {
+    if (error instanceof BindingRemovalConflictError) {
+      return res.status(409).json({ success: false, code: error.code, message: error.message, details: error.details });
+    }
+    throw error;
+  }
   recordUsageEvent({
     eventType: 'project_prototype_unbound',
     userId: req.user.id,
