@@ -1,11 +1,12 @@
 const express = require('express');
 const fs = require('fs');
-const crypto = require('crypto');
 const path = require('path');
 const AdmZip = require('adm-zip');
 const { requireAuth, requireRole, generateToken } = require('../middleware/auth');
 const { findUserById } = require('../services/db-users');
 const { createConnectCode } = require('../services/db-mcp-sessions');
+const { createBootstrapSession, readBootstrapSession } = require('../services/db-bootstrap-sessions');
+const { buildStandaloneBootstrap, renderCanonicalBootstrapCommand, sha256 } = require('../services/standalone-bootstrap');
 const { GitLabProvider } = require('../services/gitlab-provider');
 const {
   AgentUpdateError,
@@ -32,8 +33,9 @@ const router = express.Router();
 const SKILL_NAME = 'fuxi-prototype';
 const EXCLUDED_NAMES = new Set([
   '.git', '.npmrc', '.credentials.json', 'node_modules', 'dist', 'build',
-  'coverage', 'tests'
+  'coverage', 'tests', 'standalone'
 ]);
+const packageBufferCache = new Map();
 
 function publicBaseUrl(req) {
   const forwarded = req.headers['x-forwarded-proto'];
@@ -94,24 +96,72 @@ function addDirectory(zip, root, prefix) {
   walk(root);
 }
 
-function sendZip(res, filename, writer) {
-  const zip = new AdmZip();
-  writer(zip);
-  const buffer = zip.toBuffer();
+function sendZipBuffer(res, filename, buffer) {
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Length', String(buffer.length));
   res.send(buffer);
 }
 
+function packageBuffer(kind, sourceRoot, prefix) {
+  const cacheKey = `${kind}:${sourceRoot}`;
+  if (!packageBufferCache.has(cacheKey)) {
+    const zip = new AdmZip();
+    addDirectory(zip, sourceRoot, prefix);
+    packageBufferCache.set(cacheKey, zip.toBuffer());
+  }
+  return packageBufferCache.get(cacheKey);
+}
+
+function standaloneBootstrapBuffer() {
+  const mcpDir = configuredMcpDir();
+  if (!mcpDir) return null;
+  try {
+    return Buffer.from(buildStandaloneBootstrap({ mcpRoot: mcpDir }), 'utf8');
+  } catch (error) {
+    return null;
+  }
+}
+
+function artifactMetadata(buffer) {
+  return { sha256: sha256(buffer), size: buffer.length };
+}
+
+function componentVersion(root, relative, fallback = 'unknown') {
+  try {
+    const value = JSON.parse(fs.readFileSync(path.join(root, ...relative.split('/')), 'utf8'));
+    return value && value.version ? String(value.version) : fallback;
+  } catch (error) {
+    return fallback;
+  }
+}
+
+function skillVersion(skillDir) {
+  try {
+    const content = fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8');
+    const match = content.match(/^version:\s*([^\r\n]+)$/mi);
+    return match ? match[1].trim() : 'unversioned';
+  } catch (error) {
+    return 'unknown';
+  }
+}
+
+function getBearerToken(req) {
+  const value = req.headers.authorization;
+  return value && value.startsWith('Bearer ') ? value.slice(7).trim() : '';
+}
+
 router.get('/agent-bootstrap', requireAuth, (req, res) => {
   const user = findUserById(req.user.id);
   if (!user) return res.status(401).json({ success: false, message: '用户不存在' });
-  if (!configuredSkillDir()) {
+  const skillDir = configuredSkillDir();
+  const mcpDir = configuredMcpDir();
+  const standalone = standaloneBootstrapBuffer();
+  if (!skillDir || !mcpDir || !standalone) {
     return res.status(503).json({
       success: false,
-      code: 'SKILL_DISTRIBUTION_UNAVAILABLE',
-      message: '平台尚未配置 FUXI_SKILL_DIR，无法生成完整的一键接入提示词'
+      code: !skillDir ? 'SKILL_DISTRIBUTION_UNAVAILABLE' : !mcpDir ? 'MCP_DISTRIBUTION_UNAVAILABLE' : 'BOOTSTRAP_ARTIFACT_UNAVAILABLE',
+      message: !skillDir ? '平台尚未配置 FUXI_SKILL_DIR，无法生成完整的一键接入提示词' : '平台尚未准备好独立 Bootstrap 制品，无法生成一键接入提示词'
     });
   }
 
@@ -120,33 +170,47 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
   const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
   const connect = createConnectCode(user.id);
   const baseUrl = publicBaseUrl(req);
+  const bootstrapSession = createBootstrapSession({ userId: user.id, apiUrl: baseUrl });
   const skillUrl = `${baseUrl}/api/integrations/skill-package`;
   const mcpUrl = `${baseUrl}/api/integrations/mcp-package`;
+  const bootstrapUrl = `${baseUrl}/api/integrations/bootstrap-package`;
+  const bootstrapSessionUrl = `${baseUrl}/api/integrations/bootstrap-session`;
+  const mcpArtifact = artifactMetadata(packageBuffer('mcp', mcpDir, 'fuxi-platform-mcp'));
+  const skillArtifact = artifactMetadata(packageBuffer('skill', skillDir, SKILL_NAME));
+  const versions = {
+    mcp: componentVersion(mcpDir, 'package.json'),
+    skill: skillVersion(skillDir),
+    minNode: '18.0.0'
+  };
   const bootstrapManifest = {
     schema: 'fuxi-bootstrap/2',
-    bootstrapId: crypto.randomUUID(),
+    bootstrapId: bootstrapSession.bootstrapId,
     apiUrl: baseUrl,
+    expiresAt: bootstrapSession.expiresAt,
     installToken: token,
     connectCode: connect.code,
+    connectCodeExpiresAt: connect.expiresAt,
     artifacts: {
-      mcp: { url: mcpUrl, sha256: null, size: null },
-      skill: { url: skillUrl, sha256: null, size: null }
+      mcp: { url: mcpUrl, sha256: mcpArtifact.sha256, size: mcpArtifact.size },
+      skill: { url: skillUrl, sha256: skillArtifact.sha256, size: skillArtifact.size }
     },
+    versions,
     client: { name: 'auto' }
   };
-  const tokenExpiresLocal = formatLocalTime(expiresAt);
-  const codeExpiresLocal = formatLocalTime(connect.expiresAt);
+  const canonicalBootstrapCommand = renderCanonicalBootstrapCommand({
+    bootstrapUrl,
+    sessionEndpoint: bootstrapSessionUrl,
+    bootstrapSha256: sha256(standalone),
+    session: bootstrapSession.credential,
+    client: 'auto'
+  });
+  const bootstrapSessionExpiresLocal = formatLocalTime(bootstrapSession.expiresAt);
   const helpPromptVariables = getQuickStartPromptVariables();
   const prompt = renderPromptTemplate('mcp.onboarding', {
     baseUrl,
     skillName: SKILL_NAME,
-    skillUrl,
-    mcpUrl,
-    token,
-    tokenExpiresLocal,
-    connectCode: connect.code,
-    codeExpiresLocal,
-    bootstrapManifestJson: JSON.stringify(bootstrapManifest, null, 2),
+    canonicalBootstrapCommand,
+    bootstrapSessionExpiresLocal,
     ...helpPromptVariables
   });
 
@@ -160,12 +224,82 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
       connectCode: connect.code,
       connectCodeExpiresAt: connect.expiresAt,
       bootstrapManifest,
+      bootstrapSession: {
+        credential: bootstrapSession.credential,
+        bootstrapId: bootstrapSession.bootstrapId,
+        expiresAt: bootstrapSession.expiresAt
+      },
+      canonicalBootstrap: {
+        command: canonicalBootstrapCommand,
+        url: bootstrapUrl,
+        sha256: sha256(standalone),
+        sessionEndpoint: bootstrapSessionUrl
+      },
       skillName: SKILL_NAME,
       skillUrl,
       mcpUrl,
       apiUrl: baseUrl
     }
   });
+});
+
+// 独立 Bootstrap 只包含安装器代码，不携带用户凭据；使用摘要由平台生成的命令校验完整性。
+router.get('/bootstrap-package', (req, res) => {
+  const buffer = standaloneBootstrapBuffer();
+  if (!buffer) {
+    return res.status(503).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: '独立 Bootstrap 制品不可用' });
+  }
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="fuxi-bootstrap.cjs"');
+  res.setHeader('Content-Length', String(buffer.length));
+  res.send(buffer);
+});
+
+// 短期会话只允许独立 Bootstrap 使用，Agent 不直接接触完整 manifest。
+router.get('/bootstrap-session', (req, res) => {
+  const session = readBootstrapSession(getBearerToken(req));
+  if (!session.ok) {
+    const status = session.reason === 'BOOTSTRAP_SESSION_EXPIRED' ? 410 : 401;
+    return res.status(status).json({ success: false, code: session.reason, message: 'Bootstrap 会话无效或已过期' });
+  }
+  const user = findUserById(session.userId);
+  if (!user) return res.status(401).json({ success: false, code: 'USER_NOT_FOUND', message: '用户不存在' });
+
+  const requestedClient = String(req.query.client || 'auto').trim().toLowerCase();
+  if (!['auto', 'workbuddy', 'cursor'].includes(requestedClient)) {
+    return res.status(400).json({ success: false, code: 'UNSUPPORTED_CLIENT', message: '当前 Bootstrap 仅支持 WorkBuddy、Cursor 或 auto' });
+  }
+  const mcpDir = configuredMcpDir();
+  const skillDir = configuredSkillDir();
+  const standalone = standaloneBootstrapBuffer();
+  if (!mcpDir || !skillDir || !standalone) {
+    return res.status(503).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: '平台制品源目录不可用' });
+  }
+  const mcpArtifact = artifactMetadata(packageBuffer('mcp', mcpDir, 'fuxi-platform-mcp'));
+  const skillArtifact = artifactMetadata(packageBuffer('skill', skillDir, SKILL_NAME));
+  const versions = {
+    mcp: componentVersion(mcpDir, 'package.json'),
+    skill: skillVersion(skillDir),
+    minNode: '18.0.0'
+  };
+  const token = generateToken(user, { expiresIn: '3600s' });
+  const connect = createConnectCode(user.id);
+  const manifest = {
+    schema: 'fuxi-bootstrap/2',
+    bootstrapId: session.bootstrapId,
+    apiUrl: session.apiUrl,
+    expiresAt: session.expiresAt,
+    installToken: token,
+    connectCode: connect.code,
+    connectCodeExpiresAt: connect.expiresAt,
+    artifacts: {
+      mcp: { url: `${session.apiUrl}/api/integrations/mcp-package`, ...mcpArtifact },
+      skill: { url: `${session.apiUrl}/api/integrations/skill-package`, ...skillArtifact }
+    },
+    versions,
+    client: { name: requestedClient }
+  };
+  res.json({ success: true, data: { manifest, expiresAt: session.expiresAt, connectCodeExpiresAt: connect.expiresAt } });
 });
 
 function sendAgentUpdateError(res, error) {
@@ -329,7 +463,7 @@ router.get('/skill-package', requireAuth, (req, res) => {
   if (!skillDir) {
     return res.status(503).json({ success: false, code: 'SKILL_DISTRIBUTION_UNAVAILABLE', message: 'Skill 分发目录未配置' });
   }
-  sendZip(res, `${SKILL_NAME}.zip`, zip => addDirectory(zip, skillDir, SKILL_NAME));
+  sendZipBuffer(res, `${SKILL_NAME}.zip`, packageBuffer('skill', skillDir, SKILL_NAME));
 });
 
 router.get('/mcp-package', requireAuth, (req, res) => {
@@ -337,7 +471,7 @@ router.get('/mcp-package', requireAuth, (req, res) => {
   if (!mcpDir) {
     return res.status(503).json({ success: false, code: 'MCP_DISTRIBUTION_UNAVAILABLE', message: 'MCP 分发目录不可用' });
   }
-  sendZip(res, 'fuxi-platform-mcp.zip', zip => addDirectory(zip, mcpDir, 'fuxi-platform-mcp'));
+  sendZipBuffer(res, 'fuxi-platform-mcp.zip', packageBuffer('mcp', mcpDir, 'fuxi-platform-mcp'));
 });
 
 module.exports = router;

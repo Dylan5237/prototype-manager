@@ -374,6 +374,19 @@ function createTables() {
     )
   `);
 
+  // Bootstrap 短期会话：只保存凭据哈希，真实凭据仅返回给当前浏览器并由 AI 命令短暂携带。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS bootstrap_sessions (
+      credential_hash TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      bootstrap_id TEXT UNIQUE NOT NULL,
+      api_url TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+
   // MCP/Skill 发布清单：release_id 不复用，制品摘要和兼容条件随 manifest 固定。
   db.run(`
     CREATE TABLE IF NOT EXISTS agent_releases (
@@ -597,6 +610,7 @@ function createTables() {
   }
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_bootstrap_sessions_expiry ON bootstrap_sessions(expires_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_session ON agent_update_intents(session_id, status, requested_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_update_intents_user ON agent_update_intents(user_id, updated_at)`); } catch (e) {}
