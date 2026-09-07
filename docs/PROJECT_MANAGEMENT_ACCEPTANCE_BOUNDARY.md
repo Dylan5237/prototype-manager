@@ -106,7 +106,7 @@
 | 候选 | 字段嵌入 `prototype_changes` | `partial`：一个任务无法保留多次提交 |
 | 交接 | 仅任务创建者可领取/提交 | `partial`：是“自己的 AI”，不是团队分派 |
 | 审核/CAS | owner/admin 采用、版本竞争保护已实现 | `partial`：审核记录不独立 |
-| 签出 | 关联 project_prototypes | `partial`：解绑会静默清理 |
+| 签出 | 关联 project_prototypes；安全解绑已保留历史并阻止 active 签出 | `partial`：尚未通过稳定 node_id 约束节点生命周期 |
 | 快照 | JSON 聚合快照 | `partial`：未覆盖稳定节点和分工实体 |
 | Skill/MCP | 能领取并提交原型修改 | `contract-change-required`：任务 v2 需双仓更新 |
 
@@ -126,5 +126,5 @@
 
 - `29.0`：合同、backlog、迭代计划和实体关系图已提交为 `49a46bb3`。
 - `29.1`：安全解绑实现已提交为 `3e01aef9`；后端完整回归 `69/69`，前端 production build 通过。
-- 16077：测试 release `20260907-145510-3e01aef9` 已切换，health `200`、bootstrap 未认证 `401`。
-- 未验收：应用内浏览器连续两次连接超时，尚无解绑按钮、冲突提示和三角色路径的真实页面证据；不得据此关闭 `29.1` 或 `BL-011`。
+- 16077：测试 release `20260907-173525-b0c78c97` 已由平台与 Skill 的 GitLab `develop` 新鲜构建并切换，health `200`、bootstrap 未认证 `401`；三级节点和四条绑定已由认证 API 回读。
+- 未验收：尚无解绑按钮、冲突提示和三角色路径的完整人工页面证据；不得据此关闭 `29.1` 或 `BL-011`。
