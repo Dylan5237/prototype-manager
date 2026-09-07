@@ -39,9 +39,11 @@ test('seeds all product prompt scenarios and renders built-in Mock data', () => 
 
   const template = getPromptTemplate('mcp.onboarding');
   const preview = previewPromptTemplate('mcp.onboarding');
-  assert.ok(template.mockData.bootstrapManifestJson);
+  assert.ok(template.mockData.canonicalBootstrapCommand);
   assert.match(preview, /check_connection/);
-  assert.match(preview, /mock-install-token/);
+  assert.match(preview, /唯一标准命令/);
+  assert.match(preview, /Node.js >= 18/);
+  assert.doesNotMatch(preview, /mock-install-token|bootstrapManifestJson|--mcp-zip|--skill-zip/);
   assert.match(preview, /quickStartGuide|帮助手册/);
   assert.doesNotMatch(preview, /{{\s*[A-Za-z]/);
 });

@@ -84,46 +84,35 @@ const PROJECT_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格按�
 【完成说明】
 上传候选后，请返回：已领取任务、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。`;
 
-const MCP_ONBOARDING_TEMPLATE = `请执行“伏羲平台 MCP 接入任务”。不要让我手工编辑配置文件。
+const MCP_ONBOARDING_TEMPLATE = `请执行“伏羲平台 MCP 接入任务”。你的职责是识别当前 AI 工具和 Node.js 能力，然后执行平台生成的一条标准命令；不要让我手工编辑配置文件。
 
-目标：让当前 AI 工具发现 fuxi-prototype Skill，并能够调用伏羲 MCP。
+目标：让当前 AI 工具发现 {{skillName}} Skill，并能够调用伏羲 MCP。
 
-执行边界：
-- MCP 尚未接入前，只能使用你自己的终端、文件读写、HTTP 下载和 Node.js 能力；此时不能调用伏羲 MCP。
-- MCP 接入后，才调用伏羲 MCP 工具；不要猜测工具名或参数。
-- 当前客户端必须支持 MCP stdio、本地 Node.js >= 18、用户目录读写和本地 Skill/Rules。任一条件不满足，立即报告对应原因并停止。
+【执行边界】
+- 接入完成前，不要调用伏羲 MCP 工具；只使用你自己的终端执行能力。
+- 只允许执行下面这条平台生成命令。不要改写、拆分、重排或替换其中的参数，不要自行生成安装命令。
+- 当前会话必须支持本地终端、Node.js >= 18、用户目录读写和 MCP stdio；任一条件不满足，报告原因并停止。
+- Bootstrap 会在内部完成会话获取、制品下载、SHA-256 校验、安装、备份、配置、首次连接自检和必要重试；不要介入这些内部步骤。
 
-接入参数：
-- API: {{baseUrl}}
-- Skill: {{skillName}}
-- Skill 安装包: {{skillUrl}}
-- MCP 安装包: {{mcpUrl}}
-- 安装 token 过期时间: {{tokenExpiresLocal}}（Asia/Shanghai）
-- 一次性连接码过期时间: {{codeExpiresLocal}}（Asia/Shanghai）
-- Bootstrap manifest（只写入临时目录，安装程序会在结束时清理）：
-{{bootstrapManifestJson}}
+【接入凭据】
+- 标准命令中的 Bootstrap 会话至 {{bootstrapSessionExpiresLocal}}（Asia/Shanghai）有效；不要回显、复制到其他消息或写入文件。
 
-请严格执行以下步骤；任何一步失败立即停止，不要声称接入成功：
-0. 只读识别当前 AI 工具名称、版本和操作系统，完成“识别当前 AI 客户端”。如果当前工具是 WorkBuddy，不要自行推断、覆盖或传入 MCP 配置路径和 Skill 目标路径，bootstrap 会使用内置确定性路径：<用户目录>/.workbuddy/mcp.json 与 <用户目录>/.workbuddy/skills/fuxi-prototype；未知客户端才识别其绝对路径。如果无法确认客户端，报告 CLIENT_CONFIG_REQUIRED。
-1. 创建用户级持久化目录和临时目录。必须在实际执行 bootstrap.js install 的同一个 shell/terminal execution context、同一权限上下文中创建 manifest，并在创建后立即执行 install；不要用 File/Write 工具写 manifest 后再交给另一个 shell 或提权上下文。把 manifest 写入临时绝对路径 <manifestPath>，不要写入业务仓库；不要输出其中的 token、连接码或其他凭据。
-2. 仅为取得 bootstrap.js，使用你的 HTTP 能力按 mcpUrl 下载一次 MCP ZIP 到临时目录，并解压到临时目录；不要下载或解压 Skill ZIP，不要检查无关文件。确认存在 <MCP包解压目录>/fuxi-platform-mcp/src/bootstrap.js。
-3. 运行唯一安装入口（不要再单独运行 preflight 或重复执行子步骤）：
-   如果当前工具是 WorkBuddy，严格使用：node <MCP包解压目录>/fuxi-platform-mcp/src/bootstrap.js install --manifest <manifestPath> --client workbuddy --mcp-zip <MCP ZIP绝对路径> --cleanup-manifest；不得传 --mcp-config 或 --skill-target。对于未知客户端，仅在 bootstrap 无法确定路径时，才按识别结果补充这两个参数。
-   该程序会校验已下载的 MCP ZIP，同时自行下载并校验 Skill ZIP，完成备份、安装、配置合并和首次 MCP 自检；不要手工下载 Skill ZIP，不要重复下载 MCP ZIP。
-4. 只解析安装程序输出的最终 JSON：必须是 status=COMPLETE 且 mcpConnected=true、skillReady=true；reason=ALREADY_COMPLETE 也视为幂等成功。出现 BOOTSTRAP_LOCKED、AUTHENTICATION_FAILED 或其他失败时，报告 step/code/message 后停止。
-5. 如果 reloadRequired=true，让当前 AI 工具重载 MCP 配置；无法自动重载时只报告 RELOAD_REQUIRED，不要轮询、不要重复安装。重载完成后，调用伏羲 MCP 工具 check_connection({}) 一次，必须得到 ok=true 且 authentication=verified。
-6. 仅在上一步验证成功后，调用一次 tools/list，确认至少存在 check_connection、validate_project、pack_project、validate_zip、deliver_project；同时检查最终 <Skill绝对目录>/SKILL.md 是否存在，并报告当前 AI 工具是否发现 Skill。没有发现证据时不得声称完成。
-7. 只报告：AI 工具、操作系统、安装状态、MCP 连接、Skill 发现、是否需要重启、新会话是否可用、MCP/Skill 版本和各阶段耗时。禁止回显 token、access token、refresh token、连接码、密码或凭据文件内容。
+【唯一标准命令】
+{{canonicalBootstrapCommand}}
 
-MCP stdio 配置由安装程序写入，入口为 <持久化MCP目录>/fuxi-platform-mcp/src/launcher.js，环境变量包括：
-  FUXI_API_URL: "{{baseUrl}}"
-  FUXI_CREDENTIALS_FILE: "<实际绝对路径>/.fuxi/mcp-credentials.json"
-  FUXI_MCP_TARGET: "<持久化MCP目录>/fuxi-platform-mcp/src/server.js"
-  FUXI_INSTALL_ROOT: "<实际绝对路径>/.fuxi/agent-runtime"
-  FUXI_SKILL_TARGET: "<当前客户端实际Skill目录>/fuxi-prototype"
-首次自检使用 FUXI_CONNECT_CODE；连接码只用于首次自检，不得写入长期配置，安装成功后由程序移除。
+【严格步骤】
+1. 只读识别当前 AI 客户端（Host）名称、版本和操作系统，并确认 Node.js 主版本 >= 18。识别结果只用于最终报告，不要修改上面的命令。
+2. 在当前同一 shell、同一权限上下文中，原样执行上面的唯一标准命令，并等待它退出；不要另起沙箱、提权终端或并行执行第二次。
+3. 只解析该命令输出的最终 JSON。只有 status=COMPLETE 且 mcpConnected=true、skillReady=true，或 reason=ALREADY_COMPLETE，才可进入下一步；否则报告 error.code、step、message 并停止。
+4. 若结果包含 reloadRequired=true，让当前 AI 工具重载 MCP 配置；无法自动重载时报告 RELOAD_REQUIRED，并停止，不要轮询或再次安装。
+5. 重载完成后，只调用一次伏羲 MCP 工具 check_connection({})，必须得到 ok=true 且 authentication=verified。失败时报告真实结果，不要声称接入成功。
+6. 仅在连接验证成功后执行一次 tools/list，确认至少存在 check_connection、validate_project、pack_project、validate_zip、deliver_project；同时确认 {{skillName}} Skill 已被当前 AI 工具发现。没有证据就报告未验证。
+7. 最终只报告：AI 工具、操作系统、Node.js 版本、标准命令退出码、安装状态、MCP 连接、Skill 发现、是否需要重启、新会话是否可用、MCP/Skill 版本和阶段耗时。禁止回显任何 session、token、连接码、密码或凭据文件内容。
 
-错误处理：下载、校验、安装、连接或 Skill 发现失败时，保留旧安装、报告结构化失败结果并停止；权限不足报告 AUTHORIZATION_REQUIRED，认证失败或连接码失效报告 AUTHENTICATION_FAILED；不要调用业务工具。首次接入完成后，后续 MCP 和 Skill 更新由稳定 launcher 在 AI 客户端下次启动时处理，不要重复执行完整接入流程。
+【失败处理】
+- 权限、客户端不支持、配置无效、制品校验失败或认证失败：原样报告结构化 code/step/message 并停止，不要重试命令。
+- 网络超时或临时网络错误：标准命令会在内部有限重试；命令退出后仍失败则报告真实错误。
+- 首次接入完成后，打开 AI 工具的新会话，再调用 check_connection({}) 确认可用；不要重新执行首次接入命令。
 
 接入成功后引导我使用伏羲平台（帮助手册 v{{helpVersion}}）：
 {{quickStartGuide}}`;
@@ -195,32 +184,16 @@ const PROMPT_TEMPLATE_DEFAULTS = [
   {
     key: 'mcp.onboarding',
     name: '接入平台 MCP',
-    description: '引导 AI 工具识别本地配置、安装 MCP 与 Skill，并完成连接验证。',
+    description: '引导 AI 工具识别 Node.js 与 Host，并执行平台生成的单条接入命令。',
     template: MCP_ONBOARDING_TEMPLATE,
-    variables: ['baseUrl', 'skillName', 'skillUrl', 'mcpUrl', 'token', 'tokenExpiresLocal', 'connectCode', 'codeExpiresLocal', 'bootstrapManifestJson', 'quickStartGuide', 'helpVersion'],
+    variables: ['baseUrl', 'skillName', 'canonicalBootstrapCommand', 'bootstrapSessionExpiresLocal', 'quickStartGuide', 'helpVersion'],
     mockData: {
       baseUrl: 'http://fuxi.example.test',
       skillName: 'fuxi-prototype',
-      skillUrl: 'http://fuxi.example.test/api/integrations/skill-package',
-      mcpUrl: 'http://fuxi.example.test/api/integrations/mcp-package',
-      token: 'mock-install-token',
-      tokenExpiresLocal: '2026-09-03 13:00:00',
-      connectCode: 'FX-MOCK-CONNECT',
-      codeExpiresLocal: '2026-09-03 12:20:00',
+      bootstrapSessionExpiresLocal: '2026-09-03 12:15:00',
+      canonicalBootstrapCommand: 'node -e "eval(Buffer.from(\'BASE64_LOADER\',\'base64\').toString())" -- "http://fuxi.example.test/api/integrations/bootstrap-package" "sha256" "http://fuxi.example.test/api/integrations/bootstrap-session" "opaque-session" "auto"',
       helpVersion: '1.0',
       quickStartGuide: '【伏羲平台快速入门】\n\n1. 打开「原型列表」生成创建提示词并发送给已接入的 AI。\n2. 修改原型时先判断是否已绑定项目。\n3. 完成预览、版本和权限确认后再发布或分享。',
-      bootstrapManifestJson: JSON.stringify({
-        schema: 'fuxi-bootstrap/2',
-        bootstrapId: 'mock-bootstrap-001',
-        apiUrl: 'http://fuxi.example.test',
-        installToken: 'mock-install-token',
-        connectCode: 'FX-MOCK-CONNECT',
-        artifacts: {
-          mcp: { url: 'http://fuxi.example.test/api/integrations/mcp-package', sha256: null, size: null },
-          skill: { url: 'http://fuxi.example.test/api/integrations/skill-package', sha256: null, size: null }
-        },
-        client: { name: 'auto' }
-      }, null, 2)
     }
   }
 ];

@@ -12,7 +12,7 @@
         type="success"
         :closable="false"
         show-icon
-        :title="`安装 token 至 ${tokenExpiresLocal} 有效；连接码至 ${connectCodeExpiresLocal} 有效。请尽快复制提示词给 AI 助手完成首次兑换。`"
+        :title="`标准接入会话至 ${bootstrapSessionExpiresLocal} 有效。请尽快复制提示词给 AI 助手完成首次接入。`"
       />
       <el-alert
         v-else
@@ -48,11 +48,9 @@ import { copyText as copyClipboardText } from '../utils/clipboard'
 const visible = ref(false)
 const loading = ref(false)
 const prompt = ref('')
-const tokenExpiresAt = ref('')
-const connectCodeExpiresAt = ref('')
+const bootstrapSessionExpiresAt = ref('')
 
-const tokenExpiresLocal = computed(() => formatExpiresAt(tokenExpiresAt.value))
-const connectCodeExpiresLocal = computed(() => formatExpiresAt(connectCodeExpiresAt.value))
+const bootstrapSessionExpiresLocal = computed(() => formatExpiresAt(bootstrapSessionExpiresAt.value))
 
 function formatExpiresAt(value) {
   if (!value) return ''
@@ -63,8 +61,7 @@ function formatExpiresAt(value) {
 
 function resetPrompt() {
   prompt.value = ''
-  tokenExpiresAt.value = ''
-  connectCodeExpiresAt.value = ''
+  bootstrapSessionExpiresAt.value = ''
 }
 
 async function loadPrompt() {
@@ -72,8 +69,7 @@ async function loadPrompt() {
   try {
     const res = await getAgentBootstrap()
     prompt.value = res.data.data.prompt
-    tokenExpiresAt.value = res.data.data.expiresAt
-    connectCodeExpiresAt.value = res.data.data.connectCodeExpiresAt
+    bootstrapSessionExpiresAt.value = res.data.data.bootstrapSession?.expiresAt || ''
   } catch (error) {
     resetPrompt()
     ElMessage.error(error.response?.data?.message || '生成 Skill + MCP 接入提示词失败')
