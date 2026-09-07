@@ -14,6 +14,7 @@ const {
   BootstrapError,
   acquireBootstrapLock,
   clientTargets,
+  downloadArtifact,
   extractPackage,
   install,
   mergeMcpConfig,
@@ -165,6 +166,55 @@ test('local lock uses staleMs as fallback for invalid owner content', () => {
     const release = acquireFileLockSync(lockFile, { staleMs: 60 * 60 * 1000 });
     release();
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('artifact downloads retry transient network failures but fail fast on authorization failures', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-retry-'));
+  const body = Buffer.from('artifact');
+  let transientRequests = 0;
+  let unauthorizedRequests = 0;
+  let server;
+  try {
+    server = http.createServer((req, res) => {
+      if (req.url === '/transient') {
+        transientRequests += 1;
+        if (transientRequests < 3) {
+          res.writeHead(503);
+          res.end('temporary');
+          return;
+        }
+        res.writeHead(200, { 'Content-Length': body.length });
+        res.end(body);
+        return;
+      }
+      if (req.url === '/unauthorized') {
+        unauthorizedRequests += 1;
+        res.writeHead(401);
+        res.end('unauthorized');
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const downloaded = await downloadArtifact(
+      { url: `${baseUrl}/transient`, sha256: sha256(body), size: body.length },
+      '',
+      path.join(root, 'transient.bin'),
+      1000
+    );
+    assert.equal(downloaded.attempt, 3);
+    assert.equal(transientRequests, 3);
+    await assert.rejects(
+      () => downloadArtifact({ url: `${baseUrl}/unauthorized` }, '', path.join(root, 'unauthorized.bin'), 1000),
+      error => error instanceof BootstrapError && error.code === 'ARTIFACT_DOWNLOAD_FAILED'
+    );
+    assert.equal(unauthorizedRequests, 1);
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

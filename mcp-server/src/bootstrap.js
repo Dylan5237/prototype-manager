@@ -13,6 +13,8 @@ const { acquireFileLockSync } = require('./local-lock');
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 10000;
 const DEFAULT_TIMEOUT_MS = 15000;
+const MAX_NETWORK_ATTEMPTS = 3;
+const RETRY_BACKOFF_MS = 250;
 const DEFAULT_INSTALL_ROOT = path.join(os.homedir(), '.fuxi', 'agent-runtime');
 const DEFAULT_CREDENTIALS_FILE = path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
 const SHARED_INSTALL_LOCK = path.join('install', 'update.lock');
@@ -68,6 +70,21 @@ function workbuddyDefaultMcpConfig() {
 
 function workbuddyDefaultSkillTarget() {
   return path.join(os.homedir(), '.workbuddy', 'skills', PACKAGE_ROOTS.skill);
+}
+
+function detectKnownClient() {
+  const requested = String(process.env.FUXI_CLIENT || '').trim().toLowerCase();
+  if (requested && requested !== 'auto') return requested;
+  const candidates = [
+    { name: 'workbuddy', marker: path.join(os.homedir(), '.workbuddy') },
+    { name: 'cursor', marker: path.join(os.homedir(), '.cursor') }
+  ].filter(candidate => fs.existsSync(candidate.marker));
+  if (candidates.length === 1) return candidates[0].name;
+  throw new BootstrapError(
+    'CLIENT_CONFIG_REQUIRED',
+    candidates.length ? '无法唯一识别当前 AI 工具，请在同一命令中指定 --client' : '未识别到受支持的 AI 工具目录',
+    { client: 'auto', candidates: candidates.map(candidate => candidate.name) }
+  );
 }
 
 function validateSkillTarget(skillTarget, clientName) {
@@ -163,7 +180,8 @@ function readManifest(file) {
 
 function clientTargets(manifest, options = {}) {
   const client = manifest.client || {};
-  const name = String(options.client || client.name || 'auto').trim().toLowerCase();
+  let name = String(options.client || client.name || 'auto').trim().toLowerCase();
+  if (name === 'auto') name = detectKnownClient();
   const configValue = options['mcp-config'] || client.mcpConfig || process.env.FUXI_MCP_CONFIG || '';
   const skillValue = options['skill-target'] || client.skillTarget || process.env.FUXI_SKILL_TARGET || '';
 
@@ -336,10 +354,49 @@ async function fetchBuffer(urlValue, token, timeoutMs = DEFAULT_TIMEOUT_MS) {
   }
 }
 
+function isRetryableNetworkError(error) {
+  if (!error) return false;
+  if (error instanceof BootstrapError) {
+    const status = Number(error.details && error.details.status);
+    if (['ARTIFACT_DIGEST_MISMATCH', 'ARTIFACT_SIZE_MISMATCH', 'ARTIFACT_INVALID_ZIP', 'ARTIFACT_TOO_LARGE', 'MANIFEST_INVALID', 'BOOTSTRAP_SESSION_INVALID', 'BOOTSTRAP_SESSION_EXPIRED'].includes(error.code)) return false;
+    if (error.code === 'NETWORK_TIMEOUT') return true;
+    return error.code === 'ARTIFACT_DOWNLOAD_FAILED' && (!status || status === 408 || status === 429 || status >= 500);
+  }
+  return error.name === 'AbortError' || error.name === 'TypeError' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT';
+}
+
+async function fetchBootstrapManifest(endpoint, session, timeoutMs = DEFAULT_TIMEOUT_MS) {
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
+    try {
+      const response = await fetchBuffer(endpoint, session, timeoutMs);
+      let payload;
+      try {
+        payload = JSON.parse(response.buffer.toString('utf8'));
+      } catch (error) {
+        throw new BootstrapError('MANIFEST_INVALID', 'Bootstrap session response is not valid JSON');
+      }
+      if (!payload || payload.success !== true || !payload.data || !payload.data.manifest) {
+        throw new BootstrapError('MANIFEST_INVALID', 'Bootstrap session response has no manifest');
+      }
+      return payload.data.manifest;
+    } catch (error) {
+      lastError = error;
+      const status = Number(error && error.details && error.details.status);
+      if (error && error.code === 'ARTIFACT_DOWNLOAD_FAILED' && [401, 403, 404].includes(status)) {
+        lastError = new BootstrapError('BOOTSTRAP_SESSION_INVALID', 'Bootstrap session is invalid or expired', { status });
+      }
+      if (!isRetryableNetworkError(lastError) || attempt === MAX_NETWORK_ATTEMPTS) break;
+      await new Promise(resolve => setTimeout(resolve, RETRY_BACKOFF_MS * attempt));
+    }
+  }
+  throw lastError;
+}
+
 async function downloadArtifact(artifact, token, targetFile, timeoutMs = DEFAULT_TIMEOUT_MS) {
   if (!artifact || !artifact.url) throw new BootstrapError('MANIFEST_INVALID', 'Artifact URL is missing');
   let lastError;
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= MAX_NETWORK_ATTEMPTS; attempt += 1) {
     try {
       const response = await fetchBuffer(artifact.url, token, timeoutMs);
       const actualSha256 = sha256(response.buffer);
@@ -355,8 +412,8 @@ async function downloadArtifact(artifact, token, targetFile, timeoutMs = DEFAULT
       return { path: targetFile, size: response.buffer.length, sha256: actualSha256, attempt };
     } catch (error) {
       lastError = error;
-      if (error.code === 'ARTIFACT_DIGEST_MISMATCH' || error.code === 'ARTIFACT_SIZE_MISMATCH' || error.code === 'ARTIFACT_INVALID_ZIP') break;
-      if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 250));
+      if (!isRetryableNetworkError(error) || attempt === MAX_NETWORK_ATTEMPTS) break;
+      await new Promise(resolve => setTimeout(resolve, RETRY_BACKOFF_MS * attempt));
     }
   }
   throw lastError;
@@ -744,6 +801,24 @@ async function install(manifest, options = {}) {
   }
 }
 
+async function connect(options = {}) {
+  const session = String(options.session || '').trim();
+  const endpoint = String(options.endpoint || '').trim();
+  if (!session) throw new BootstrapError('BOOTSTRAP_SESSION_REQUIRED', 'Bootstrap session is required');
+  if (!endpoint) throw new BootstrapError('BOOTSTRAP_ENDPOINT_REQUIRED', 'Bootstrap session endpoint is required');
+  const manifest = await fetchBootstrapManifest(endpoint, session, Number(options['timeout-ms'] || DEFAULT_TIMEOUT_MS));
+  if (manifest.schema !== 'fuxi-bootstrap/2' || !manifest.bootstrapId || !manifest.apiUrl) {
+    throw new BootstrapError('MANIFEST_INVALID', 'Bootstrap session returned an invalid manifest');
+  }
+  const client = String(options.client || manifest.client && manifest.client.name || 'auto').trim().toLowerCase();
+  return install(manifest, {
+    ...options,
+    client,
+    'mcp-zip': undefined,
+    'skill-zip': undefined
+  });
+}
+
 function verify(stateFile) {
   const state = readJson(absolute(stateFile, 'state'));
   let configHasFuxi = false;
@@ -795,6 +870,11 @@ async function main(argv = process.argv.slice(2)) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       return 0;
     }
+    if (parsed.command === 'connect') {
+      const result = await connect(parsed.values);
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
     if (parsed.command === 'verify') {
       const result = verify(parsed.values.state);
       process.stdout.write(`${JSON.stringify({
@@ -804,7 +884,7 @@ async function main(argv = process.argv.slice(2)) {
       }, null, 2)}\n`);
       return result.ok ? 0 : 1;
     }
-    throw new BootstrapError('USAGE', 'Usage: node bootstrap.js preflight|install --manifest <path> | verify --state <path>');
+    throw new BootstrapError('USAGE', 'Usage: node bootstrap.js connect --session <session> --endpoint <url> --client <client> | preflight|install --manifest <path> | verify --state <path>');
   } catch (error) {
     process.stdout.write(`${JSON.stringify(publicError(error), null, 2)}\n`);
     return 1;
@@ -833,6 +913,7 @@ module.exports = {
   acquireBootstrapLock,
   selfTest,
   install,
+  connect,
   verify,
   main
 };

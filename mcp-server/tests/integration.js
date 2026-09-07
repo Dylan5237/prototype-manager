@@ -325,33 +325,51 @@ async function main() {
     assert(bootstrap.data.prompt.includes('check_connection'));
     assert(bootstrap.data.prompt.includes('deliver_project'));
     assert(bootstrap.data.prompt.includes('识别当前 AI 客户端'));
-    assert(bootstrap.data.prompt.includes('AUTHORIZATION_REQUIRED'));
-    assert(bootstrap.data.prompt.includes('AUTHENTICATION_FAILED'));
+    assert(bootstrap.data.prompt.includes('结构化 code/step/message'));
     assert(!bootstrap.data.prompt.includes('admin123'));
     assert(bootstrap.data.prompt.includes('伏羲平台快速入门'));
-    assert(bootstrap.data.prompt.includes('仅为取得 bootstrap.js'));
-    assert(bootstrap.data.prompt.includes('运行唯一安装入口'));
-    assert(bootstrap.data.prompt.includes('FUXI_MCP_TARGET'));
+    assert(bootstrap.data.prompt.includes('唯一标准命令'));
+    assert(bootstrap.data.prompt.includes('同一 shell、同一权限上下文'));
+    assert(bootstrap.data.prompt.includes('原样执行'));
     assert(bootstrap.data.prompt.includes('重载 MCP 配置'));
-    assert(bootstrap.data.prompt.includes('同一个 shell/terminal execution context'));
-    assert(bootstrap.data.prompt.includes('如果当前工具是 WorkBuddy'));
-    assert(bootstrap.data.prompt.includes('--client workbuddy'));
-    assert(bootstrap.data.prompt.includes('不得传 --mcp-config 或 --skill-target'));
-    assert(!bootstrap.data.prompt.includes('.cursor/skills'));
+    assert(bootstrap.data.prompt.includes('connect --session'));
+    assert(bootstrap.data.prompt.includes('tools/list'));
+    assert(!bootstrap.data.prompt.includes('bootstrapManifestJson'));
+    assert(!bootstrap.data.prompt.includes('--mcp-zip'));
+    assert(!bootstrap.data.prompt.includes('--skill-zip'));
+    assert(!bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
+    assert(!bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
     assert(bootstrap.data.connectCode);
     assert(bootstrap.data.connectCodeExpiresAt);
+    assert(bootstrap.data.bootstrapSession.credential);
+    assert(bootstrap.data.canonicalBootstrap.command.includes('bootstrap-package'));
+    assert(bootstrap.data.canonicalBootstrap.command.includes('connect --session'));
     assert.equal(bootstrap.data.bootstrapManifest.schema, 'fuxi-bootstrap/2');
+    assert.equal(bootstrap.data.bootstrapManifest.expiresAt, bootstrap.data.bootstrapSession.expiresAt);
     assert.equal(bootstrap.data.bootstrapManifest.artifacts.mcp.url, bootstrap.data.mcpUrl);
     assert.equal(bootstrap.data.bootstrapManifest.artifacts.skill.url, bootstrap.data.skillUrl);
-    assert(bootstrap.data.prompt.includes('src/bootstrap.js'));
-    assert(bootstrap.data.prompt.includes('--mcp-zip'));
-    assert(!bootstrap.data.prompt.includes('--skill-zip'));
+    assert.match(bootstrap.data.bootstrapManifest.artifacts.mcp.sha256, /^[a-f0-9]{64}$/);
+    assert.match(bootstrap.data.bootstrapManifest.artifacts.skill.sha256, /^[a-f0-9]{64}$/);
+    assert.match(bootstrap.data.bootstrapManifest.versions.mcp, /^\S+$/);
+    assert.match(bootstrap.data.bootstrapManifest.versions.skill, /^\S+$/);
+    assert.equal(bootstrap.data.bootstrapManifest.versions.minNode, '18.0.0');
+    const standaloneResponse = await fetch(bootstrap.data.canonicalBootstrap.url);
+    const standaloneBuffer = Buffer.from(await standaloneResponse.arrayBuffer());
+    assert.equal(standaloneResponse.status, 200);
+    assert.equal(require('crypto').createHash('sha256').update(standaloneBuffer).digest('hex'), bootstrap.data.canonicalBootstrap.sha256);
+    const sessionManifestResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session?client=workbuddy`, {
+      headers: { Authorization: `Bearer ${bootstrap.data.bootstrapSession.credential}` }
+    });
+    const sessionManifest = await sessionManifestResponse.json();
+    assert.equal(sessionManifestResponse.status, 200);
+    assert.equal(sessionManifest.data.manifest.schema, 'fuxi-bootstrap/2');
+    assert.equal(sessionManifest.data.manifest.bootstrapId, bootstrap.data.bootstrapSession.bootstrapId);
+    assert.equal(sessionManifest.data.manifest.expiresAt, bootstrap.data.bootstrapSession.expiresAt);
+    assert.equal(sessionManifest.data.manifest.artifacts.mcp.sha256, bootstrap.data.bootstrapManifest.artifacts.mcp.sha256);
+    assert.equal(sessionManifest.data.manifest.artifacts.skill.sha256, bootstrap.data.bootstrapManifest.artifacts.skill.sha256);
+    assert.deepEqual(sessionManifest.data.manifest.versions, bootstrap.data.bootstrapManifest.versions);
     const connectCodeRemainingMs = Date.parse(bootstrap.data.connectCodeExpiresAt) - Date.now();
     assert(connectCodeRemainingMs > 18 * 60 * 1000 && connectCodeRemainingMs <= 20 * 60 * 1000 + 5000);
-    assert(bootstrap.data.prompt.includes('FUXI_CONNECT_CODE'));
-    assert(bootstrap.data.prompt.includes('FUXI_CREDENTIALS_FILE'));
-    assert(bootstrap.data.prompt.indexOf('仅为取得 bootstrap.js') < bootstrap.data.prompt.indexOf('运行唯一安装入口'));
-    assert(bootstrap.data.prompt.indexOf('运行唯一安装入口') < bootstrap.data.prompt.indexOf('重载 MCP 配置'));
 
     // 一次性连接码兑换 access + refresh token，并登记设备会话
     const connectResponse = await fetch(`${apiUrl}/api/auth/mcp/connect`, {
