@@ -83,17 +83,18 @@ test('thin launcher reports unsupported Node before any download logic', () => {
     onboardingSha256: '0'.repeat(64)
   });
   assert.doesNotMatch(command, /Buffer\.from\([^)]*base64|eval\(/i);
-  assert(command.length < 2500, `launcher command is too long: ${command.length}`);
+  assert(command.length < 1900, `launcher command is too long: ${command.length}`);
   assert.match(command, /^node -e "/);
   assert.match(command, /fetch/);
   assert.match(command, /spawn/);
   const source = extractLauncherSource(command);
-  const guardIndex = source.indexOf("Number(process.versions.node.split('.')[0])<18");
+  const guardIndex = source.indexOf("+p.versions.node.split('.')[0]<18");
   const fetchIndex = source.indexOf('fetch(');
   assert(guardIndex >= 0 && guardIndex < fetchIndex);
 
   const output = [];
   const sandboxProcess = {
+    argv: [],
     versions: { node: '16.20.2' },
     stdout: { write: value => output.push(value) },
     exitCode: 0
