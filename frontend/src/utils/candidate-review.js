@@ -23,6 +23,73 @@ export function candidateStatusMeta(status) {
   return CANDIDATE_STATUS_META[status] || { label: status || '未知', type: 'info' }
 }
 
+export const HISTORY_ATTEMPT_STATUSES = Object.freeze([
+  'ready',
+  'submitted',
+  'validation_failed',
+  'returned',
+  'stale',
+  'adopted'
+])
+
+export const HISTORY_ATTEMPT_STATUS_META = Object.freeze({
+  ready: { label: '已被替代', type: 'info' },
+  submitted: { label: '校验中', type: 'info' },
+  validation_failed: { label: '校验失败', type: 'danger' },
+  returned: { label: '已退回', type: 'danger' },
+  stale: { label: '已过期', type: 'warning' },
+  adopted: { label: '已采用', type: 'success' }
+})
+
+export function historyAttemptStatusMeta(status) {
+  return HISTORY_ATTEMPT_STATUS_META[status] || { label: status || '未知', type: 'info' }
+}
+
+export function compareSubmissionRecency(left, right) {
+  const byNumber = Number(right?.submission_no || 0) - Number(left?.submission_no || 0)
+  if (byNumber !== 0) return byNumber
+  return String(right?.created_at || '').localeCompare(String(left?.created_at || ''))
+}
+
+export function pickPendingRevision(candidates = []) {
+  return [...candidates]
+    .filter(item => item?.status === 'ready')
+    .sort(compareSubmissionRecency)[0] || null
+}
+
+export function partitionReviewSubmissions(candidates = []) {
+  const pendingRevision = pickPendingRevision(candidates)
+  const historyAttempts = [...candidates]
+    .filter(item => item && (!pendingRevision || item.id !== pendingRevision.id))
+    .filter(item => HISTORY_ATTEMPT_STATUSES.includes(item.status))
+    .sort(compareSubmissionRecency)
+  return { pendingRevision, historyAttempts }
+}
+
+export function revisionNote(submission, task) {
+  const fromSubmission = [
+    submission?.summary,
+    submission?.revision_note,
+    submission?.note,
+    submission?.comment
+  ].find(value => typeof value === 'string' && value.trim())
+  if (fromSubmission) return fromSubmission.trim()
+  const fromTask = [task?.requirement, task?.title, submission?.task_title]
+    .find(value => typeof value === 'string' && value.trim())
+  return fromTask ? fromTask.trim() : ''
+}
+
+export function officialVersionLabel(binding, task) {
+  const version = binding?.version_label ?? binding?.version_number ?? task?.base_version_number
+  if (version == null || version === '') return '正式版'
+  return `正式版 v${version}`
+}
+
+export function reviewStatusMeta(task, pendingRevision) {
+  if (pendingRevision) return { label: '待审', type: 'warning' }
+  return taskStatusMeta(task?.status)
+}
+
 export function displayPersonName(name, username, fallback = '未知用户') {
   return name || username || fallback
 }
@@ -52,7 +119,7 @@ export function buildCandidateTimeline(candidate) {
   const events = [{
     key: `${candidate.id}-submitted`,
     at: candidate.created_at,
-    title: `提交 #${candidate.submission_no}`,
+    title: '提交修订',
     detail: `${displayPersonName(candidate.submitter_name, candidate.submitter_username, '提交人')} · 基于 v${candidate.base_version_number}`,
     tone: 'info'
   }]
@@ -69,7 +136,7 @@ export function buildCandidateTimeline(candidate) {
     events.push({
       key: item.id || `${candidate.id}-val-${item.attempt_no}`,
       at: item.created_at,
-      title: `校验 #${item.attempt_no}`,
+      title: `校验 ${item.attempt_no}`,
       detail: parts.join(' · '),
       tone: item.status === 'passed' ? 'success' : 'danger'
     })
@@ -90,7 +157,7 @@ export function buildCandidateTimeline(candidate) {
       key: `${candidate.id}-stale`,
       at: candidate.updated_at,
       title: '已过期',
-      detail: '正式版本已变化，该候选不能再采用',
+      detail: '正式版本已变化，该修订不能再采用',
       tone: 'warning'
     })
   }
