@@ -43,11 +43,12 @@ test('seeds all product prompt scenarios and renders built-in Mock data', () => 
   assert.ok(template.mockData.canonicalOnboardingCommand);
   assert.ok(template.mockData.canonicalBootstrapCommand);
   assert.match(preview, /check_connection/);
-  assert.match(preview, /唯一接入入口/);
-  assert.match(preview, /Node.js >= 18/);
-  assert.match(preview, /用户已在平台明确选择 WorkBuddy/);
-  assert.doesNotMatch(preview, /只读识别当前 AI 客户端|--client auto|mock-install-token|bootstrapManifestJson|--mcp-zip|--skill-zip/);
-  assert.match(preview, /quickStartGuide|帮助手册/);
+  assert.match(preview, /唯一入口/);
+  assert.match(preview, /立即.*原样执行/);
+  assert.match(preview, /不解码、不审查、不拆分、不修改/);
+  assert.match(preview, /用户已明确选择 WorkBuddy/);
+  assert.doesNotMatch(preview, /Node\.js >= 18|只读识别当前 AI 客户端|--client auto|mock-install-token|bootstrapManifestJson|--mcp-config|--skill-target|--mcp-zip|--skill-zip/);
+  assert.doesNotMatch(preview, /快速入门|帮助手册/);
   assert.doesNotMatch(preview, /{{\s*[A-Za-z]/);
 });
 

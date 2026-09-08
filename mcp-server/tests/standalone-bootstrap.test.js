@@ -71,10 +71,10 @@ function runShell(command, env) {
   });
 }
 
-function decodeLauncherSource(command) {
-  const match = command.match(/Buffer\.from\('([^']+)'\s*,\s*'base64'\)/);
-  assert(match, 'launcher command must contain its encoded source');
-  return Buffer.from(match[1], 'base64').toString('utf8');
+function extractLauncherSource(command) {
+  const match = command.match(/^node -e "([^"]+)" -- /);
+  assert(match, 'launcher command must expose a readable inline Node source');
+  return match[1];
 }
 
 test('thin launcher reports unsupported Node before any download logic', () => {
@@ -82,13 +82,19 @@ test('thin launcher reports unsupported Node before any download logic', () => {
     onboardingUrl: 'https://fuxi.example.test/onboarding',
     onboardingSha256: '0'.repeat(64)
   });
-  const source = decodeLauncherSource(command);
-  const guardIndex = source.indexOf("Number(process.versions.node.split('.')[0])<18");
+  assert.doesNotMatch(command, /Buffer\.from\([^)]*base64|eval\(/i);
+  assert(command.length < 2000, `launcher command is too long: ${command.length}`);
+  assert.match(command, /^node -e "/);
+  assert.match(command, /fetch/);
+  assert.match(command, /spawn/);
+  const source = extractLauncherSource(command);
+  const guardIndex = source.indexOf("+p.versions.node.split('.')[0]<18");
   const fetchIndex = source.indexOf('fetch(');
   assert(guardIndex >= 0 && guardIndex < fetchIndex);
 
   const output = [];
   const sandboxProcess = {
+    argv: [],
     versions: { node: '16.20.2' },
     stdout: { write: value => output.push(value) },
     exitCode: 0
