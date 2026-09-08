@@ -4,10 +4,15 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { exec, spawn } = require('node:child_process');
 
 const { buildZip } = require('../src/fuxi-zip');
-const { buildStandaloneBootstrap, renderCanonicalBootstrapCommand } = require('../../backend/services/standalone-bootstrap');
+const {
+  buildStandaloneBootstrap,
+  buildOnboardingScript,
+  renderOnboardingLauncherCommand
+} = require('../../backend/services/standalone-bootstrap');
 
 function writeFixture(root, relative, content) {
   const file = path.join(root, ...relative.split('/'));
@@ -66,7 +71,38 @@ function runShell(command, env) {
   });
 }
 
-test('standalone bootstrap fetches a session manifest and completes install without local ZIPs', async () => {
+function decodeLauncherSource(command) {
+  const match = command.match(/Buffer\.from\('([^']+)'\s*,\s*'base64'\)/);
+  assert(match, 'launcher command must contain its encoded source');
+  return Buffer.from(match[1], 'base64').toString('utf8');
+}
+
+test('thin launcher reports unsupported Node before any download logic', () => {
+  const command = renderOnboardingLauncherCommand({
+    onboardingUrl: 'https://fuxi.example.test/onboarding',
+    onboardingSha256: '0'.repeat(64)
+  });
+  const source = decodeLauncherSource(command);
+  const guardIndex = source.indexOf("Number(process.versions.node.split('.')[0])<18");
+  const fetchIndex = source.indexOf('fetch(');
+  assert(guardIndex >= 0 && guardIndex < fetchIndex);
+
+  const output = [];
+  const sandboxProcess = {
+    versions: { node: '16.20.2' },
+    stdout: { write: value => output.push(value) },
+    exitCode: 0
+  };
+  vm.runInNewContext(source, { process: sandboxProcess });
+  const result = JSON.parse(output.join('').trim());
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.step, 'LOAD');
+  assert.equal(result.error.code, 'NODE_VERSION_UNSUPPORTED');
+  assert.equal(result.error.message, 'Node.js >= 18 is required');
+  assert.equal(sandboxProcess.exitCode, 1);
+});
+
+test('session-specific onboarding script delegates to standalone bootstrap and completes install', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-standalone-bootstrap-'));
   let server;
   try {
@@ -85,7 +121,13 @@ test('standalone bootstrap fetches a session manifest and completes install with
     fs.mkdirSync(path.dirname(skillTarget), { recursive: true });
     const apiRoot = path.join(root, 'home');
     let sessionRequests = 0;
+    let standalone;
     server = http.createServer((req, res) => {
+      if (req.url === '/bootstrap') {
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': standalone.length });
+        res.end(standalone);
+        return;
+      }
       if (req.url === '/session') {
         sessionRequests += 1;
         const manifest = {
@@ -116,12 +158,17 @@ test('standalone bootstrap fetches a session manifest and completes install with
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 
-    const standaloneFile = path.join(root, 'fuxi-bootstrap.cjs');
-    const standalone = Buffer.from(buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') }));
-    fs.writeFileSync(standaloneFile, standalone);
-    const result = await runNode(standaloneFile, [
-      'connect', '--session', 'opaque-session', '--endpoint', `http://127.0.0.1:${server.address().port}/session`, '--client', 'generic'
-    ], {
+    standalone = Buffer.from(buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') }));
+    const baseUrl = `http://127.0.0.1:${server.address().port}`;
+    const onboardingFile = path.join(root, 'fuxi-onboard.cjs');
+    fs.writeFileSync(onboardingFile, buildOnboardingScript({
+      bootstrapUrl: `${baseUrl}/bootstrap`,
+      bootstrapSha256: sha256(standalone),
+      sessionEndpoint: `${baseUrl}/session`,
+      session: 'opaque-session',
+      client: 'generic'
+    }));
+    const result = await runNode(onboardingFile, [], {
       ...process.env,
       HOME: apiRoot,
       USERPROFILE: apiRoot
@@ -141,17 +188,17 @@ test('standalone bootstrap fetches a session manifest and completes install with
   }
 });
 
-test('canonical loader refuses a standalone artifact whose SHA-256 does not match', async () => {
+test('thin launcher refuses an onboarding script whose SHA-256 does not match', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-standalone-loader-'));
   let server;
   try {
-    const standalone = Buffer.from(buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') }));
-    let bootstrapRequests = 0;
+    const onboarding = Buffer.from(`require('node:fs').writeFileSync(process.env.FUXI_TEST_MARKER, 'executed');\n`);
+    let onboardingRequests = 0;
     server = http.createServer((req, res) => {
-      if (req.url === '/bootstrap') {
-        bootstrapRequests += 1;
-        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': standalone.length });
-        res.end(standalone);
+      if (req.url === '/onboarding') {
+        onboardingRequests += 1;
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': onboarding.length });
+        res.end(onboarding);
         return;
       }
       res.writeHead(404);
@@ -159,46 +206,46 @@ test('canonical loader refuses a standalone artifact whose SHA-256 does not matc
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const command = renderCanonicalBootstrapCommand({
-      bootstrapUrl: `${baseUrl}/bootstrap`,
-      sessionEndpoint: `${baseUrl}/session`,
-      bootstrapSha256: '0'.repeat(64),
-      session: 'opaque-session',
-      client: 'generic'
+    const marker = path.join(root, 'executed.txt');
+    const command = renderOnboardingLauncherCommand({
+      onboardingUrl: `${baseUrl}/onboarding`,
+      onboardingSha256: '0'.repeat(64)
     });
-    const result = await runShell(command, { ...process.env, FUXI_TEST_ROOT: root });
+    const result = await runShell(command, { ...process.env, FUXI_TEST_MARKER: marker });
     assert(result.error);
-    assert.match(`${result.stdout}${result.stderr}`, /BOOTSTRAP_DIGEST_MISMATCH/);
-    assert.equal(bootstrapRequests, 1);
+    assert.match(`${result.stdout}${result.stderr}`, /ONBOARDING_DIGEST_MISMATCH/);
+    assert.equal(onboardingRequests, 1);
+    assert.equal(fs.existsSync(marker), false);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
 
-test('canonical loader retries transient standalone download failures before starting Bootstrap', async () => {
+test('thin launcher retries transient download errors and preserves child structured failures', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-standalone-loader-retry-'));
   let server;
+  let onboardingRequests = 0;
   let bootstrapRequests = 0;
-  let sessionRequests = 0;
   try {
-    const standalone = Buffer.from(buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') }));
+    const structuredFailure = Buffer.from(`process.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'PRECHECK',error:{code:'CLIENT_CONFIG_REQUIRED',message:'exact child failure'}})+'\\n');process.exitCode=1;\n`);
+    let onboarding;
     server = http.createServer((req, res) => {
-      if (req.url === '/bootstrap') {
-        bootstrapRequests += 1;
-        if (bootstrapRequests < 3) {
+      if (req.url === '/onboarding') {
+        onboardingRequests += 1;
+        if (onboardingRequests < 3) {
           res.writeHead(503);
           res.end('temporary');
           return;
         }
-        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': standalone.length });
-        res.end(standalone);
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': onboarding.length });
+        res.end(onboarding);
         return;
       }
-      if (req.url === '/session') {
-        sessionRequests += 1;
-        res.writeHead(401);
-        res.end('invalid session');
+      if (req.url === '/bootstrap') {
+        bootstrapRequests += 1;
+        res.writeHead(200, { 'Content-Type': 'application/javascript', 'Content-Length': structuredFailure.length });
+        res.end(structuredFailure);
         return;
       }
       res.writeHead(404);
@@ -206,18 +253,24 @@ test('canonical loader retries transient standalone download failures before sta
     });
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const baseUrl = `http://127.0.0.1:${server.address().port}`;
-    const command = renderCanonicalBootstrapCommand({
+    onboarding = Buffer.from(buildOnboardingScript({
       bootstrapUrl: `${baseUrl}/bootstrap`,
       sessionEndpoint: `${baseUrl}/session`,
-      bootstrapSha256: require('node:crypto').createHash('sha256').update(standalone).digest('hex'),
+      bootstrapSha256: sha256(structuredFailure),
       session: 'opaque-session',
       client: 'generic'
+    }));
+    const command = renderOnboardingLauncherCommand({
+      onboardingUrl: `${baseUrl}/onboarding`,
+      onboardingSha256: sha256(onboarding)
     });
     const result = await runShell(command, { ...process.env, FUXI_TEST_ROOT: root });
     assert(result.error);
-    assert.match(`${result.stdout}${result.stderr}`, /BOOTSTRAP_SESSION_INVALID/);
-    assert.equal(bootstrapRequests, 3);
-    assert.equal(sessionRequests, 1);
+    assert.match(`${result.stdout}${result.stderr}`, /CLIENT_CONFIG_REQUIRED/);
+    assert.match(`${result.stdout}${result.stderr}`, /exact child failure/);
+    assert.doesNotMatch(`${result.stdout}${result.stderr}`, /ONBOARDING_LAUNCHER_FAILED|BOOTSTRAP_LOADER_FAILED/);
+    assert.equal(onboardingRequests, 3);
+    assert.equal(bootstrapRequests, 1);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });

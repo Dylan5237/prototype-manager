@@ -6,7 +6,13 @@ const { requireAuth, requireRole, generateToken } = require('../middleware/auth'
 const { findUserById } = require('../services/db-users');
 const { createConnectCode } = require('../services/db-mcp-sessions');
 const { createBootstrapSession, readBootstrapSession } = require('../services/db-bootstrap-sessions');
-const { buildStandaloneBootstrap, renderCanonicalBootstrapCommand, sha256 } = require('../services/standalone-bootstrap');
+const {
+  buildStandaloneBootstrap,
+  buildOnboardingScript,
+  renderOnboardingLauncherCommand,
+  sha256
+} = require('../services/standalone-bootstrap');
+const { listOnboardingHosts, getOnboardingHost, renderSafeStopPrompt } = require('../services/onboarding-hosts');
 const { GitLabProvider } = require('../services/gitlab-provider');
 const {
   AgentUpdateError,
@@ -135,7 +141,7 @@ function writeSnapshotFile(file, content) {
   fs.renameSync(temp, file);
 }
 
-function createBootstrapSnapshot({ bootstrapId, expiresAt, mcp, skill, standalone, versions }) {
+function createBootstrapSnapshot({ bootstrapId, expiresAt, client, mcp, skill, standalone, onboarding, versions }) {
   const directory = bootstrapSnapshotDirectory(bootstrapId);
   if (!directory) throw new Error('Bootstrap snapshot id is invalid');
   if (fs.existsSync(BOOTSTRAP_SNAPSHOT_ROOT)) {
@@ -152,15 +158,18 @@ function createBootstrapSnapshot({ bootstrapId, expiresAt, mcp, skill, standalon
   writeSnapshotFile(path.join(directory, 'mcp.zip'), mcp);
   writeSnapshotFile(path.join(directory, 'skill.zip'), skill);
   writeSnapshotFile(path.join(directory, 'fuxi-bootstrap.cjs'), standalone);
+  writeSnapshotFile(path.join(directory, 'fuxi-onboard.cjs'), onboarding);
   const metadata = {
     schema: 'fuxi-bootstrap-snapshot/1',
     bootstrapId,
     expiresAt,
+    client,
     versions,
     artifacts: {
       mcp: artifactMetadata(mcp),
       skill: artifactMetadata(skill),
-      standalone: artifactMetadata(standalone)
+      standalone: artifactMetadata(standalone),
+      onboarding: artifactMetadata(onboarding)
     }
   };
   writeSnapshotFile(path.join(directory, 'metadata.json'), `${JSON.stringify(metadata, null, 2)}\n`);
@@ -177,7 +186,8 @@ function readBootstrapSnapshot(bootstrapId) {
     const files = {
       mcp: path.join(directory, 'mcp.zip'),
       skill: path.join(directory, 'skill.zip'),
-      standalone: path.join(directory, 'fuxi-bootstrap.cjs')
+      standalone: path.join(directory, 'fuxi-bootstrap.cjs'),
+      onboarding: path.join(directory, 'fuxi-onboard.cjs')
     };
     if (!Object.values(files).every(file => fs.existsSync(file))) return null;
     return { directory, metadata, files };
@@ -216,9 +226,33 @@ function getBearerToken(req) {
   return value && value.startsWith('Bearer ') ? value.slice(7).trim() : '';
 }
 
+router.get('/onboarding-hosts', requireAuth, (req, res) => {
+  res.json({ success: true, data: listOnboardingHosts() });
+});
+
 router.get('/agent-bootstrap', requireAuth, (req, res) => {
   const user = findUserById(req.user.id);
   if (!user) return res.status(401).json({ success: false, message: '用户不存在' });
+  const host = getOnboardingHost(req.query.host);
+  if (!host) {
+    return res.status(400).json({
+      success: false,
+      code: 'HOST_SELECTION_REQUIRED',
+      message: '请先选择要接入的 AI 工具'
+    });
+  }
+  if (host.mode !== 'install') {
+    return res.json({
+      success: true,
+      data: {
+        mode: host.mode,
+        host: listOnboardingHosts().find(item => item.id === host.id),
+        prompt: renderSafeStopPrompt(host),
+        bootstrapSession: null,
+        canonicalOnboarding: null
+      }
+    });
+  }
   const skillDir = configuredSkillDir();
   const mcpDir = configuredMcpDir();
   const standalone = standaloneBootstrapBuffer();
@@ -231,7 +265,7 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
   }
 
   const baseUrl = publicBaseUrl(req);
-  const bootstrapSession = createBootstrapSession({ userId: user.id, apiUrl: baseUrl });
+  const bootstrapSession = createBootstrapSession({ userId: user.id, apiUrl: baseUrl, client: host.client });
   const mcpBuffer = packageBuffer(mcpDir, 'fuxi-platform-mcp');
   const skillBuffer = packageBuffer(skillDir, SKILL_NAME);
   const versions = {
@@ -239,30 +273,40 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
     skill: skillVersion(skillDir),
     minNode: '18.0.0'
   };
-  const snapshot = createBootstrapSnapshot({
-    bootstrapId: bootstrapSession.bootstrapId,
-    expiresAt: bootstrapSession.expiresAt,
-    mcp: mcpBuffer,
-    skill: skillBuffer,
-    standalone,
-    versions
-  });
   const bootstrapIdQuery = `?bootstrapId=${encodeURIComponent(bootstrapSession.bootstrapId)}`;
   const bootstrapUrl = `${baseUrl}/api/integrations/bootstrap-package${bootstrapIdQuery}`;
   const bootstrapSessionUrl = `${baseUrl}/api/integrations/bootstrap-session`;
-  const canonicalBootstrapCommand = renderCanonicalBootstrapCommand({
+  const onboarding = Buffer.from(buildOnboardingScript({
     bootstrapUrl,
     sessionEndpoint: bootstrapSessionUrl,
-    bootstrapSha256: snapshot.metadata.artifacts.standalone.sha256,
+    bootstrapSha256: sha256(standalone),
     session: bootstrapSession.credential,
-    client: 'auto'
+    client: host.client
+  }), 'utf8');
+  const snapshot = createBootstrapSnapshot({
+    bootstrapId: bootstrapSession.bootstrapId,
+    expiresAt: bootstrapSession.expiresAt,
+    client: host.client,
+    mcp: mcpBuffer,
+    skill: skillBuffer,
+    standalone,
+    onboarding,
+    versions
+  });
+  const onboardingUrl = `${baseUrl}/api/integrations/onboarding-package${bootstrapIdQuery}`;
+  const canonicalOnboardingCommand = renderOnboardingLauncherCommand({
+    onboardingUrl,
+    onboardingSha256: snapshot.metadata.artifacts.onboarding.sha256
   });
   const bootstrapSessionExpiresLocal = formatLocalTime(bootstrapSession.expiresAt);
   const helpPromptVariables = getQuickStartPromptVariables();
   const prompt = renderPromptTemplate('mcp.onboarding', {
     baseUrl,
     skillName: SKILL_NAME,
-    canonicalBootstrapCommand,
+    hostLabel: host.label,
+    hostInstructions: host.promptFragment,
+    canonicalOnboardingCommand,
+    canonicalBootstrapCommand: canonicalOnboardingCommand,
     bootstrapSessionExpiresLocal,
     ...helpPromptVariables
   });
@@ -270,21 +314,33 @@ router.get('/agent-bootstrap', requireAuth, (req, res) => {
   res.json({
     success: true,
     data: {
+      mode: host.mode,
+      host: listOnboardingHosts().find(item => item.id === host.id),
       prompt,
       bootstrapSession: {
         credential: bootstrapSession.credential,
         bootstrapId: bootstrapSession.bootstrapId,
         expiresAt: bootstrapSession.expiresAt
       },
-      canonicalBootstrap: {
-        command: canonicalBootstrapCommand,
-        url: bootstrapUrl,
-        sha256: snapshot.metadata.artifacts.standalone.sha256,
-        sessionEndpoint: bootstrapSessionUrl
+      canonicalOnboarding: {
+        command: canonicalOnboardingCommand,
+        url: onboardingUrl,
+        sha256: snapshot.metadata.artifacts.onboarding.sha256
       },
       apiUrl: baseUrl
     }
   });
+});
+
+router.get('/onboarding-package', (req, res) => {
+  const buffer = req.query.bootstrapId ? readSnapshotArtifact(req.query.bootstrapId, 'onboarding') : null;
+  if (!buffer) {
+    return res.status(410).json({ success: false, code: 'ONBOARDING_SCRIPT_UNAVAILABLE', message: '短期接入脚本不存在或已失效' });
+  }
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="fuxi-onboard.cjs"');
+  res.setHeader('Content-Length', String(buffer.length));
+  res.send(buffer);
 });
 
 // 独立 Bootstrap 只包含安装器代码，不携带用户凭据；使用摘要由平台生成的命令校验完整性。
@@ -311,13 +367,19 @@ router.get('/bootstrap-session', (req, res) => {
   const user = findUserById(session.userId);
   if (!user) return res.status(401).json({ success: false, code: 'USER_NOT_FOUND', message: '用户不存在' });
 
-  const requestedClient = String(req.query.client || 'auto').trim().toLowerCase();
-  if (!['auto', 'workbuddy', 'cursor'].includes(requestedClient)) {
-    return res.status(400).json({ success: false, code: 'UNSUPPORTED_CLIENT', message: '当前 Bootstrap 仅支持 WorkBuddy、Cursor 或 auto' });
+  if (!session.client || !['workbuddy', 'cursor'].includes(session.client)) {
+    return res.status(409).json({ success: false, code: 'BOOTSTRAP_HOST_UNBOUND', message: 'Bootstrap 会话未绑定受支持的 Host' });
+  }
+  const requestedClient = String(req.query.client || '').trim().toLowerCase();
+  if (requestedClient && requestedClient !== session.client) {
+    return res.status(400).json({ success: false, code: 'HOST_SELECTION_MISMATCH', message: '不得修改 Bootstrap 会话绑定的 Host' });
   }
   const snapshot = readBootstrapSnapshot(session.bootstrapId);
   if (!snapshot) {
     return res.status(410).json({ success: false, code: 'BOOTSTRAP_ARTIFACT_UNAVAILABLE', message: 'Bootstrap 会话制品不存在或已失效' });
+  }
+  if (snapshot.metadata.client !== session.client) {
+    return res.status(409).json({ success: false, code: 'BOOTSTRAP_HOST_MISMATCH', message: 'Bootstrap 会话与制品绑定的 Host 不一致' });
   }
   const token = generateToken(user, { expiresIn: '3600s' });
   const connect = createConnectCode(user.id);
@@ -335,7 +397,7 @@ router.get('/bootstrap-session', (req, res) => {
       skill: { url: `${session.apiUrl}/api/integrations/skill-package${bootstrapIdQuery}`, ...snapshot.metadata.artifacts.skill }
     },
     versions: snapshot.metadata.versions,
-    client: { name: requestedClient }
+    client: { name: session.client }
   };
   res.json({ success: true, data: { manifest, expiresAt: session.expiresAt, connectCodeExpiresAt: connect.expiresAt } });
 });
