@@ -26,6 +26,7 @@ const {
   LightweightCollaborationError,
   LightweightCollaborationService
 } = require('../services/lightweight-collaboration');
+const { ProjectTaskError, ProjectTaskService } = require('../services/project-tasks');
 
 const candidateUpload = multer({
   dest: UPLOADS_DIR,
@@ -53,6 +54,18 @@ function sendLightweightError(res, error) {
     });
   }
   return res.status(500).json({ success: false, code: 'LIGHTWEIGHT_COLLABORATION_FAILED', message: '轻协作操作失败' });
+}
+
+function sendProjectTaskError(res, error) {
+  if (error instanceof ProjectTaskError || error instanceof AuthorizationError) {
+    return res.status(error.status || (error instanceof AuthorizationError ? 403 : 400)).json({
+      success: false,
+      code: error.code,
+      message: error.message,
+      details: error.details || undefined
+    });
+  }
+  return res.status(500).json({ success: false, code: 'PROJECT_TASK_FAILED', message: '项目任务操作失败' });
 }
 
 // 辅助函数
@@ -152,6 +165,79 @@ router.post('/handoffs/redeem', requireAuth, (req, res) => {
   } catch (error) {
     sendLightweightError(res, error);
   }
+});
+
+// =================== 项目任务 v2 API ===================
+
+router.get('/:id/tasks', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().listTasks({
+      actor: req.user,
+      projectId: req.params.id,
+      nodeId: req.query.nodeId,
+      status: req.query.status,
+      assignedTo: req.query.assignedTo
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendProjectTaskError(res, error);
+  }
+});
+
+router.post('/:id/tasks', requireAuth, requireProjectAccess, (req, res) => {
+  if (req.projectRole === 'viewer') return res.status(403).json({ success: false, code: 'AUTHORIZATION_DENIED', message: '查看者不能创建任务' });
+  try {
+    const task = new ProjectTaskService().createTask({
+      actor: req.user,
+      projectId: req.params.id,
+      nodeId: req.body.nodeId,
+      bindingId: req.body.bindingId,
+      title: req.body.title,
+      requirement: req.body.requirement,
+      responsibleUserId: req.body.responsibleUserId,
+      participantUserIds: req.body.participantUserIds || [],
+      versionStrategy: req.body.versionStrategy || {}
+    });
+    recordUsageEvent({ eventType: 'project_task_created', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: task.id, metadata: { projectId: req.params.id, nodeId: task.node_id } });
+    res.status(201).json({ success: true, data: task });
+  } catch (error) {
+    sendProjectTaskError(res, error);
+  }
+});
+
+router.get('/:id/tasks/:taskId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    res.json({ success: true, data: new ProjectTaskService().getTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId }) });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/accept', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().acceptTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    recordUsageEvent({ eventType: 'project_task_accepted', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: req.params.taskId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/decline', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().declineTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/reassign', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().reassignTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId, responsibleUserId: req.body.responsibleUserId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/cancel', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().cancelTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
 });
 
 router.get('/:id/changes', requireAuth, requireProjectAccess, (req, res) => {

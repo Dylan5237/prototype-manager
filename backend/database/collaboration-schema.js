@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const COLLABORATION_SCHEMA_VERSION = '20260814_collaboration_phase1';
 const LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION = '20260820_lightweight_collaboration_mvp';
 const PROJECT_NODE_SCHEMA_VERSION = '20260907_project_nodes_v1';
+const PROJECT_TASK_SCHEMA_VERSION = '20260908_project_tasks_v2';
 
 function now() {
   return new Date().toISOString();
@@ -225,6 +226,72 @@ function applyCollaborationSchema(db) {
   migrateProjectNodes(db);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS project_tasks (
+      id TEXT PRIMARY KEY,
+      project_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      binding_id INTEGER NOT NULL,
+      base_version_id INTEGER NOT NULL,
+      base_version_number INTEGER NOT NULL,
+      requested_by INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      requirement TEXT NOT NULL,
+      version_strategy_type TEXT NOT NULL DEFAULT 'auto',
+      version_strategy_value TEXT,
+      status TEXT NOT NULL DEFAULT 'assigned' CHECK(status IN ('assigned','in_progress','awaiting_review','completed','cancelled','stale')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      completed_at TEXT,
+      cancelled_at TEXT,
+      FOREIGN KEY (project_id) REFERENCES projects(id),
+      FOREIGN KEY (node_id) REFERENCES project_nodes(id),
+      FOREIGN KEY (binding_id) REFERENCES project_prototypes(id),
+      FOREIGN KEY (base_version_id) REFERENCES prototype_versions(id),
+      FOREIGN KEY (requested_by) REFERENCES users(id)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS task_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      user_id INTEGER NOT NULL,
+      assignment_role TEXT NOT NULL CHECK(assignment_role IN ('responsible','participant')),
+      acceptance_status TEXT NOT NULL DEFAULT 'assigned' CHECK(acceptance_status IN ('assigned','accepted','declined','revoked')),
+      assigned_by INTEGER NOT NULL,
+      assigned_at TEXT NOT NULL,
+      responded_at TEXT,
+      ended_at TEXT,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES project_tasks(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (assigned_by) REFERENCES users(id),
+      UNIQUE(task_id, user_id, assignment_role)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS project_task_handoffs (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      task_assignment_id INTEGER NOT NULL,
+      code_hash TEXT NOT NULL UNIQUE,
+      issued_by INTEGER NOT NULL,
+      issued_to_user_id INTEGER NOT NULL,
+      scopes_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'issued' CHECK(status IN ('issued','redeemed','expired','revoked')),
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      redeemed_at TEXT,
+      revoked_at TEXT,
+      FOREIGN KEY (task_id) REFERENCES project_tasks(id),
+      FOREIGN KEY (task_assignment_id) REFERENCES task_assignments(id),
+      FOREIGN KEY (issued_by) REFERENCES users(id),
+      FOREIGN KEY (issued_to_user_id) REFERENCES users(id)
+    )
+  `);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS prototype_builds (
       id TEXT PRIMARY KEY,
       prototype_id TEXT NOT NULL,
@@ -381,6 +448,9 @@ function applyCollaborationSchema(db) {
   db.run(`CREATE INDEX IF NOT EXISTS idx_project_prototypes_active ON project_prototypes(project_id, menu_path, unbound_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_project_nodes_tree ON project_nodes(project_id, parent_id, status, sort_order)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_node_assignments_user ON node_assignments(user_id, status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_project_tasks_node_status ON project_tasks(project_id, node_id, status, updated_at)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments(user_id, acceptance_status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_project_task_handoffs_task ON project_task_handoffs(task_id, status)`);
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_binding_active_node ON project_prototypes(node_id) WHERE node_id IS NOT NULL AND unbound_at IS NULL`);
   db.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_prototypes_repo_identity
@@ -407,12 +477,17 @@ function applyCollaborationSchema(db) {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
     VALUES (?, ?)
   `, [PROJECT_NODE_SCHEMA_VERSION, now()]);
+  db.run(`
+    INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+    VALUES (?, ?)
+  `, [PROJECT_TASK_SCHEMA_VERSION, now()]);
 }
 
 module.exports = {
   COLLABORATION_SCHEMA_VERSION,
   LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION,
   PROJECT_NODE_SCHEMA_VERSION,
+  PROJECT_TASK_SCHEMA_VERSION,
   applyCollaborationSchema,
   getColumns
 };
