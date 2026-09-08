@@ -10,6 +10,10 @@ const {
   getChangeById
 } = require('../services/lightweight-collaboration');
 const {
+  getCandidateById,
+  resolveCandidateDirectory
+} = require('../services/candidate-review');
+const {
   DIRECT_CANDIDATES_ROOT,
   getDirectChangeById
 } = require('../services/prototype-direct-changes');
@@ -117,6 +121,45 @@ function canViewChange(change, user) {
   });
 }
 
+function canViewCandidate(candidate, user) {
+  if (!candidate || !user) return false;
+  return new AuthorizationService().can(user, ACTIONS.VIEW_CHANGE, {
+    type: 'candidate',
+    projectId: candidate.project_id,
+    prototypeId: candidate.prototype_id
+  });
+}
+
+function sendCandidatePreview(req, res, { processHtmlContent = false } = {}) {
+  const candidate = getCandidateById(req.params.candidateId);
+  const candidateDir = resolveCandidateDirectory(candidate, DEFAULT_CANDIDATES_ROOT);
+  if (!candidate || !candidateDir || !fs.existsSync(candidateDir)) return res.status(404).send('候选不存在');
+  if (!req.user) return res.status(401).send('未登录');
+  if (!canViewCandidate(candidate, req.user)) return res.status(403).send('无权查看该候选');
+  if (processHtmlContent) {
+    const filePath = `${req.params[0]}.html`;
+    const fullPath = path.resolve(candidateDir, filePath);
+    if (!fullPath.startsWith(`${candidateDir}${path.sep}`) || !fs.existsSync(fullPath)) {
+      return res.status(404).send('文件不存在');
+    }
+    let content = fs.readFileSync(fullPath, 'utf-8');
+    const fileDir = path.dirname(filePath).replace(/\\/g, '/');
+    const dirPart = fileDir && fileDir !== '.' ? `${fileDir}/` : '';
+    content = processHtml(content, `/preview/candidates/${encodeURIComponent(candidate.id)}/${dirPart}`);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    return res.send(content);
+  }
+  return express.static(candidateDir)(req, res, () => res.status(404).send('文件不存在'));
+}
+
+router.get('/candidates/:candidateId/*.html', requireAuth, (req, res) => {
+  sendCandidatePreview(req, res, { processHtmlContent: true });
+});
+
+router.use('/candidates/:candidateId', requireAuth, (req, res) => {
+  sendCandidatePreview(req, res);
+});
+
 // 轻协作候选 HTML：入口鉴权，资源沿用高熵 change ID 静态路径。
 router.get('/changes/:changeId/*.html', requireAuth, (req, res) => {
   const change = getChangeById(req.params.changeId);
@@ -137,11 +180,14 @@ router.get('/changes/:changeId/*.html', requireAuth, (req, res) => {
   res.send(content);
 });
 
-router.use('/changes/:changeId', (req, res, next) => {
+router.use('/changes/:changeId', requireAuth, (req, res) => {
   const change = getChangeById(req.params.changeId);
   const candidateDir = candidateDirectory(change);
-  if (!candidateDir || !fs.existsSync(candidateDir)) return res.status(404).send('候选不存在');
-  express.static(candidateDir)(req, res, next);
+  if (!change || change.status === 'editing' || !candidateDir || !fs.existsSync(candidateDir)) {
+    return res.status(404).send('候选不存在');
+  }
+  if (!canViewChange(change, req.user)) return res.status(403).send('无权查看该候选');
+  return express.static(candidateDir)(req, res, () => res.status(404).send('文件不存在'));
 });
 
 function directCandidateDirectory(change) {

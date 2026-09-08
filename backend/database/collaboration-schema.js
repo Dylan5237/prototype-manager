@@ -4,6 +4,7 @@ const COLLABORATION_SCHEMA_VERSION = '20260814_collaboration_phase1';
 const LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION = '20260820_lightweight_collaboration_mvp';
 const PROJECT_NODE_SCHEMA_VERSION = '20260907_project_nodes_v1';
 const PROJECT_TASK_SCHEMA_VERSION = '20260908_project_tasks_v2';
+const CANDIDATE_REVIEW_SCHEMA_VERSION = '20260908_candidate_review_v1';
 
 function now() {
   return new Date().toISOString();
@@ -29,6 +30,156 @@ function ensureColumn(db, tableName, columnName, definition) {
 
 function legacyNodeId(projectId, path) {
   return `pnode_${crypto.createHash('sha256').update(`${projectId}:${path}`).digest('hex').slice(0, 20)}`;
+}
+
+function allRows(db, sql, params = []) {
+  const stmt = db.prepare(sql);
+  if (params.length) stmt.bind(params);
+  const rows = [];
+  while (stmt.step()) rows.push(stmt.getAsObject());
+  stmt.free();
+  return rows;
+}
+
+function oneRow(db, sql, params = []) {
+  return allRows(db, sql, params)[0] || null;
+}
+
+function mapLegacyCandidateStatus(status) {
+  if (status === 'ready' || status === 'preview_pending') return 'ready';
+  if (status === 'invalid') return 'validation_failed';
+  if (status === 'rejected') return 'returned';
+  if (status === 'adopted') return 'adopted';
+  if (status === 'stale') return 'stale';
+  return null;
+}
+
+function mapLegacyTaskStatus(status) {
+  if (status === 'adopted') return 'completed';
+  if (status === 'cancelled') return 'cancelled';
+  if (status === 'stale') return 'stale';
+  if (status === 'ready' || status === 'preview_pending') return 'awaiting_review';
+  if (status === 'editing' || status === 'draft') return 'assigned';
+  return 'in_progress';
+}
+
+function ensureLegacyBaseVersion(db, change) {
+  const prototypeId = change.prototype_id;
+  const versionNumber = Number(change.base_version_number || 0);
+  if (change.base_version_id) {
+    const existing = oneRow(db, 'SELECT id, version_number FROM prototype_versions WHERE id = ?', [change.base_version_id]);
+    if (existing) return existing;
+  }
+  const byNumber = oneRow(db, 'SELECT id, version_number FROM prototype_versions WHERE prototype_id = ? AND version_number = ?', [prototypeId, versionNumber]);
+  if (byNumber) return byNumber;
+  const latest = oneRow(db, 'SELECT id, version_number FROM prototype_versions WHERE prototype_id = ? ORDER BY version_number DESC LIMIT 1', [prototypeId]);
+  if (latest) return latest;
+  const t = change.created_at || now();
+  db.run(`
+    INSERT INTO prototype_versions (prototype_id, version_number, version_label, entry_file, created_by, created_at, source_kind)
+    VALUES (?, 0, '0.0.0', '', ?, ?, 'legacy_upload')
+  `, [prototypeId, change.created_by || null, t]);
+  return oneRow(db, 'SELECT id, version_number FROM prototype_versions WHERE prototype_id = ? AND version_number = 0 ORDER BY id DESC LIMIT 1', [prototypeId]);
+}
+
+function resolveLegacyBinding(db, change) {
+  if (change.binding_id) {
+    const binding = oneRow(db, 'SELECT * FROM project_prototypes WHERE id = ? AND project_id = ?', [Number(change.binding_id), change.project_id]);
+    if (binding) return { binding, unresolved: false };
+  }
+  const bindings = allRows(db, `
+    SELECT * FROM project_prototypes
+    WHERE project_id = ? AND prototype_id = ? AND unbound_at IS NULL
+    ORDER BY id
+  `, [change.project_id, change.prototype_id]);
+  if (bindings.length === 1) return { binding: bindings[0], unresolved: false };
+  return { binding: null, unresolved: true };
+}
+
+function migrateLegacyCandidateReview(db) {
+  const changes = allRows(db, `SELECT * FROM prototype_changes ORDER BY created_at, id`);
+  const insertTask = db.prepare(`
+    INSERT OR IGNORE INTO project_tasks
+      (id, project_id, node_id, binding_id, base_version_id, base_version_number, requested_by, title, requirement,
+       version_strategy_type, version_strategy_value, status, created_at, updated_at, completed_at, cancelled_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertAssignment = db.prepare(`
+    INSERT OR IGNORE INTO task_assignments
+      (task_id, user_id, assignment_role, acceptance_status, assigned_by, assigned_at, updated_at)
+    VALUES (?, ?, 'responsible', ?, ?, ?, ?)
+  `);
+  const insertCandidate = db.prepare(`
+    INSERT OR IGNORE INTO candidate_submissions
+      (id, task_id, submission_no, submitted_by, handoff_id, source_change_id,
+       base_version_id, base_version_number, artifact_path, artifact_digest, artifact_entry_file, artifact_size_kb,
+       chosen_version_type, status, created_at, updated_at)
+    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertValidation = db.prepare(`
+    INSERT OR IGNORE INTO candidate_validations
+      (id, candidate_id, attempt_no, mode, status, errors_json, warnings_json, stats_json, source, created_at)
+    VALUES (?, ?, 1, ?, ?, ?, ?, '{}', 'migration', ?)
+  `);
+  const insertDecision = db.prepare(`
+    INSERT OR IGNORE INTO review_decisions
+      (id, candidate_id, reviewer_id, requested_action, result, comment, adopted_version_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  try {
+    for (const change of changes) {
+      const { binding, unresolved } = resolveLegacyBinding(db, change);
+      if (unresolved || !binding || !binding.node_id) continue;
+      const version = ensureLegacyBaseVersion(db, change);
+      const taskId = `legacy_task_${change.id}`;
+      const taskStatus = mapLegacyTaskStatus(change.status);
+      const requestedBy = change.requested_by || change.created_by;
+      insertTask.run([
+        taskId, change.project_id, binding.node_id, binding.id, version.id, Number(change.base_version_number || version.version_number || 0),
+        requestedBy, change.title, change.requirement, change.version_strategy_type || 'auto', change.version_strategy_value || null,
+        taskStatus, change.created_at, change.updated_at,
+        taskStatus === 'completed' ? (change.merged_at || change.updated_at) : null,
+        taskStatus === 'cancelled' ? (change.closed_at || change.updated_at) : null
+      ]);
+      const assignmentStatus = ['assigned', 'cancelled', 'stale'].includes(taskStatus) ? 'assigned' : 'accepted';
+      insertAssignment.run([taskId, change.created_by, assignmentStatus, requestedBy, change.created_at, change.updated_at]);
+      const candidateStatus = mapLegacyCandidateStatus(change.status);
+      if (!candidateStatus) continue;
+      const candidateId = `legacy_candidate_${change.id}`;
+      insertCandidate.run([
+        candidateId, taskId, change.created_by, change.handoff_id || null, change.id,
+        version.id, Number(change.base_version_number || version.version_number || 0),
+        change.candidate_path || null, change.candidate_digest || null, change.candidate_entry_file || null, change.candidate_size_kb || null,
+        change.chosen_version_type || null, candidateStatus,
+        change.submitted_at || change.created_at, change.updated_at
+      ]);
+      if (change.validation_status || change.validation_mode || change.validation_errors_json || change.validation_warnings_json) {
+        insertValidation.run([
+          `legacy_validation_${change.id}`, candidateId,
+          change.validation_mode || 'legacy_snapshot',
+          change.validation_status || (candidateStatus === 'validation_failed' ? 'failed' : 'passed'),
+          change.validation_errors_json || '[]',
+          change.validation_warnings_json || '[]',
+          change.validated_at || change.updated_at
+        ]);
+      }
+      if (candidateStatus === 'returned' || candidateStatus === 'adopted') {
+        insertDecision.run([
+          `legacy_review_${change.id}`, candidateId, change.reviewed_by || null,
+          candidateStatus === 'adopted' ? 'adopt' : 'return',
+          candidateStatus === 'adopted' ? 'adopted' : 'returned',
+          change.review_note || null, change.adopted_version_id || null,
+          change.reviewed_at || change.updated_at
+        ]);
+      }
+    }
+  } finally {
+    insertTask.free();
+    insertAssignment.free();
+    insertCandidate.free();
+    insertValidation.free();
+    insertDecision.free();
+  }
 }
 
 function migrateProjectNodes(db) {
@@ -292,6 +443,67 @@ function applyCollaborationSchema(db) {
   `);
 
   db.run(`
+    CREATE TABLE IF NOT EXISTS candidate_submissions (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      submission_no INTEGER NOT NULL,
+      submitted_by INTEGER NOT NULL,
+      handoff_id TEXT,
+      source_change_id TEXT UNIQUE,
+      base_version_id INTEGER,
+      base_version_number INTEGER NOT NULL,
+      artifact_path TEXT,
+      artifact_digest TEXT,
+      artifact_entry_file TEXT,
+      artifact_size_kb INTEGER,
+      chosen_version_type TEXT,
+      status TEXT NOT NULL DEFAULT 'submitted'
+        CHECK(status IN ('submitted', 'validation_failed', 'ready', 'returned', 'adopted', 'stale')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES project_tasks(id),
+      FOREIGN KEY (submitted_by) REFERENCES users(id),
+      FOREIGN KEY (base_version_id) REFERENCES prototype_versions(id),
+      UNIQUE(task_id, submission_no)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS candidate_validations (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL,
+      attempt_no INTEGER NOT NULL,
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('passed', 'failed')),
+      errors_json TEXT,
+      warnings_json TEXT,
+      stats_json TEXT,
+      source TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (candidate_id) REFERENCES candidate_submissions(id),
+      UNIQUE(candidate_id, attempt_no)
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS review_decisions (
+      id TEXT PRIMARY KEY,
+      candidate_id TEXT NOT NULL UNIQUE,
+      reviewer_id INTEGER,
+      requested_action TEXT NOT NULL CHECK(requested_action IN ('adopt', 'return')),
+      result TEXT NOT NULL CHECK(result IN ('adopted', 'returned')),
+      comment TEXT,
+      adopted_version_id INTEGER,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (candidate_id) REFERENCES candidate_submissions(id),
+      FOREIGN KEY (reviewer_id) REFERENCES users(id),
+      FOREIGN KEY (adopted_version_id) REFERENCES prototype_versions(id)
+    )
+  `);
+
+  migrateLegacyCandidateReview(db);
+
+  db.run(`
     CREATE TABLE IF NOT EXISTS prototype_builds (
       id TEXT PRIMARY KEY,
       prototype_id TEXT NOT NULL,
@@ -451,6 +663,9 @@ function applyCollaborationSchema(db) {
   db.run(`CREATE INDEX IF NOT EXISTS idx_project_tasks_node_status ON project_tasks(project_id, node_id, status, updated_at)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_task_assignments_user ON task_assignments(user_id, acceptance_status)`);
   db.run(`CREATE INDEX IF NOT EXISTS idx_project_task_handoffs_task ON project_task_handoffs(task_id, status)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_candidate_submissions_task_status ON candidate_submissions(task_id, status, submission_no)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_candidate_validations_candidate ON candidate_validations(candidate_id, attempt_no)`);
+  db.run(`CREATE INDEX IF NOT EXISTS idx_review_decisions_candidate ON review_decisions(candidate_id)`);
   db.run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_project_binding_active_node ON project_prototypes(node_id) WHERE node_id IS NOT NULL AND unbound_at IS NULL`);
   db.run(`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_prototypes_repo_identity
@@ -481,6 +696,10 @@ function applyCollaborationSchema(db) {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
     VALUES (?, ?)
   `, [PROJECT_TASK_SCHEMA_VERSION, now()]);
+  db.run(`
+    INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+    VALUES (?, ?)
+  `, [CANDIDATE_REVIEW_SCHEMA_VERSION, now()]);
 }
 
 module.exports = {
@@ -488,6 +707,8 @@ module.exports = {
   LIGHTWEIGHT_COLLABORATION_SCHEMA_VERSION,
   PROJECT_NODE_SCHEMA_VERSION,
   PROJECT_TASK_SCHEMA_VERSION,
+  CANDIDATE_REVIEW_SCHEMA_VERSION,
   applyCollaborationSchema,
+  migrateLegacyCandidateReview,
   getColumns
 };

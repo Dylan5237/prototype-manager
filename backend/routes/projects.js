@@ -27,6 +27,7 @@ const {
   LightweightCollaborationService
 } = require('../services/lightweight-collaboration');
 const { ProjectTaskError, ProjectTaskService } = require('../services/project-tasks');
+const { CandidateReviewError, CandidateReviewService } = require('../services/candidate-review');
 
 const candidateUpload = multer({
   dest: UPLOADS_DIR,
@@ -57,7 +58,7 @@ function sendLightweightError(res, error) {
 }
 
 function sendProjectTaskError(res, error) {
-  if (error instanceof ProjectTaskError || error instanceof AuthorizationError) {
+  if (error instanceof ProjectTaskError || error instanceof CandidateReviewError || error instanceof AuthorizationError) {
     return res.status(error.status || (error instanceof AuthorizationError ? 403 : 400)).json({
       success: false,
       code: error.code,
@@ -237,6 +238,110 @@ router.post('/:id/tasks/:taskId/cancel', requireAuth, requireProjectAccess, (req
   try {
     const data = new ProjectTaskService().cancelTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
     res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.get('/:id/tasks/:taskId/candidates', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new CandidateReviewService().listCandidates({
+      actor: req.user, projectId: req.params.id, taskId: req.params.taskId
+    });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post(
+  '/:id/tasks/:taskId/candidates',
+  requireAuth,
+  requireProjectAccess,
+  (req, res, next) => candidateUpload.single('file')(req, res, error => {
+    if (error) sendProjectTaskError(res, error);
+    else next();
+  }),
+  (req, res) => {
+    try {
+      if (req.projectRole === 'viewer') return res.status(403).json({ success: false, code: 'AUTHORIZATION_DENIED', message: '查看者不能提交候选' });
+      if (!req.file) throw new CandidateReviewError('CANDIDATE_FILE_MISSING', '没有上传候选 ZIP');
+      const candidate = new CandidateReviewService().submitCandidate({
+        actor: req.user,
+        projectId: req.params.id,
+        taskId: req.params.taskId,
+        zipPath: req.file.path,
+        versionType: req.body.versionType
+      });
+      recordUsageEvent({
+        eventType: 'candidate_uploaded',
+        userId: req.user.id,
+        source: requestSource(req),
+        resourceType: 'project_task',
+        resourceId: req.params.taskId,
+        metadata: { candidateId: candidate.id, versionType: req.body.versionType }
+      });
+      res.status(201).json({ success: true, data: candidate });
+    } catch (error) {
+      sendProjectTaskError(res, error);
+    } finally {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    }
+  }
+);
+
+router.get('/:id/candidates/:candidateId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: new CandidateReviewService().getCandidate({
+        actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId
+      })
+    });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/candidates/:candidateId/preview-validation', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const candidate = new CandidateReviewService().recordPreviewValidation({
+      actor: req.user,
+      projectId: req.params.id,
+      candidateId: req.params.candidateId,
+      status: req.body.status,
+      errors: req.body.errors,
+      warnings: req.body.warnings,
+      durationMs: req.body.durationMs
+    });
+    res.json({ success: true, data: candidate });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/candidates/:candidateId/adopt', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const result = new CandidateReviewService().adoptCandidate({
+      actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId
+    });
+    recordUsageEvent({
+      eventType: 'candidate_adopted',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'candidate_submission',
+      resourceId: req.params.candidateId,
+      metadata: { projectId: req.params.id, versionId: result.version && result.version.id }
+    });
+    res.json({ success: true, data: result });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/candidates/:candidateId/return', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const candidate = new CandidateReviewService().returnCandidate({
+      actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId, note: req.body.note
+    });
+    recordUsageEvent({
+      eventType: 'candidate_returned',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'candidate_submission',
+      resourceId: req.params.candidateId
+    });
+    res.json({ success: true, data: candidate });
   } catch (error) { sendProjectTaskError(res, error); }
 });
 

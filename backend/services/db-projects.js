@@ -169,8 +169,15 @@ function syncProjectNodes(db, projectId, menuConfig, timestamp, bindingMigration
   for (const oldNode of existingRows) {
     if (seen.has(oldNode.id) || oldNode.status !== 'active') continue;
     const binding = queryOne(`SELECT id FROM project_prototypes WHERE node_id = ? AND unbound_at IS NULL`, [oldNode.id]);
-    const change = queryOne(`SELECT id FROM prototype_changes WHERE node_id = ? AND status IN ('editing','preview_pending','ready','invalid')`, [oldNode.id]);
-    if ((binding && !migratingBindingIds.has(Number(binding.id))) || change) throw new Error(`工作节点「${oldNode.label}」仍有绑定或未完成任务，不能移除`);
+    const openTask = queryOne(`SELECT id FROM project_tasks WHERE node_id = ? AND status IN ('assigned','in_progress','awaiting_review')`, [oldNode.id]);
+    const pendingCandidate = queryOne(`
+      SELECT cs.id FROM candidate_submissions cs
+      JOIN project_tasks pt ON pt.id = cs.task_id
+      WHERE pt.node_id = ? AND cs.status IN ('submitted','ready')
+    `, [oldNode.id]);
+    if ((binding && !migratingBindingIds.has(Number(binding.id))) || openTask || pendingCandidate) {
+      throw new Error(`工作节点「${oldNode.label}」仍有绑定、未完成任务或待审候选，不能移除`);
+    }
     db.run(`UPDATE project_nodes SET status = 'inactive', updated_at = ? WHERE id = ?`, [timestamp, oldNode.id]);
   }
   return { items: normalizedItems };
@@ -201,8 +208,9 @@ function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingO
     SELECT p.*, u.nickname as creator_name,
       (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id AND pp.unbound_at IS NULL) AS prototype_count,
       (1 + (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id)) AS member_count,
-      (SELECT COUNT(*) FROM prototype_changes c
-        WHERE c.project_id = p.id AND c.status = 'ready') AS pending_candidate_count,
+      (SELECT COUNT(*) FROM candidate_submissions cs
+        JOIN project_tasks pt ON pt.id = cs.task_id
+        WHERE pt.project_id = p.id AND cs.status = 'ready') AS pending_candidate_count,
       COALESCE(
         (SELECT MAX(e.occurred_at) FROM usage_events e
           WHERE e.resource_type = 'project' AND e.resource_id = p.id),
@@ -236,7 +244,11 @@ function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingO
     params.push(accessibleBy, accessibleBy);
   }
   if (pendingOnly) {
-    whereSql += ` AND EXISTS (SELECT 1 FROM prototype_changes c_scope WHERE c_scope.project_id = p.id AND c_scope.status = 'ready')`;
+    whereSql += ` AND EXISTS (
+      SELECT 1 FROM candidate_submissions cs_scope
+      JOIN project_tasks pt_scope ON pt_scope.id = cs_scope.task_id
+      WHERE pt_scope.project_id = p.id AND cs_scope.status = 'ready'
+    )`;
   }
   return {
     sql: `${selectSql}${whereSql} ORDER BY p.updated_at DESC`,
@@ -432,8 +444,17 @@ function removeProjectPrototype(id, { projectId, userId } = {}) {
   const binding = queryOne(`SELECT * FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
   if (!binding || (projectId && String(binding.project_id) !== String(projectId))) return null;
   const activeCheckout = queryOne(`SELECT id, user_id, expires_at FROM project_checkouts WHERE project_prototype_id = ? AND status = 'active' AND expires_at > ?`, [id, now()]);
-  const activeChanges = query(`SELECT id, title, status FROM prototype_changes WHERE project_id = ? AND prototype_id = ? AND status IN ('editing','preview_pending','ready','invalid') ORDER BY updated_at DESC`, [binding.project_id, binding.prototype_id]);
-  if (activeCheckout || activeChanges.length) throw new BindingRemovalConflictError({ activeCheckout, activeChanges });
+  const openTasks = query(`SELECT id, title, status FROM project_tasks WHERE binding_id = ? AND status IN ('assigned','in_progress','awaiting_review') ORDER BY updated_at DESC`, [id]);
+  const pendingCandidates = query(`
+    SELECT cs.id, cs.status, cs.task_id, pt.title
+    FROM candidate_submissions cs
+    JOIN project_tasks pt ON pt.id = cs.task_id
+    WHERE pt.binding_id = ? AND cs.status IN ('submitted','ready')
+    ORDER BY cs.updated_at DESC
+  `, [id]);
+  if (activeCheckout || openTasks.length || pendingCandidates.length) {
+    throw new BindingRemovalConflictError({ activeCheckout, openTasks, pendingCandidates, activeChanges: openTasks });
+  }
   const unboundAt = now();
   run(`UPDATE project_prototypes SET unbound_at = ?, unbound_by = ? WHERE id = ? AND unbound_at IS NULL`, [unboundAt, userId || null, id]);
   return { ...binding, unbound_at: unboundAt, unbound_by: userId || null };
@@ -476,6 +497,19 @@ function removeProjectMember(projectId, userId) {
     WHERE pn.project_id = ? AND na.user_id = ? AND na.status = 'active'
   `, [projectId, userId]);
   if (assignments.length) throw new NodeAssignmentConflictError('成员仍负责或参与项目节点，请先调整节点分工', { assignments });
+  const openTasks = query(`
+    SELECT pt.id, pt.title, ta.assignment_role
+    FROM task_assignments ta
+    JOIN project_tasks pt ON pt.id = ta.task_id
+    WHERE pt.project_id = ? AND ta.user_id = ?
+      AND ta.acceptance_status IN ('assigned','accepted')
+      AND pt.status IN ('assigned','in_progress','awaiting_review')
+  `, [projectId, userId]);
+  if (openTasks.length) {
+    const error = new NodeAssignmentConflictError('成员仍有未完成任务，请先调整任务分派', { openTasks });
+    error.code = 'MEMBER_HAS_OPEN_TASKS';
+    throw error;
+  }
   run(`DELETE FROM project_members WHERE project_id = ? AND user_id = ?`, [projectId, userId]);
 }
 

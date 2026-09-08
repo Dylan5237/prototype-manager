@@ -758,6 +758,8 @@ module.exports = {
   LightweightCollaborationError,
   LightweightCollaborationService,
   assertSafeZip,
+  copyTree,
+  resolveContentRoot,
   getChangeById,
   listChanges
 };

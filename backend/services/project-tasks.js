@@ -185,6 +185,13 @@ class ProjectTaskService {
     const project = getProjectById(projectId);
     if (!isPlatformAdmin(actor) && Number(project.created_by) !== Number(actor.id) && Number(task.requested_by) !== Number(actor.id)) throw new ProjectTaskError('TASK_CANCEL_FORBIDDEN', '仅项目负责人或任务发起人可以取消任务', 403);
     if (['completed', 'cancelled'].includes(task.status)) throw new ProjectTaskError('TASK_STATUS_CONFLICT', '任务已结束', 409);
+    const pendingReview = queryOne(
+      `SELECT COUNT(*) AS count FROM candidate_submissions WHERE task_id = ? AND status IN ('submitted','ready')`,
+      [id]
+    );
+    if (Number(pendingReview && pendingReview.count) > 0) {
+      throw new ProjectTaskError('TASK_HAS_PENDING_REVIEW', '存在待审核候选，不能取消任务', 409);
+    }
     const changedAt = now(this.clock);
     runInTransaction(db => {
       db.run(`UPDATE project_tasks SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ?`, [changedAt, changedAt, id]);
