@@ -164,6 +164,20 @@ test('browser validation is append-only and cannot forge a server pass', () => {
   assert.equal(recorded.validations.length, 2);
 });
 
+test('a new ready candidate replaces the previous pending ready on the same task', () => {
+  const { task } = createAcceptedTask();
+  const first = service.submitCandidate({ actor: editor, projectId: 'project-1', taskId: task.id, zipPath: validZip('first.zip', '第一待审') });
+  assert.equal(first.status, 'ready');
+  const second = service.submitCandidate({ actor: editor, projectId: 'project-1', taskId: task.id, zipPath: validZip('second.zip', '第二待审') });
+  assert.equal(second.status, 'ready');
+  assert.equal(service.getCandidate({ actor: owner, projectId: 'project-1', candidateId: first.id }).status, 'stale');
+  const listed = service.listCandidates({ actor: owner, projectId: 'project-1', taskId: task.id });
+  assert.equal(listed.filter(item => item.status === 'ready').length, 1);
+  assert.equal(listed.find(item => item.status === 'ready').id, second.id);
+  assert.equal(listed.find(item => item.status === 'ready').candidateId, second.id);
+  assert.equal(listed.find(item => item.status === 'ready').taskId, task.id);
+});
+
 test('adopt creates version and decision, stales competitors, and rejects double adopt', () => {
   const first = createAcceptedTask({ title: '候选一' });
   const readyA = service.submitCandidate({ actor: editor, projectId: 'project-1', taskId: first.task.id, zipPath: validZip('a.zip', '候选一') });

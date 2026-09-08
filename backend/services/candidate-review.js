@@ -83,6 +83,8 @@ function decorateCandidate(row) {
   `, [row.id]);
   return {
     ...row,
+    candidateId: row.id,
+    taskId: row.task_id,
     base_version_number: Number(row.base_version_number || 0),
     artifact_size_kb: row.artifact_size_kb == null ? null : Number(row.artifact_size_kb),
     validations,
@@ -278,6 +280,11 @@ class CandidateReviewService {
           createdAt
         ]);
         if (validation.ok) {
+          // Freeze E: 同一 taskId 最多一个待审 ready。新 ready 提交成功时替换先前待审候选。
+          db.run(`
+            UPDATE candidate_submissions SET status = 'stale', updated_at = ?
+            WHERE task_id = ? AND status IN ('submitted','ready') AND id <> ?
+          `, [createdAt, taskId, candidateId]);
           db.run(`UPDATE project_tasks SET status = 'awaiting_review', updated_at = ? WHERE id = ?`, [createdAt, taskId]);
         }
         insertAudit(db, {

@@ -27,6 +27,34 @@ class LightweightCollaborationError extends Error {
   }
 }
 
+const LEGACY_CHANGEID_FORBIDDEN_MESSAGE = '项目绑定协作写入已冻结到 Task v2。请使用 project_tasks / candidate_submissions（权威字段 taskId、candidateId）。prototype_changes 与裸 changeId 仅保留只读兼容，禁止写入。';
+
+function throwLegacyChangeIdForbidden(operation) {
+  throw new LightweightCollaborationError(
+    'LEGACY_CHANGEID_FORBIDDEN',
+    LEGACY_CHANGEID_FORBIDDEN_MESSAGE,
+    409,
+    {
+      operation,
+      authorityFields: { projectBound: ['taskId', 'candidateId'], unbound: ['directChangeId'] },
+      replacement: {
+        create: 'POST /api/projects/:projectId/tasks',
+        accept: 'POST /api/projects/:projectId/tasks/:taskId/accept',
+        submit: 'POST /api/projects/:projectId/tasks/:taskId/candidates',
+        adopt: 'POST /api/projects/:projectId/candidates/:candidateId/adopt',
+        mcpTools: [
+          'create_project_task',
+          'accept_project_task',
+          'submit_task_candidate',
+          'list_task_candidates',
+          'adopt_task_candidate',
+          'return_task_candidate'
+        ]
+      }
+    }
+  );
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -206,6 +234,7 @@ class LightweightCollaborationService {
   }
 
   createChange({ actor, projectId, prototypeId, title, requirement, versionStrategy = {} }) {
+    throwLegacyChangeIdForbidden('createChange');
     const cleanRequirement = String(requirement || '').trim();
     if (!cleanRequirement || cleanRequirement.length > MAX_REQUIREMENT_LENGTH) {
       throw new LightweightCollaborationError('INVALID_REQUIREMENT', '修改目标不能为空且不能超过 4000 字');
@@ -270,6 +299,7 @@ class LightweightCollaborationService {
   }
 
   updateChange({ actor, projectId, changeId, title, requirement, versionStrategy }) {
+    throwLegacyChangeIdForbidden('updateChange');
     const change = this.getChange({ actor, projectId, changeId });
     this.assertCanManageTask(actor, ACTIONS.EDIT_CHANGE, change);
     if (change.status !== 'editing') {
@@ -333,6 +363,7 @@ class LightweightCollaborationService {
   }
 
   cancelChange({ actor, projectId, changeId }) {
+    throwLegacyChangeIdForbidden('cancelChange');
     const change = this.getChange({ actor, projectId, changeId });
     this.assertCanManageTask(actor, ACTIONS.DELETE_CHANGE, change);
     if (change.status !== 'editing') {
@@ -359,6 +390,7 @@ class LightweightCollaborationService {
   }
 
   redeemHandoff({ actor, handoffCode }) {
+    throwLegacyChangeIdForbidden('redeemHandoff');
     const code = String(handoffCode || '').trim();
     if (!code) throw new LightweightCollaborationError('HANDOFF_CODE_REQUIRED', '任务码不能为空');
     const codeHash = hashValue(code);
@@ -443,6 +475,7 @@ class LightweightCollaborationService {
   }
 
   submitCandidate({ actor, projectId, changeId, zipPath, versionType }) {
+    throwLegacyChangeIdForbidden('submitCandidate');
     const change = this.getChange({ actor, projectId, changeId });
     this.authorization.assertCan(actor, ACTIONS.SUBMIT_CHANGE, {
       type: 'change', projectId, prototypeId: change.prototype_id
@@ -557,6 +590,7 @@ class LightweightCollaborationService {
   }
 
   recordPreviewValidation({ actor, projectId, changeId, status, errors = [], warnings = [], durationMs = null }) {
+    throwLegacyChangeIdForbidden('recordPreviewValidation');
     const change = this.getChange({ actor, projectId, changeId });
     this.authorization.assertCan(actor, ACTIONS.SUBMIT_CHANGE, {
       type: 'change', projectId, prototypeId: change.prototype_id
@@ -591,6 +625,7 @@ class LightweightCollaborationService {
   }
 
   rejectChange({ actor, projectId, changeId, note }) {
+    throwLegacyChangeIdForbidden('rejectChange');
     const change = this.getChange({ actor, projectId, changeId });
     this.authorization.assertCan(actor, ACTIONS.REVIEW_CHANGE, {
       type: 'change', projectId, prototypeId: change.prototype_id
@@ -615,6 +650,7 @@ class LightweightCollaborationService {
   }
 
   adoptChange({ actor, projectId, changeId }) {
+    throwLegacyChangeIdForbidden('adoptChange');
     const initial = this.getChange({ actor, projectId, changeId });
     this.authorization.assertCan(actor, ACTIONS.REVIEW_CHANGE, {
       type: 'change', projectId, prototypeId: initial.prototype_id
@@ -755,6 +791,7 @@ class LightweightCollaborationService {
 
 module.exports = {
   DEFAULT_CANDIDATES_ROOT,
+  LEGACY_CHANGEID_FORBIDDEN_MESSAGE,
   LightweightCollaborationError,
   LightweightCollaborationService,
   assertSafeZip,

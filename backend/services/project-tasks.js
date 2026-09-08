@@ -47,6 +47,7 @@ function decorateTask(row) {
   `, [row.id]);
   return {
     ...row,
+    taskId: row.id,
     assignments,
     responsible: assignments.find(item => item.assignment_role === 'responsible' && ['assigned', 'accepted'].includes(item.acceptance_status)) || null
   };

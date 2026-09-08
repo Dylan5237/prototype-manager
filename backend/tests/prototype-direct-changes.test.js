@@ -56,6 +56,7 @@ test('direct change is redeemed once and becomes a formal version after static c
     versionStrategy: { type: 'auto' }
   });
   assert.equal(created.change.status, 'editing');
+  assert.equal(created.change.directChangeId, created.change.id);
   const redeemed = service.redeemHandoff({ actor: owner, handoffCode: created.handoffCode });
   assert.equal(redeemed.change.handoff_status, 'redeemed');
   assert.throws(

@@ -110,6 +110,7 @@ function decorate(row) {
   if (!row) return null;
   return {
     ...row,
+    directChangeId: row.id,
     base_version_number: Number(row.base_version_number || 0),
     candidate_size_kb: row.candidate_size_kb == null ? null : Number(row.candidate_size_kb),
     validation_errors: parseJson(row.validation_errors_json),
@@ -141,6 +142,7 @@ function buildPrompt(change, handoffCode, expiresAt) {
   return renderPromptTemplate('prototype.modify.standalone', {
     prototypeName: change.prototype_name || change.prototype_id,
     prototypeId: change.prototype_id,
+    directChangeId: change.id,
     changeId: change.id,
     baseVersion: change.base_version_number,
     handoffCode,
