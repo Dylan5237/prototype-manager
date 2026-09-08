@@ -122,6 +122,8 @@ test('fail, success, return and resubmit keep four independent records and direc
   const returned = service.returnCandidate({ actor: owner, projectId: 'project-1', candidateId: ready.id, note: '再改一版' });
   assert.equal(returned.status, 'returned');
   assert.equal(returned.decision.reviewer_id, 1);
+  assert.equal(returned.decision.reviewer_name, '负责人');
+  assert.equal(returned.decision.reviewer_username, 'owner');
   const resubmitted = service.submitCandidate({ actor: editor, projectId: 'project-1', taskId: task.id, zipPath: validZip('ok2.zip', '第二版') });
   const listed = service.listCandidates({ actor: owner, projectId: 'project-1', taskId: task.id });
   assert.equal(listed.length, 3);

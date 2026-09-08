@@ -75,7 +75,12 @@ function decorateCandidate(row) {
     warnings: parseJson(item.warnings_json, []),
     stats: parseJson(item.stats_json, {})
   }));
-  const decision = queryOne(`SELECT * FROM review_decisions WHERE candidate_id = ?`, [row.id]);
+  const decision = queryOne(`
+    SELECT rd.*, reviewer.username AS reviewer_username, reviewer.nickname AS reviewer_name
+    FROM review_decisions rd
+    LEFT JOIN users reviewer ON reviewer.id = rd.reviewer_id
+    WHERE rd.candidate_id = ?
+  `, [row.id]);
   return {
     ...row,
     base_version_number: Number(row.base_version_number || 0),

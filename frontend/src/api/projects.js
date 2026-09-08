@@ -68,6 +68,38 @@ export function recordProjectChangePreviewValidation(id, changeId, data) {
   return api.post(`/projects/${id}/changes/${changeId}/preview-validation`, data)
 }
 
+export function getProjectTasks(id, params) {
+  return api.get(`/projects/${id}/tasks`, { params })
+}
+
+export function getProjectTask(id, taskId) {
+  return api.get(`/projects/${id}/tasks/${taskId}`)
+}
+
+export function cancelProjectTask(id, taskId) {
+  return api.post(`/projects/${id}/tasks/${taskId}/cancel`)
+}
+
+export function getTaskCandidates(id, taskId) {
+  return api.get(`/projects/${id}/tasks/${taskId}/candidates`)
+}
+
+export function getProjectCandidate(id, candidateId) {
+  return api.get(`/projects/${id}/candidates/${candidateId}`)
+}
+
+export function recordCandidatePreviewValidation(id, candidateId, data) {
+  return api.post(`/projects/${id}/candidates/${candidateId}/preview-validation`, data)
+}
+
+export function adoptProjectCandidate(id, candidateId) {
+  return api.post(`/projects/${id}/candidates/${candidateId}/adopt`)
+}
+
+export function returnProjectCandidate(id, candidateId, data) {
+  return api.post(`/projects/${id}/candidates/${candidateId}/return`, data)
+}
+
 export function getProjectMembers(id) {
   return api.get(`/projects/${id}/members`)
 }
