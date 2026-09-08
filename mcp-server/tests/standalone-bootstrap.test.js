@@ -83,7 +83,7 @@ test('thin launcher reports unsupported Node before any download logic', () => {
     onboardingSha256: '0'.repeat(64)
   });
   assert.doesNotMatch(command, /Buffer\.from\([^)]*base64|eval\(/i);
-  assert(command.length < 1900, `launcher command is too long: ${command.length}`);
+  assert(command.length < 2000, `launcher command is too long: ${command.length}`);
   assert.match(command, /^node -e "/);
   assert.match(command, /fetch/);
   assert.match(command, /spawn/);

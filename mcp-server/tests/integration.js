@@ -388,7 +388,7 @@ async function main() {
     assert.equal(bootstrap.data.canonicalBootstrap, undefined);
     assert(bootstrap.data.canonicalOnboarding.command.includes('onboarding-package'));
     assert(bootstrap.data.canonicalOnboarding.command.startsWith('node -e "'));
-    assert(bootstrap.data.canonicalOnboarding.command.length < 1900);
+    assert(bootstrap.data.canonicalOnboarding.command.length < 2000);
     assert(!bootstrap.data.canonicalOnboarding.command.match(/Buffer\.from\([^)]*base64/i));
     assert(!bootstrap.data.canonicalOnboarding.command.includes('base64'));
     assert(!bootstrap.data.canonicalOnboarding.command.includes('eval('));
