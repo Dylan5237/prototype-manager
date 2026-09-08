@@ -18,6 +18,8 @@ Gates 1–4 and 6 pass at platform #12. Gate 5 is **FAIL** on the open #13 head:
 | Frontend PR #13 | `a52d6f5582dd03cc08738f80db9c28498e6da11f` | Open head `cursor/pending-revision-review-3f2c`, directly descended from #12; verified with `gh pr view 13` and ancestry. |
 | Skill GitLab develop | `802837259368319a307041ad11a6d66bfff922ff` (`8028372`) | **Implementer-attested only / BLOCKED**. The documented GitLab `git ls-remote` probe timed out after 15 seconds (exit 124); no local Skill checkout was available. |
 
+Update 2026-09-08 06:39 UTC: the implementer re-verified on their machine that Skill GitLab `fuxi/fuxi-prototype-skills` `develop` points to full SHA `802837259368319a307041ad11a6d66bfff922ff`, commit message `merge: Skill+MCP Task v2 catalog`. The reported catalog includes `list_project_nodes`, `create_project_task`, `submit_task_candidate`, and `adopt_task_candidate`, with `create_change_handoff` still listed with a write-ban annotation. This remains implementer attestation only; independent fetch is still unavailable, so Skill alignment remains **BLOCKED/unverified**.
+
 The in-tree files [`docs/skill-patches/fuxi-prototype-task-v2/APPLY.md`](../skill-patches/fuxi-prototype-task-v2/APPLY.md) and [`tools.json`](../skill-patches/fuxi-prototype-task-v2/tools.json) are supporting material only and are not proof of the Skill tip.
 
 ## Gate table
