@@ -1,4 +1,4 @@
-﻿{
+{
   "schema": "fuxi-mcp-tools/1",
   "tools": [
     {
@@ -660,7 +660,7 @@
     },
     {
       "name": "checkout_prototype",
-      "description": "LEGACY exclusive checkout of a bound project prototype. Not required for the Task v2 project-bound candidate flow (create_project_task 鈫?submit_task_candidate 鈫?adopt_task_candidate).",
+      "description": "LEGACY exclusive checkout of a bound project prototype. Not required for the Task v2 project-bound candidate flow (create_project_task → submit_task_candidate → adopt_task_candidate).",
       "inputSchema": {
         "type": "object",
         "required": [
