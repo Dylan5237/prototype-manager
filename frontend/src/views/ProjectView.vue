@@ -357,7 +357,7 @@ import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
-import { findFirstBoundMenu, findMenuByPath, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings } from '../utils/project-menu'
+import { buildProjectWorkspaceQuery, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings, resolveRequestedProjectMenu } from '../utils/project-menu'
 import {
   canCancelProjectTask,
   getProjectPermissions,
@@ -506,28 +506,13 @@ const canEdit = computed(() => projectPermissions.value.canEdit)
 const roleLabel = computed(() => getProjectRoleLabel(role.value))
 
 function selectRequestedMenu() {
-  const requestedPrototypeId = Array.isArray(route.query.prototypeId)
-    ? route.query.prototypeId[0]
-    : route.query.prototypeId
-  const requestedMenuPath = Array.isArray(route.query.menuPath)
-    ? route.query.menuPath[0]
-    : route.query.menuPath
-
-  const requestedBinding = project.value.prototypes?.find(binding => {
-    if (requestedPrototypeId && binding.prototype_id !== requestedPrototypeId) return false
-    if (requestedMenuPath && binding.menu_path !== requestedMenuPath) return false
-    return Boolean(requestedPrototypeId || requestedMenuPath)
+  const { target } = resolveRequestedProjectMenu({
+    menuConfig: project.value.menu_config,
+    bindings: project.value.prototypes,
+    prototypeId: route.query.prototypeId,
+    menuPath: route.query.menuPath
   })
-  const target = findMenuByPath(project.value.menu_config, requestedBinding?.menu_path || requestedMenuPath)
-  if (target) {
-    selectMenuNode({ node: target.node, ancestors: target.ancestors, path: menuNodePath(target.ancestors, target.node) })
-    return
-  }
-
-  // 无有效深链接时固定打开菜单配置顺序中的第一个已绑定菜单。
-  // 深链接失效时也回退到同一默认入口，避免落在空白工作区。
-  const firstBound = findFirstBoundMenu(project.value.menu_config, project.value.prototypes)
-  if (firstBound) selectMenuNode(firstBound)
+  if (target) selectMenuNode(target)
 }
 
 const activePath = computed(() => {
@@ -902,7 +887,10 @@ function enterWorkspace() {
   router.push({
     name: 'project-preview',
     params: { id: route.params.id },
-    query: activePath.value ? { menuPath: activePath.value } : {}
+    query: buildProjectWorkspaceQuery({
+      prototypeId: currentBinding.value?.prototype_id,
+      menuPath: activePath.value
+    })
   })
 }
 
