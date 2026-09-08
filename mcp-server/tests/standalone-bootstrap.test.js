@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
+const vm = require('node:vm');
 const { exec, spawn } = require('node:child_process');
 
 const { buildZip } = require('../src/fuxi-zip');
@@ -69,6 +70,37 @@ function runShell(command, env) {
     });
   });
 }
+
+function decodeLauncherSource(command) {
+  const match = command.match(/Buffer\.from\('([^']+)'\s*,\s*'base64'\)/);
+  assert(match, 'launcher command must contain its encoded source');
+  return Buffer.from(match[1], 'base64').toString('utf8');
+}
+
+test('thin launcher reports unsupported Node before any download logic', () => {
+  const command = renderOnboardingLauncherCommand({
+    onboardingUrl: 'https://fuxi.example.test/onboarding',
+    onboardingSha256: '0'.repeat(64)
+  });
+  const source = decodeLauncherSource(command);
+  const guardIndex = source.indexOf("Number(process.versions.node.split('.')[0])<18");
+  const fetchIndex = source.indexOf('fetch(');
+  assert(guardIndex >= 0 && guardIndex < fetchIndex);
+
+  const output = [];
+  const sandboxProcess = {
+    versions: { node: '16.20.2' },
+    stdout: { write: value => output.push(value) },
+    exitCode: 0
+  };
+  vm.runInNewContext(source, { process: sandboxProcess });
+  const result = JSON.parse(output.join('').trim());
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.step, 'LOAD');
+  assert.equal(result.error.code, 'NODE_VERSION_UNSUPPORTED');
+  assert.equal(result.error.message, 'Node.js >= 18 is required');
+  assert.equal(sandboxProcess.exitCode, 1);
+});
 
 test('session-specific onboarding script delegates to standalone bootstrap and completes install', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-standalone-bootstrap-'));
