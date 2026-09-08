@@ -381,11 +381,13 @@ function createTables() {
       user_id INTEGER NOT NULL,
       bootstrap_id TEXT UNIQUE NOT NULL,
       api_url TEXT NOT NULL,
+      client_name TEXT,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+  try { db.run(`ALTER TABLE bootstrap_sessions ADD COLUMN client_name TEXT`); } catch (e) { /* 字段已存在 */ }
 
   // MCP/Skill 发布清单：release_id 不复用，制品摘要和兼容条件随 manifest 固定。
   db.run(`

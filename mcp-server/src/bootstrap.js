@@ -810,7 +810,15 @@ async function connect(options = {}) {
   if (manifest.schema !== 'fuxi-bootstrap/2' || !manifest.bootstrapId || !manifest.apiUrl) {
     throw new BootstrapError('MANIFEST_INVALID', 'Bootstrap session returned an invalid manifest');
   }
-  const client = String(options.client || manifest.client && manifest.client.name || 'auto').trim().toLowerCase();
+  const manifestClient = String(manifest.client && manifest.client.name || '').trim().toLowerCase();
+  const requestedClient = String(options.client || '').trim().toLowerCase();
+  if (manifestClient && requestedClient && manifestClient !== requestedClient) {
+    throw new BootstrapError('HOST_SELECTION_MISMATCH', 'Bootstrap client does not match the Host selected on the platform', {
+      selectedClient: manifestClient,
+      requestedClient
+    });
+  }
+  const client = manifestClient || requestedClient || 'auto';
   return install(manifest, {
     ...options,
     client,
