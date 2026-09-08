@@ -62,37 +62,35 @@
       <el-button type="primary" size="large" :loading="reviewing" @click="emit('adopt', pendingRevision)">采用为正式版</el-button>
     </div>
 
-    <el-collapse v-model="historyOpen" class="history-collapse">
-      <el-collapse-item name="history">
-        <template #title>
-          <div class="history-title">
-            <strong>历史尝试 ({{ historyAttempts.length }})</strong>
-            <span>校验失败 / 已退回 / 被替代的旧提议</span>
+    <details class="history-details">
+      <summary class="history-summary">
+        <div class="history-title">
+          <strong>历史尝试 ({{ historyAttempts.length }})</strong>
+          <span>校验失败 / 已退回 / 被替代的旧提议</span>
+        </div>
+      </summary>
+      <ul v-if="historyAttempts.length" class="history-list">
+        <li v-for="attempt in historyAttempts" :key="attempt.id" class="history-item">
+          <div class="history-item-main">
+            <strong>{{ historyAttemptStatusMeta(attempt.status).label }}</strong>
+            <small>
+              {{ displayPersonName(attempt.submitter_name, attempt.submitter_username, '提交人') }}
+              · {{ formatDateTime(attempt.created_at) }}
+            </small>
+            <p v-if="revisionNote(attempt, task)">{{ revisionNote(attempt, task) }}</p>
           </div>
-        </template>
-        <ul v-if="historyAttempts.length" class="history-list">
-          <li v-for="attempt in historyAttempts" :key="attempt.id" class="history-item">
-            <div class="history-item-main">
-              <strong>{{ historyAttemptLabel(attempt) }}</strong>
-              <small>
-                {{ displayPersonName(attempt.submitter_name, attempt.submitter_username, '提交人') }}
-                · {{ formatDateTime(attempt.created_at) }}
-              </small>
-              <p v-if="revisionNote(attempt, task)">{{ revisionNote(attempt, task) }}</p>
-            </div>
-            <el-tag :type="historyAttemptStatusMeta(attempt.status).type" size="small" effect="light">
-              {{ historyAttemptStatusMeta(attempt.status).label }}
-            </el-tag>
-          </li>
-        </ul>
-        <el-empty v-else description="暂无历史尝试" :image-size="56" />
-      </el-collapse-item>
-    </el-collapse>
+          <el-tag :type="historyAttemptStatusMeta(attempt.status).type" size="small" effect="light">
+            {{ historyAttemptStatusMeta(attempt.status).label }}
+          </el-tag>
+        </li>
+      </ul>
+      <el-empty v-else description="暂无历史尝试" :image-size="56" />
+    </details>
   </section>
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { canReviewProjectCandidate } from '../../utils/project-permissions'
 import {
   displayPersonName,
@@ -119,7 +117,6 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['select', 'preview', 'adopt', 'return'])
-const historyOpen = ref([])
 
 const partitioned = computed(() => partitionReviewSubmissions(props.candidates))
 const pendingRevision = computed(() => partitioned.value.pendingRevision)
@@ -142,10 +139,6 @@ const pendingPreviewUrl = computed(() => {
 watch(pendingRevision, (next) => {
   if (next?.id !== props.selectedCandidate?.id) emit('select', next)
 }, { immediate: true })
-
-function historyAttemptLabel(attempt) {
-  return historyAttemptStatusMeta(attempt.status).label
-}
 </script>
 
 <style scoped>
@@ -223,8 +216,33 @@ function historyAttemptLabel(attempt) {
   justify-content: center;
   gap: 12px;
 }
-.history-collapse { border: 1px solid #e2e8f0; border-radius: 10px; background: #fff; }
-.history-title { display: flex; min-width: 0; flex-direction: column; gap: 4px; padding-right: 12px; }
+.history-details {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 4px 14px 4px;
+}
+.history-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  list-style: none;
+  cursor: pointer;
+}
+.history-summary::-webkit-details-marker { display: none; }
+.history-summary::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-right: 1.5px solid #8794a8;
+  border-bottom: 1.5px solid #8794a8;
+  transform: rotate(45deg);
+}
+.history-details[open] .history-summary::after { transform: rotate(-135deg); margin-top: 6px; }
+.history-title { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 4px; }
 .history-title strong { color: #25344a; font-size: 13px; }
 .history-title span { color: #8794a8; font-size: 11px; font-weight: 400; }
 .history-list { margin: 0; padding: 0; list-style: none; }
