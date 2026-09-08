@@ -162,7 +162,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowRight, Menu, List, FullScreen, Link, MagicStick, Monitor, Cellphone, Iphone, Close, Loading } from '@element-plus/icons-vue'
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
-import { findFirstBoundMenu, findMenuByPath, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings } from '../utils/project-menu'
+import { buildProjectWorkspaceQuery, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings, resolveRequestedProjectMenu } from '../utils/project-menu'
 import { getProject, getProjectPortal, getProjectTasks, getTaskCandidates, createProjectTask, acceptProjectTask, adoptProjectCandidate, returnProjectCandidate, checkoutPrototype, checkinPrototype, releaseCheckout } from '../api/projects'
 import ProjectMenuTree from '../components/project/ProjectMenuTree.vue'
 import TaskCandidateHistory from '../components/project/TaskCandidateHistory.vue'
@@ -257,13 +257,13 @@ async function loadProject() {
 }
 
 function selectRequestedMenu() {
-  const requestedPath = Array.isArray(route.query.menuPath) ? route.query.menuPath[0] : route.query.menuPath
-  const requestedPrototypeId = Array.isArray(route.query.prototypeId) ? route.query.prototypeId[0] : route.query.prototypeId
-  const binding = project.value.prototypes?.find(item => (requestedPath && item.menu_path === requestedPath) || (requestedPrototypeId && item.prototype_id === requestedPrototypeId))
-  const target = findMenuByPath(project.value.menu_config, binding?.menu_path || requestedPath)
-  if (target) return selectMenuNode({node:target.node,ancestors:target.ancestors}, {persist:false})
-  const first = findFirstBoundMenu(project.value.menu_config, project.value.prototypes) || listMenuLeaves(project.value.menu_config)[0]
-  if (first) selectMenuNode(first, {persist:false})
+  const { target } = resolveRequestedProjectMenu({
+    menuConfig: project.value.menu_config,
+    bindings: project.value.prototypes,
+    prototypeId: route.query.prototypeId,
+    menuPath: route.query.menuPath
+  })
+  if (target) selectMenuNode(target, { persist: false })
 }
 
 function selectMenuNode({node,ancestors}, { persist = true } = {}) {
@@ -275,9 +275,9 @@ function selectMenuNode({node,ancestors}, { persist = true } = {}) {
   selectedCandidate.value = null
   candidates.value = []
   if (persist) {
-    const query = { ...route.query, menuPath: menuNodePath(ancestors,node) }
-    delete query.prototypeId
-    router.replace({ query })
+    const path = menuNodePath(ancestors, node)
+    const binding = project.value.prototypes?.find(item => item.menu_path === path)
+    router.replace({ query: buildProjectWorkspaceQuery({ prototypeId: binding?.prototype_id, menuPath: path }) })
     menuDrawerOpen.value = false
   }
   loadTasks()
@@ -343,7 +343,13 @@ function selectCandidate(candidate) {
   selectedCandidate.value = candidate
 }
 function toggleFocus() { focusMode.value = !focusMode.value }
-function backToProject() { router.push({ name: 'project', params: { id: route.params.id }, query: activePath.value ? { menuPath: activePath.value } : {} }) }
+function backToProject() {
+  router.push({
+    name: 'project',
+    params: { id: route.params.id },
+    query: buildProjectWorkspaceQuery({ prototypeId: currentBinding.value?.prototype_id, menuPath: activePath.value })
+  })
+}
 function goPrototype(id) { router.push(`/prototype/${id}`) }
 function menuStateForPath(path) {
   const binding=project.value.prototypes?.find(item=>item.menu_path===path)
