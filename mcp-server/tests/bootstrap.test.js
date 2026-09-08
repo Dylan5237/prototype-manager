@@ -89,6 +89,24 @@ test('clientTargets resolves the verified WorkBuddy native paths without broad d
   assert.equal(targets.skillTarget, path.join(os.homedir(), '.workbuddy', 'skills', 'fuxi-prototype'));
 });
 
+test('explicit WorkBuddy selection remains deterministic when Cursor is also installed', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-explicit-host-'));
+  const originalHomedir = os.homedir;
+  try {
+    fs.mkdirSync(path.join(root, '.workbuddy'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.cursor'), { recursive: true });
+    os.homedir = () => root;
+    const manifest = { schema: 'fuxi-bootstrap/2', bootstrapId: 'workbuddy-explicit', apiUrl: 'http://127.0.0.1', client: { name: 'workbuddy' } };
+    const targets = clientTargets(manifest, { client: 'workbuddy' });
+    assert.equal(targets.name, 'workbuddy');
+    assert.equal(targets.mcpConfig, path.join(root, '.workbuddy', 'mcp.json'));
+    assert.equal(targets.skillTarget, path.join(root, '.workbuddy', 'skills', 'fuxi-prototype'));
+  } finally {
+    os.homedir = originalHomedir;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('mergeMcpConfig preserves existing MCP entries and replaces only Fuxi', () => {
   const existing = { settings: { keep: true }, mcpServers: { other: { command: 'node', args: ['other.js'] } } };
   const merged = mergeMcpConfig(existing, { command: 'node', args: ['launcher.js'] });

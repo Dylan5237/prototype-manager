@@ -84,35 +84,34 @@ const PROJECT_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格按�
 【完成说明】
 上传候选后，请返回：已领取任务、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。`;
 
-const MCP_ONBOARDING_TEMPLATE = `请执行“伏羲平台 MCP 接入任务”。你的职责是识别当前 AI 工具和 Node.js 能力，然后执行平台生成的一条标准命令；不要让我手工编辑配置文件。
+const MCP_ONBOARDING_TEMPLATE = `请执行“伏羲平台 MCP 接入任务”。用户已在平台明确选择 {{hostLabel}}，该选择是当前 Host 的唯一事实源。
 
-目标：让当前 AI 工具发现 {{skillName}} Skill，并能够调用伏羲 MCP。
+目标：让 {{hostLabel}} 发现 {{skillName}} Skill，并能够调用伏羲 MCP。
+
+【Host 约束】
+{{hostInstructions}}
 
 【执行边界】
-- 接入完成前，不要调用伏羲 MCP 工具；只使用你自己的终端执行能力。
-- 只允许执行下面这条平台生成命令。不要改写、拆分、重排或替换其中的参数，不要自行生成安装命令。
-- 当前会话必须支持本地终端、Node.js >= 18、用户目录读写和 MCP stdio；任一条件不满足，报告原因并停止。
-- Bootstrap 会在内部完成会话获取、制品下载、SHA-256 校验、安装、备份、配置、首次连接自检和必要重试；不要介入这些内部步骤。
+- 接入完成前不要调用伏羲 MCP；只使用当前会话的终端执行能力。
+- 不要识别、扫描或猜测当前 Host、MCP 配置路径、Skill 目录，也不要执行 bootstrap 前侦察。
+- 只允许原样执行下面的平台入口；不要改写、拆分、重排参数，不要自行选择下载器、文件名、SHA、retry 或安装路径。
+- 当前会话必须具备本地终端和 Node.js >= 18；不满足时报告 NODE_VERSION_UNSUPPORTED 并停止。
+- 短期 onboarding 脚本与 Bootstrap 会在程序内部完成会话获取、制品下载、完整性校验、preflight、备份、安装、配置、认证、自检和有限重试；不要介入内部步骤。
 
-【接入凭据】
-- 标准命令中的 Bootstrap 会话至 {{bootstrapSessionExpiresLocal}}（Asia/Shanghai）有效；不要回显、复制到其他消息或写入文件。
+【有效期】
+- 本次短期接入入口至 {{bootstrapSessionExpiresLocal}}（Asia/Shanghai）有效；禁止回显 session、token、连接码、密码或凭据文件内容。
 
-【唯一标准命令】
-{{canonicalBootstrapCommand}}
+【唯一接入入口】
+{{canonicalOnboardingCommand}}
 
 【严格步骤】
-1. 只读识别当前 AI 客户端（Host）名称、版本和操作系统，并确认 Node.js 主版本 >= 18。识别结果只用于最终报告，不要修改上面的命令。
-2. 在当前同一 shell、同一权限上下文中，原样执行上面的唯一标准命令，并等待它退出；不要另起沙箱、提权终端或并行执行第二次。
-3. 只解析该命令输出的最终 JSON。只有 status=COMPLETE 且 mcpConnected=true、skillReady=true，或 reason=ALREADY_COMPLETE，才可进入下一步；否则报告 error.code、step、message 并停止。
-4. 若结果包含 reloadRequired=true，让当前 AI 工具重载 MCP 配置；无法自动重载时报告 RELOAD_REQUIRED，并停止，不要轮询或再次安装。
-5. 重载完成后，只调用一次伏羲 MCP 工具 check_connection({})，必须得到 ok=true 且 authentication=verified。失败时报告真实结果，不要声称接入成功。
-6. 仅在连接验证成功后执行一次 tools/list，确认至少存在 check_connection、validate_project、pack_project、validate_zip、deliver_project；同时确认 {{skillName}} Skill 已被当前 AI 工具发现。没有证据就报告未验证。
-7. 最终只报告：AI 工具、操作系统、Node.js 版本、标准命令退出码、安装状态、MCP 连接、Skill 发现、是否需要重启、新会话是否可用、MCP/Skill 版本和阶段耗时。禁止回显任何 session、token、连接码、密码或凭据文件内容。
-
-【失败处理】
-- 权限、客户端不支持、配置无效、制品校验失败或认证失败：原样报告结构化 code/step/message 并停止，不要重试命令。
-- 网络超时或临时网络错误：标准命令会在内部有限重试；命令退出后仍失败则报告真实错误。
-- 首次接入完成后，打开 AI 工具的新会话，再调用 check_connection({}) 确认可用；不要重新执行首次接入命令。
+1. 在当前同一 shell、同一权限上下文中原样执行唯一入口并等待退出；不要另起沙箱、提权终端或并行执行第二次。
+2. 只解析该入口最终输出。只有 status=COMPLETE 且 mcpConnected=true、skillReady=true，或 reason=ALREADY_COMPLETE，才可进入下一步。
+3. 失败时原样报告最内层 step、error.code、error.message 并停止；不要自行插桩、curl、下载、解压、写 manifest、修改配置或重试整条入口。
+4. 若 reloadRequired=true，按 {{hostLabel}} 的方式重载 MCP；无法自动完成则报告 RELOAD_REQUIRED 或 Host 片段要求的 USER_ACTION_REQUIRED，并停止。
+5. 重载完成后，在新会话中只调用一次 check_connection({})；必须得到 ok=true 且 authentication=verified。Bootstrap self-test 不等同于 Host READY。
+6. 连接验证成功后执行一次 tools/list，确认至少存在 check_connection、validate_project、pack_project、validate_zip、deliver_project，并确认 {{skillName}} Skill 已被发现；没有证据就报告未验证。
+7. 最终只报告：选择的 Host、Node.js 版本、入口退出码、安装状态、MCP 连接、Skill 发现、重载/用户操作状态、MCP/Skill 版本和阶段耗时。
 
 接入成功后引导我使用伏羲平台（帮助手册 v{{helpVersion}}）：
 {{quickStartGuide}}`;
@@ -184,14 +183,17 @@ const PROMPT_TEMPLATE_DEFAULTS = [
   {
     key: 'mcp.onboarding',
     name: '接入平台 MCP',
-    description: '引导 AI 工具识别 Node.js 与 Host，并执行平台生成的单条接入命令。',
+    description: '按用户选择的 Host 生成唯一短期接入入口，程序化完成 MCP 与 Skill 安装。',
     template: MCP_ONBOARDING_TEMPLATE,
-    variables: ['baseUrl', 'skillName', 'canonicalBootstrapCommand', 'bootstrapSessionExpiresLocal', 'quickStartGuide', 'helpVersion'],
+    variables: ['baseUrl', 'skillName', 'hostLabel', 'hostInstructions', 'canonicalOnboardingCommand', 'canonicalBootstrapCommand', 'bootstrapSessionExpiresLocal', 'quickStartGuide', 'helpVersion'],
     mockData: {
       baseUrl: 'http://fuxi.example.test',
       skillName: 'fuxi-prototype',
+      hostLabel: 'WorkBuddy',
+      hostInstructions: '- 当前 Host 已由用户明确选择为 WorkBuddy；不得扫描或推断其他 Host。\n- COMPLETE 后重载 WorkBuddy；如需 UI 信任则返回 USER_ACTION_REQUIRED。',
       bootstrapSessionExpiresLocal: '2026-09-03 12:15:00',
-      canonicalBootstrapCommand: 'node -e "eval(Buffer.from(\'BASE64_LOADER\',\'base64\').toString())" -- "http://fuxi.example.test/api/integrations/bootstrap-package" "sha256" "http://fuxi.example.test/api/integrations/bootstrap-session" "opaque-session" "auto"',
+      canonicalOnboardingCommand: 'node -e "eval(Buffer.from(\'THIN_LAUNCHER\',\'base64\').toString())" -- "http://fuxi.example.test/api/integrations/onboarding-package?bootstrapId=mock" "sha256"',
+      canonicalBootstrapCommand: 'node -e "eval(Buffer.from(\'THIN_LAUNCHER\',\'base64\').toString())" -- "http://fuxi.example.test/api/integrations/onboarding-package?bootstrapId=mock" "sha256"',
       helpVersion: '1.0',
       quickStartGuide: '【伏羲平台快速入门】\n\n1. 打开「原型列表」生成创建提示词并发送给已接入的 AI。\n2. 修改原型时先判断是否已绑定项目。\n3. 完成预览、版本和权限确认后再发布或分享。',
     }

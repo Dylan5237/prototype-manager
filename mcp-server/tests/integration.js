@@ -316,23 +316,62 @@ async function main() {
     });
     const login = await loginResponse.json();
     assert.equal(loginResponse.status, 200);
-    const bootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap`, {
+    const hostsResponse = await fetch(`${apiUrl}/api/integrations/onboarding-hosts`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const hosts = await hostsResponse.json();
+    assert.equal(hostsResponse.status, 200);
+    assert.deepEqual(hosts.data.map(host => host.id), ['workbuddy', 'cursor', 'codex', 'other']);
+    assert.equal(hosts.data[0].recommended, true);
+    assert.equal(hosts.data.find(host => host.id === 'codex').mode, 'unsupported');
+    assert.equal(hosts.data.find(host => host.id === 'other').mode, 'discovery');
+
+    const missingHostResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    assert.equal(missingHostResponse.status, 400);
+    assert.equal((await missingHostResponse.json()).code, 'HOST_SELECTION_REQUIRED');
+
+    const discoveryResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap?host=other`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const discovery = await discoveryResponse.json();
+    assert.equal(discoveryResponse.status, 200);
+    assert.equal(discovery.data.mode, 'discovery');
+    assert.equal(discovery.data.bootstrapSession, null);
+    assert.match(discovery.data.prompt, /只收集事实，不执行安装/);
+    assert.doesNotMatch(discovery.data.prompt, /node -e|--client|--mcp-config|--skill-target/);
+
+    const codexResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap?host=codex`, {
+      headers: { Authorization: `Bearer ${login.data.token}` }
+    });
+    const codex = await codexResponse.json();
+    assert.equal(codexResponse.status, 200);
+    assert.equal(codex.data.mode, 'unsupported');
+    assert.match(codex.data.prompt, /UNSUPPORTED_HOST/);
+    assert.equal(codex.data.canonicalOnboarding, null);
+
+    const bootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap?host=workbuddy`, {
       headers: { Authorization: `Bearer ${login.data.token}` }
     });
     const bootstrap = await bootstrapResponse.json();
     assert.equal(bootstrapResponse.status, 200);
+    assert.equal(bootstrap.data.mode, 'install');
+    assert.equal(bootstrap.data.host.id, 'workbuddy');
     assert(bootstrap.data.prompt.includes('check_connection'));
     assert(bootstrap.data.prompt.includes('deliver_project'));
-    assert(bootstrap.data.prompt.includes('识别当前 AI 客户端'));
-    assert(bootstrap.data.prompt.includes('结构化 code/step/message'));
+    assert(bootstrap.data.prompt.includes('用户已在平台明确选择 WorkBuddy'));
+    assert(!bootstrap.data.prompt.includes('只读识别当前 AI 客户端'));
     assert(!bootstrap.data.prompt.includes('admin123'));
     assert(bootstrap.data.prompt.includes('伏羲平台快速入门'));
-    assert(bootstrap.data.prompt.includes('唯一标准命令'));
+    assert(bootstrap.data.prompt.includes('唯一接入入口'));
     assert(bootstrap.data.prompt.includes('同一 shell、同一权限上下文'));
     assert(bootstrap.data.prompt.includes('原样执行'));
-    assert(bootstrap.data.prompt.includes('重载 MCP 配置'));
-    assert(bootstrap.data.prompt.includes('connect --session'));
+    assert(bootstrap.data.prompt.includes('USER_ACTION_REQUIRED'));
     assert(bootstrap.data.prompt.includes('tools/list'));
+    assert(!bootstrap.data.prompt.includes('--client auto'));
+    assert(!bootstrap.data.prompt.includes('--mcp-config'));
+    assert(!bootstrap.data.prompt.includes('--skill-target'));
     assert(!bootstrap.data.prompt.includes('bootstrapManifestJson'));
     assert(!bootstrap.data.prompt.includes('--mcp-zip'));
     assert(!bootstrap.data.prompt.includes('--skill-zip'));
@@ -344,13 +383,26 @@ async function main() {
     assert.equal(bootstrap.data.skillUrl, undefined);
     assert.equal(bootstrap.data.mcpUrl, undefined);
     assert(bootstrap.data.bootstrapSession.credential);
-    assert(bootstrap.data.canonicalBootstrap.command.includes('bootstrap-package'));
-    assert(bootstrap.data.canonicalBootstrap.command.includes('connect --session'));
-    const standaloneResponse = await fetch(bootstrap.data.canonicalBootstrap.url);
-    const standaloneBuffer = Buffer.from(await standaloneResponse.arrayBuffer());
-    assert.equal(standaloneResponse.status, 200);
-    assert.equal(require('crypto').createHash('sha256').update(standaloneBuffer).digest('hex'), bootstrap.data.canonicalBootstrap.sha256);
-    const sessionManifestResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session?client=workbuddy`, {
+    assert.equal(bootstrap.data.canonicalBootstrap, undefined);
+    assert(bootstrap.data.canonicalOnboarding.command.includes('onboarding-package'));
+    assert(!bootstrap.data.canonicalOnboarding.command.includes('connect --session'));
+    assert(!bootstrap.data.canonicalOnboarding.command.includes(bootstrap.data.bootstrapSession.credential));
+    assert(!bootstrap.data.canonicalOnboarding.command.includes('workbuddy'));
+    const onboardingResponse = await fetch(bootstrap.data.canonicalOnboarding.url);
+    const onboardingBuffer = Buffer.from(await onboardingResponse.arrayBuffer());
+    assert.equal(onboardingResponse.status, 200);
+    assert.equal(require('crypto').createHash('sha256').update(onboardingBuffer).digest('hex'), bootstrap.data.canonicalOnboarding.sha256);
+    const onboardingSource = onboardingBuffer.toString('utf8');
+    assert.match(onboardingSource, /"client":"workbuddy"/);
+    assert.doesNotMatch(onboardingSource, /"client":"auto"/);
+
+    const mismatchedHostResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session?client=cursor`, {
+      headers: { Authorization: `Bearer ${bootstrap.data.bootstrapSession.credential}` }
+    });
+    assert.equal(mismatchedHostResponse.status, 400);
+    assert.equal((await mismatchedHostResponse.json()).code, 'HOST_SELECTION_MISMATCH');
+
+    const sessionManifestResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session`, {
       headers: { Authorization: `Bearer ${bootstrap.data.bootstrapSession.credential}` }
     });
     const sessionManifest = await sessionManifestResponse.json();
@@ -358,6 +410,7 @@ async function main() {
     assert.equal(sessionManifest.data.manifest.schema, 'fuxi-bootstrap/2');
     assert.equal(sessionManifest.data.manifest.bootstrapId, bootstrap.data.bootstrapSession.bootstrapId);
     assert.equal(sessionManifest.data.manifest.expiresAt, bootstrap.data.bootstrapSession.expiresAt);
+    assert.equal(sessionManifest.data.manifest.client.name, 'workbuddy');
     assert.match(sessionManifest.data.manifest.artifacts.mcp.sha256, /^[a-f0-9]{64}$/);
     assert.match(sessionManifest.data.manifest.artifacts.skill.sha256, /^[a-f0-9]{64}$/);
     assert.match(sessionManifest.data.manifest.versions.mcp, /^\S+$/);
@@ -477,13 +530,14 @@ async function main() {
     // 源目录变化后，新会话绑定新制品；旧会话仍返回创建时的不可变字节。
     const originalSkillBytes = Buffer.from(await (await fetch(sessionManifest.data.manifest.artifacts.skill.url, { headers: packageHeaders })).arrayBuffer());
     fs.writeFileSync(path.join(distributedSkillDir, 'SKILL.md'), '---\nname: fuxi-prototype\nversion: 2.0.0\n---\n# Updated Skill\n');
-    const nextBootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap`, {
+    const nextBootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap?host=workbuddy`, {
       headers: { Authorization: `Bearer ${login.data.token}` }
     });
     const nextBootstrap = await nextBootstrapResponse.json();
     assert.equal(nextBootstrapResponse.status, 200);
     assert.notEqual(nextBootstrap.data.bootstrapSession.bootstrapId, bootstrap.data.bootstrapSession.bootstrapId);
-    const nextSessionResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session?client=workbuddy`, {
+    assert.notEqual(nextBootstrap.data.canonicalOnboarding.sha256, bootstrap.data.canonicalOnboarding.sha256);
+    const nextSessionResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session`, {
       headers: { Authorization: `Bearer ${nextBootstrap.data.bootstrapSession.credential}` }
     });
     const nextSession = await nextSessionResponse.json();
