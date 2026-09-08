@@ -18,6 +18,7 @@ let tempRoot;
 let server;
 let baseUrl;
 let candidateId;
+let changeId;
 const timestamp = '2026-09-08T12:00:00.000Z';
 
 function tokenFor(user) {
@@ -82,6 +83,13 @@ test.beforeEach(async () => {
   });
   candidateId = candidate.id;
 
+  changeId = 'legacy-chg-preview';
+  const legacyDir = path.join(DEFAULT_CANDIDATES_ROOT, changeId);
+  fs.mkdirSync(legacyDir, { recursive: true });
+  fs.copyFileSync(path.join(DEFAULT_CANDIDATES_ROOT, candidate.task_id, candidate.id, 'index.html'), path.join(legacyDir, 'index.html'));
+  fs.copyFileSync(path.join(DEFAULT_CANDIDATES_ROOT, candidate.task_id, candidate.id, 'app.js'), path.join(legacyDir, 'app.js'));
+  database.run(`INSERT INTO prototype_changes (id, project_id, prototype_id, title, requirement, created_by, branch_name, base_sha, status, candidate_path, candidate_entry_file, created_at, updated_at) VALUES (?, 'project-1', 'prototype-1', '旧候选', '要求', 1, ?, 'version:1', 'ready', ?, 'index.html', ?, ?)`, [changeId, `no-git/${changeId}`, changeId, timestamp, timestamp]);
+
   const app = express();
   app.use('/preview', previewRouter);
   server = http.createServer(app);
@@ -99,6 +107,7 @@ test.afterEach(async () => {
       fs.rmSync(path.join(DEFAULT_CANDIDATES_ROOT, candidate.task_id), { recursive: true, force: true });
     }
   }
+  if (changeId) fs.rmSync(path.join(DEFAULT_CANDIDATES_ROOT, changeId), { recursive: true, force: true });
   database.closeDatabase();
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
@@ -126,4 +135,17 @@ test('candidate preview requires auth for HTML, JS and CSS-equivalent assets', a
   const css = await request('GET', cssPath, ownerToken);
   assert.equal(css.status, 200);
   assert.match(css.body, /color/);
+});
+
+test('legacy change preview static assets require the same auth as HTML', async () => {
+  const ownerToken = tokenFor({ id: 1, username: 'owner', role: ['viewer'] });
+  const outsiderToken = tokenFor({ id: 3, username: 'outsider', role: ['viewer'] });
+  const htmlPath = `/preview/changes/${encodeURIComponent(changeId)}/index.html`;
+  const jsPath = `/preview/changes/${encodeURIComponent(changeId)}/app.js`;
+  assert.equal((await request('GET', htmlPath)).status, 401);
+  assert.equal((await request('GET', jsPath)).status, 401);
+  assert.equal((await request('GET', htmlPath, outsiderToken)).status, 403);
+  assert.equal((await request('GET', jsPath, outsiderToken)).status, 403);
+  assert.equal((await request('GET', htmlPath, ownerToken)).status, 200);
+  assert.equal((await request('GET', jsPath, ownerToken)).status, 200);
 });

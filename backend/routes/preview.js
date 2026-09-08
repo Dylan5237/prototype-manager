@@ -180,11 +180,14 @@ router.get('/changes/:changeId/*.html', requireAuth, (req, res) => {
   res.send(content);
 });
 
-router.use('/changes/:changeId', (req, res, next) => {
+router.use('/changes/:changeId', requireAuth, (req, res) => {
   const change = getChangeById(req.params.changeId);
   const candidateDir = candidateDirectory(change);
-  if (!candidateDir || !fs.existsSync(candidateDir)) return res.status(404).send('候选不存在');
-  express.static(candidateDir)(req, res, next);
+  if (!change || change.status === 'editing' || !candidateDir || !fs.existsSync(candidateDir)) {
+    return res.status(404).send('候选不存在');
+  }
+  if (!canViewChange(change, req.user)) return res.status(403).send('无权查看该候选');
+  return express.static(candidateDir)(req, res, () => res.status(404).send('文件不存在'));
 });
 
 function directCandidateDirectory(change) {
