@@ -11,6 +11,7 @@ const {
   getProjectsPage,
   getPrototypeProjectBinding,
   getProjectById,
+  getProjectNodes,
   getProjectPrototypes,
   getProjectPrototypeById,
   removeProjectPrototype,
@@ -32,6 +33,12 @@ test.beforeEach(async () => {
     ['project-2', '项目二', '', '{"items":[]}', 1, timestamp, timestamp]);
   database.run(`INSERT INTO prototypes (id, name, description, entry_file, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ['prototype-1', '原型一', '', 'index.html', 1, timestamp, timestamp]);
+  updateProject('project-1', { menuConfig: { items: [
+    { key: 'main', label: '主菜单', children: [{ key: 'list', label: '列表', children: [] }] },
+    { key: 'reports', label: '报表', children: [{ key: 'list', label: '列表', children: [] }] },
+    { key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [{ key: 'entity', label: '实体建模', children: [] }] }] }
+  ] } });
+  updateProject('project-2', { menuConfig: { items: [{ key: 'home', label: '首页', children: [] }] } });
 });
 
 test.afterEach(() => {
@@ -55,6 +62,7 @@ test('allows multiple menu positions in one project but rejects cross-project ow
 });
 
 test('updates a three-level menu and migrates an existing binding atomically', () => {
+  updateProject('project-1', { menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [] }] }] } });
   const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' });
   updateProject('project-1', {
     menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [{ key: 'entity', label: '实体建模', children: [] }] }] }] },
@@ -65,12 +73,24 @@ test('updates a three-level menu and migrates an existing binding atomically', (
 });
 
 test('rolls back menu changes when a binding migration is stale', () => {
+  updateProject('project-1', { menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [] }] }] } });
   const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' });
   assert.throws(() => updateProject('project-1', {
     menuConfig: { items: [{ key: 'changed', label: '不应保存', children: [] }] },
     bindingMigrations: [{ bindingId: binding.id, fromPath: 'wrong/path', toPath: 'changed' }]
   }), /原型绑定已发生变化/);
-  assert.deepEqual(getProjectById('project-1').menu_config, { items: [] });
+  assert.equal(getProjectById('project-1').menu_config.items[0].children[0].label, '业务域建模');
+});
+
+test('keeps stable node identity across rename and rejects binding to a group node', () => {
+  const menu = getProjectById('project-1').menu_config;
+  const entity = menu.items[2].children[0].children[0];
+  entity.label = '实体模型设计';
+  updateProject('project-1', { menuConfig: menu });
+  const after = getProjectById('project-1').menu_config.items[2].children[0].children[0];
+  assert.equal(after.id, entity.id);
+  assert.equal(getProjectNodes('project-1').find(node => node.id === entity.id).label, '实体模型设计');
+  assert.throws(() => bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' }), /叶子工作节点/);
 });
 
 test('unbind preserves history and allows the same binding to be restored', () => {

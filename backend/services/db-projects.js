@@ -43,15 +43,98 @@ function addHours(dateStr, hours) {
   return d.toISOString();
 }
 
+function getProjectNodes(projectId, { includeInactive = false } = {}) {
+  return query(`
+    SELECT pn.*,
+      owner.user_id AS owner_id, owner_user.username AS owner_username, owner_user.nickname AS owner_name,
+      (SELECT COUNT(*) FROM node_assignments na WHERE na.project_node_id = pn.id AND na.assignment_role = 'contributor' AND na.status = 'active') AS contributor_count
+    FROM project_nodes pn
+    LEFT JOIN node_assignments owner ON owner.project_node_id = pn.id AND owner.assignment_role = 'owner' AND owner.status = 'active'
+    LEFT JOIN users owner_user ON owner_user.id = owner.user_id
+    WHERE pn.project_id = ? ${includeInactive ? '' : "AND pn.status = 'active'"}
+    ORDER BY pn.depth, pn.sort_order, pn.created_at
+  `, [projectId]);
+}
+
+function nodesToMenuConfig(nodes) {
+  const childrenByParent = new Map();
+  for (const node of nodes) {
+    const key = node.parent_id || '__root__';
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key).push(node);
+  }
+  const build = parentId => (childrenByParent.get(parentId || '__root__') || []).map(node => ({
+    id: node.id,
+    key: node.node_key,
+    label: node.label,
+    children: build(node.id)
+  }));
+  return { items: build(null) };
+}
+
+function findProjectNodeByPath(projectId, menuPath) {
+  const segments = String(menuPath || '').split('/').filter(Boolean);
+  let parentId = null;
+  let current = null;
+  for (const segment of segments) {
+    const parentClause = parentId ? 'parent_id = ?' : 'parent_id IS NULL';
+    const params = parentId ? [projectId, segment, parentId] : [projectId, segment];
+    current = queryOne(`SELECT * FROM project_nodes WHERE project_id = ? AND node_key = ? AND status = 'active' AND ${parentClause}`, params);
+    if (!current) return null;
+    parentId = current.id;
+  }
+  return current;
+}
+
+function syncProjectNodes(db, projectId, menuConfig, timestamp, bindingMigrations = []) {
+  const existingRows = getProjectNodes(projectId, { includeInactive: true });
+  const existing = new Map(existingRows.map(node => [node.id, node]));
+  const migratingBindingIds = new Set(bindingMigrations.map(item => Number(item.bindingId)));
+  const seen = new Set();
+  const normalize = (nodes, parentId = null, depth = 1) => (Array.isArray(nodes) ? nodes : []).map((node, index) => {
+    if (depth > 3) throw new Error('项目菜单最多支持三级');
+    const id = node.id || generateId();
+    const previous = existing.get(id);
+    if (previous && previous.project_id !== projectId) throw new Error('工作节点不属于当前项目');
+    if (seen.has(id)) throw new Error('工作节点 ID 不能重复');
+    seen.add(id);
+    const children = normalize(node.children || [], id, depth + 1);
+    const nodeType = children.length ? 'group' : 'work';
+    if (previous) {
+      db.run(`UPDATE project_nodes SET parent_id = ?, node_key = ?, label = ?, node_type = ?, depth = ?, sort_order = ?, status = 'active', updated_at = ? WHERE id = ?`, [parentId, node.key, node.label, nodeType, depth, index, timestamp, id]);
+    } else {
+      db.run(`INSERT INTO project_nodes (id, project_id, parent_id, node_key, label, node_type, depth, sort_order, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`, [id, projectId, parentId, node.key, node.label, nodeType, depth, index, timestamp, timestamp]);
+    }
+    return { id, key: node.key, label: node.label, children };
+  });
+  const normalizedItems = normalize(menuConfig?.items || []);
+  for (const oldNode of existingRows) {
+    if (seen.has(oldNode.id) || oldNode.status !== 'active') continue;
+    const binding = queryOne(`SELECT id FROM project_prototypes WHERE node_id = ? AND unbound_at IS NULL`, [oldNode.id]);
+    const change = queryOne(`SELECT id FROM prototype_changes WHERE node_id = ? AND status IN ('editing','preview_pending','ready','invalid')`, [oldNode.id]);
+    if ((binding && !migratingBindingIds.has(Number(binding.id))) || change) throw new Error(`工作节点「${oldNode.label}」仍有绑定或未完成任务，不能移除`);
+    db.run(`UPDATE project_nodes SET status = 'inactive', updated_at = ? WHERE id = ?`, [timestamp, oldNode.id]);
+  }
+  return { items: normalizedItems };
+}
+
 // =================== 项目基础 CRUD ===================
 
 function createProject({ name, description, menuConfig, createdBy }) {
   const id = generateId();
   const t = now();
-  run(`
-    INSERT INTO projects (id, name, description, menu_config, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [id, name, description || '', JSON.stringify(menuConfig || { items: [] }), createdBy, t, t]);
+  const db = getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    db.run(`INSERT INTO projects (id, name, description, menu_config, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, [id, name, description || '', '{"items":[]}', createdBy, t, t]);
+    const normalizedMenu = syncProjectNodes(db, id, menuConfig || { items: [] }, t);
+    db.run(`UPDATE projects SET menu_config = ? WHERE id = ?`, [JSON.stringify(normalizedMenu), id]);
+    db.run('COMMIT');
+    saveDatabase();
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
   return getProjectById(id);
 }
 
@@ -127,33 +210,36 @@ function getProjectById(id) {
     WHERE p.id = ? AND p.deleted_at IS NULL
   `, [id]);
   if (!project) return null;
-  try {
-    project.menu_config = JSON.parse(project.menu_config || '{"items":[]}');
-  } catch (e) {
-    project.menu_config = { items: [] };
-  }
+  const nodes = getProjectNodes(id);
+  if (nodes.length) project.menu_config = nodesToMenuConfig(nodes);
+  else try { project.menu_config = JSON.parse(project.menu_config || '{"items":[]}'); } catch (e) { project.menu_config = { items: [] }; }
+  project.nodes = nodes;
   return project;
 }
 
 function updateProject(id, { name, description, menuConfig, bindingMigrations = [] }) {
-  const fields = [];
-  const values = [];
-  if (name !== undefined) { fields.push('name = ?'); values.push(name); }
-  if (description !== undefined) { fields.push('description = ?'); values.push(description); }
-  if (menuConfig !== undefined) { fields.push('menu_config = ?'); values.push(JSON.stringify(menuConfig)); }
-  fields.push('updated_at = ?');
-  values.push(now());
-  values.push(id);
   const db = getDb();
   db.run('BEGIN TRANSACTION');
   try {
+    const t = now();
+    const fields = [];
+    const values = [];
+    if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+    if (description !== undefined) { fields.push('description = ?'); values.push(description); }
+    if (menuConfig !== undefined) {
+      const normalizedMenu = syncProjectNodes(db, id, menuConfig, t, bindingMigrations);
+      fields.push('menu_config = ?'); values.push(JSON.stringify(normalizedMenu));
+    }
+    fields.push('updated_at = ?'); values.push(t); values.push(id);
     db.run(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values);
     for (const migration of bindingMigrations) {
-      const existing = queryOne(`SELECT id, menu_path FROM project_prototypes WHERE id = ? AND project_id = ? AND unbound_at IS NULL`, [migration.bindingId, id]);
+      const existing = queryOne(`SELECT id, menu_path, node_id FROM project_prototypes WHERE id = ? AND project_id = ? AND unbound_at IS NULL`, [migration.bindingId, id]);
       if (!existing || existing.menu_path !== migration.fromPath) {
         throw new Error('原型绑定已发生变化，请刷新项目后重试');
       }
-      db.run(`UPDATE project_prototypes SET menu_path = ? WHERE id = ? AND project_id = ?`, [migration.toPath, migration.bindingId, id]);
+      const targetNode = findProjectNodeByPath(id, migration.toPath);
+      if (!targetNode || targetNode.node_type !== 'work') throw new Error('绑定只能迁移到叶子工作节点');
+      db.run(`UPDATE project_prototypes SET node_id = ?, menu_path = ? WHERE id = ? AND project_id = ?`, [targetNode.id, migration.toPath, migration.bindingId, id]);
     }
     db.run('COMMIT');
     saveDatabase();
@@ -170,12 +256,21 @@ function softDeleteProject(id) {
 
 // =================== 项目-原型绑定 ===================
 
-function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
+function bindPrototype({ projectId, prototypeId, menuPath, nodeId, sortOrder = 0 }) {
   const t = now();
+  const node = nodeId
+    ? queryOne(`SELECT * FROM project_nodes WHERE id = ? AND project_id = ? AND status = 'active'`, [nodeId, projectId])
+    : findProjectNodeByPath(projectId, menuPath);
+  if (!node) throw new Error('工作节点不存在');
+  if (node.node_type !== 'work') throw new Error('原型只能绑定到叶子工作节点');
+  nodeId = node.id;
   const existing = findBinding(projectId, prototypeId, menuPath, { includeUnbound: true });
-  if (existing && !existing.unbound_at) return existing;
+  if (existing && !existing.unbound_at) {
+    if (existing.node_id !== nodeId) run(`UPDATE project_prototypes SET node_id = ? WHERE id = ?`, [nodeId, existing.id]);
+    return getProjectPrototypeById(existing.id);
+  }
   if (existing?.unbound_at) {
-    run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, sort_order = ?, created_at = ? WHERE id = ?`, [sortOrder, t, existing.id]);
+    run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, node_id = ?, sort_order = ?, created_at = ? WHERE id = ?`, [nodeId, sortOrder, t, existing.id]);
     return getProjectPrototypeById(existing.id);
   }
   const otherProject = queryOne(`
@@ -195,9 +290,9 @@ function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
     });
   }
   const id = insertAndGetId(`
-    INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `, [projectId, prototypeId, menuPath, sortOrder, t]);
+    INSERT INTO project_prototypes (project_id, prototype_id, node_id, menu_path, sort_order, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `, [projectId, prototypeId, nodeId, menuPath, sortOrder, t]);
   return getProjectPrototypeById(id);
 }
 
@@ -230,7 +325,7 @@ function getProjectPrototypes(projectId) {
 
 function getPrototypeProjectBinding(prototypeId) {
   const rows = query(`
-    SELECT pp.id AS binding_id, pp.project_id, pp.prototype_id, pp.menu_path, pp.sort_order,
+    SELECT pp.id AS binding_id, pp.project_id, pp.prototype_id, pp.node_id, pp.menu_path, pp.sort_order,
       pp.created_at AS bound_at, p.name AS project_name, p.description AS project_description,
       p.created_by AS project_owner_id
     FROM project_prototypes pp
@@ -247,6 +342,7 @@ function getPrototypeProjectBinding(prototypeId) {
     project_owner_id: first.project_owner_id,
     menu_positions: rows.map(row => ({
       binding_id: row.binding_id,
+      node_id: row.node_id,
       menu_path: row.menu_path,
       sort_order: row.sort_order,
       bound_at: row.bound_at
@@ -254,13 +350,20 @@ function getPrototypeProjectBinding(prototypeId) {
   };
 }
 
-function updateProjectPrototype(id, { menuPath, sortOrder }) {
+function updateProjectPrototype(id, { menuPath, nodeId, sortOrder }) {
   const fields = [];
   const values = [];
+  const currentBinding = queryOne(`SELECT * FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
+  if (!currentBinding) return null;
+  if (menuPath !== undefined || nodeId !== undefined) {
+    const targetNode = nodeId
+      ? queryOne(`SELECT * FROM project_nodes WHERE id = ? AND project_id = ? AND status = 'active'`, [nodeId, currentBinding.project_id])
+      : findProjectNodeByPath(currentBinding.project_id, menuPath);
+    if (!targetNode || targetNode.node_type !== 'work') throw new Error('绑定只能迁移到叶子工作节点');
+    fields.push('node_id = ?'); values.push(targetNode.id);
+  }
   if (menuPath !== undefined) { fields.push('menu_path = ?'); values.push(menuPath); }
   if (sortOrder !== undefined) { fields.push('sort_order = ?'); values.push(sortOrder); }
-  const activeBinding = queryOne(`SELECT id FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
-  if (!activeBinding) return null;
   if (fields.length === 0) return getProjectPrototypeById(id);
   values.push(id);
   run(`UPDATE project_prototypes SET ${fields.join(', ')} WHERE id = ? AND unbound_at IS NULL`, values);
@@ -384,6 +487,7 @@ function createSnapshot({ projectId, name, versionLabel, createdBy }) {
   if (!project) throw new Error('项目不存在');
   const bindings = getProjectPrototypes(projectId).map(pp => ({
     prototypeId: pp.prototype_id,
+    nodeId: pp.node_id,
     menuPath: pp.menu_path,
     prototypeName: pp.prototype_name,
     versionNumber: pp.version_number,
@@ -447,12 +551,14 @@ function restoreSnapshot(snapshotId, { restoredBy }) {
   bindings.forEach((b, idx) => {
     const historical = findBinding(projectId, b.prototypeId, b.menuPath, { includeUnbound: true });
     if (historical) {
-      run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, sort_order = ? WHERE id = ?`, [idx, historical.id]);
+      const targetNode = b.nodeId ? queryOne(`SELECT id FROM project_nodes WHERE id = ? AND project_id = ?`, [b.nodeId, projectId]) : findProjectNodeByPath(projectId, b.menuPath);
+      run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, node_id = ?, sort_order = ? WHERE id = ?`, [targetNode?.id || null, idx, historical.id]);
     } else {
+      const targetNode = b.nodeId ? queryOne(`SELECT id FROM project_nodes WHERE id = ? AND project_id = ?`, [b.nodeId, projectId]) : findProjectNodeByPath(projectId, b.menuPath);
       run(`
-        INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
-        VALUES (?, ?, ?, ?, ?)
-      `, [projectId, b.prototypeId, b.menuPath, idx, t]);
+        INSERT INTO project_prototypes (project_id, prototype_id, node_id, menu_path, sort_order, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [projectId, b.prototypeId, targetNode?.id || null, b.menuPath, idx, t]);
     }
   });
 
@@ -494,6 +600,7 @@ module.exports = {
   getProjects,
   getProjectsPage,
   getProjectById,
+  getProjectNodes,
   updateProject,
   softDeleteProject,
 

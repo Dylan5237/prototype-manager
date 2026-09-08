@@ -518,7 +518,7 @@ router.delete('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, r
 
 // 绑定原型到菜单项
 router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  const { prototypeId, menuPath, sortOrder } = req.body;
+  const { prototypeId, menuPath, nodeId, sortOrder } = req.body;
   if (!prototypeId || !menuPath) {
     return res.status(400).json({ success: false, message: 'prototypeId 和 menuPath 不能为空' });
   }
@@ -531,6 +531,7 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
       projectId: req.params.id,
       prototypeId,
       menuPath,
+      nodeId,
       sortOrder: sortOrder || 0
     });
     recordUsageEvent({
@@ -546,20 +547,21 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
     if (err instanceof PrototypeProjectConflictError) {
       return res.status(409).json({ success: false, code: err.code, message: err.message, details: err.details });
     }
-    res.status(500).json({ success: false, message: err.message });
+    const status = /工作节点|叶子/.test(err.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 
 // 更新绑定
 router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  const { menuPath, sortOrder } = req.body;
+  const { menuPath, nodeId, sortOrder } = req.body;
   try {
     const ppId = parseInt(req.params.ppId, 10);
     const existing = getProjectPrototypeById(ppId);
     if (!existing || existing.project_id !== req.params.id) {
       return res.status(404).json({ success: false, message: '绑定不存在' });
     }
-    const binding = updateProjectPrototype(ppId, { menuPath, sortOrder });
+    const binding = updateProjectPrototype(ppId, { menuPath, nodeId, sortOrder });
     if (!binding) {
       return res.status(404).json({ success: false, message: '绑定不存在' });
     }
@@ -573,7 +575,8 @@ router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'ad
     });
     res.json({ success: true, data: binding });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const status = /工作节点|叶子|绑定/.test(err.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 
