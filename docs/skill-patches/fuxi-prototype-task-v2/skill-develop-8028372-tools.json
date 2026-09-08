@@ -1,0 +1,979 @@
+﻿{
+  "schema": "fuxi-mcp-tools/1",
+  "tools": [
+    {
+      "name": "check_connection",
+      "description": "Check whether the Fuxi backend is reachable.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_prototypes",
+      "description": "List prototypes accessible to the configured Fuxi account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string"
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "my",
+              "shared",
+              "all"
+            ]
+          },
+          "page": {
+            "type": "number"
+          },
+          "pageSize": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_prototype",
+      "description": "Create a Fuxi prototype record.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_prototype",
+      "description": "Read one prototype detail, including file tree metadata.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_readme",
+      "description": "Read the README extracted for a prototype.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_preview_url",
+      "description": "Create or reuse a browser-ready share URL for a prototype preview.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "entryFile": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "upload_zip",
+      "description": "Upload an existing ZIP file to a Fuxi prototype as a new version.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId",
+          "zipPath",
+          "versionNote"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "zipPath": {
+            "type": "string"
+          },
+          "versionNote": {
+            "type": "string"
+          },
+          "versionType": {
+            "type": "string",
+            "enum": [
+              "major",
+              "minor",
+              "patch"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_projects",
+      "description": "List projects accessible to the configured Fuxi account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_project",
+      "description": "Read one accessible project with prototype bindings, members, and checkout status. Checkout is legacy and not required for Task v2.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_project_nodes",
+      "description": "List project work/group nodes with ids needed to create Task v2 tasks (nodeId).",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_project_tasks",
+      "description": "List Task v2 collaboration tasks for a project. Authority field is taskId.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "assignedTo": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_project_task",
+      "description": "Read one Task v2 task. Authority field is taskId. Includes pending_candidate_count (at most one ready pending).",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "taskId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_project_task",
+      "description": "Create a Task v2 project-bound collaboration task. This is the sole writable main ledger for project-bound prototypes. Returns taskId. Does not require checkout.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "nodeId",
+          "bindingId",
+          "title",
+          "requirement"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "nodeId": {
+            "type": "string"
+          },
+          "bindingId": {
+            "type": "number",
+            "description": "project_prototypes.id for the bound prototype"
+          },
+          "title": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "responsibleUserId": {
+            "type": "number",
+            "description": "Defaults to the connected account when omitted"
+          },
+          "participantUserIds": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "versionStrategyType": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "custom"
+            ]
+          },
+          "versionStrategyValue": {
+            "type": "string",
+            "description": "Required for custom strategy; a higher SemVer."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "accept_project_task",
+      "description": "Accept a Task v2 assignment as the responsible user. Returns taskId and a handoff if issued. Checkout is not required.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "taskId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "submit_task_candidate",
+      "description": "Upload a ZIP as a Task v2 review candidate. Authority fields: taskId on input, candidateId on success. A new ready candidate replaces any previous ready candidate on the same task.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "taskId",
+          "zipPath"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          },
+          "zipPath": {
+            "type": "string"
+          },
+          "versionType": {
+            "type": "string",
+            "enum": [
+              "major",
+              "minor",
+              "patch"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Optional summary recorded in audit metadata only"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_task_candidates",
+      "description": "List candidate_submissions for a Task v2 task. Authority fields: taskId, candidateId.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "taskId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "taskId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "adopt_task_candidate",
+      "description": "Adopt a ready Task v2 candidate into the formal prototype version. Owner/admin only. Authority field: candidateId. Stales sibling ready candidates for the same prototype and base version.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "candidateId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "return_task_candidate",
+      "description": "Return a ready Task v2 candidate to the responsible user. Owner/admin only. Authority field: candidateId.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "candidateId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "candidateId": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_change_handoff",
+      "description": "DEPRECATED WRITE-FORBIDDEN. Project-bound collaboration must use create_project_task (Task v2, taskId). Returns LEGACY_CHANGEID_FORBIDDEN.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "prototypeId",
+          "requirement"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "prototypeId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "versionStrategyType": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "custom"
+            ]
+          },
+          "versionStrategyValue": {
+            "type": "string",
+            "description": "Required for custom strategy; a higher SemVer."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_prototype_change",
+      "description": "Create a standalone unbound prototype AI change (table prototype_direct_changes). Authority field is directChangeId. Unavailable once the prototype belongs to a project.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId",
+          "requirement"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "requirement": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000
+          },
+          "versionStrategyType": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "custom"
+            ]
+          },
+          "versionStrategyValue": {
+            "type": "string",
+            "description": "Required when versionStrategyType is custom; a higher SemVer."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "redeem_prototype_change_handoff",
+      "description": "Redeem a one-time standalone prototype change code and read the locked base version and source download path.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "handoffCode"
+        ],
+        "properties": {
+          "handoffCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_prototype_change_status",
+      "description": "Read a standalone prototype change. Authority field is directChangeId (changeId accepted as alias).",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "directChangeId": {
+            "type": "string"
+          },
+          "changeId": {
+            "type": "string",
+            "description": "Compat alias for directChangeId"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "submit_prototype_change",
+      "description": "Upload a validated ZIP for a redeemed standalone prototype change. Authority field is directChangeId (changeId accepted as alias).",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId",
+          "zipPath"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "directChangeId": {
+            "type": "string"
+          },
+          "changeId": {
+            "type": "string",
+            "description": "Compat alias for directChangeId"
+          },
+          "zipPath": {
+            "type": "string"
+          },
+          "versionType": {
+            "type": "string",
+            "enum": [
+              "major",
+              "minor",
+              "patch"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "redeem_change_handoff",
+      "description": "DEPRECATED WRITE-FORBIDDEN. Use accept_project_task / submit_task_candidate. Returns LEGACY_CHANGEID_FORBIDDEN.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "handoffCode"
+        ],
+        "properties": {
+          "handoffCode": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_change_status",
+      "description": "COMPAT READ-ONLY. Read a legacy prototype_changes row by changeId. Do not use this as the project-bound main ledger; prefer get_project_task / list_task_candidates.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "changeId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "changeId": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "submit_change_candidate",
+      "description": "DEPRECATED WRITE-FORBIDDEN. Project-bound candidate submit must use submit_task_candidate (taskId). Returns LEGACY_CHANGEID_FORBIDDEN.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "changeId",
+          "zipPath"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "changeId": {
+            "type": "string"
+          },
+          "zipPath": {
+            "type": "string"
+          },
+          "versionType": {
+            "type": "string",
+            "enum": [
+              "major",
+              "minor",
+              "patch"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "bind_prototype_to_project",
+      "description": "Bind an existing prototype into a project menu as a new project-prototype entry.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "prototypeId",
+          "menuPath"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "prototypeId": {
+            "type": "string"
+          },
+          "menuPath": {
+            "type": "string"
+          },
+          "sortOrder": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checkout_prototype",
+      "description": "LEGACY exclusive checkout of a bound project prototype. Not required for the Task v2 project-bound candidate flow (create_project_task 鈫?submit_task_candidate 鈫?adopt_task_candidate).",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "projectPrototypeId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "projectPrototypeId": {
+            "type": "number"
+          },
+          "note": {
+            "type": "string"
+          },
+          "durationHours": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "checkin_prototype",
+      "description": "LEGACY check-in of a project prototype the current user checked out. Not required for Task v2.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "projectPrototypeId"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "projectPrototypeId": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "create_snapshot",
+      "description": "Create a named project snapshot of menu configuration and bound prototype versions.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "name"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "versionLabel": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "restore_snapshot",
+      "description": "Restore a project snapshot. Requires explicit confirm: true and a production backup gate.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "snapshotId",
+          "confirm"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "snapshotId": {
+            "type": "number"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_prototype",
+      "description": "Move a prototype to the recycle bin. Requires explicit confirm: true.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId",
+          "confirm"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "rollback_version",
+      "description": "Roll a prototype back to a previous version. Requires explicit confirm: true and a backup gate for production.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId",
+          "versionId",
+          "confirm"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "versionId": {
+            "type": "string"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "force_release_checkout",
+      "description": "LEGACY force-release of a checked-out prototype; owner/admin only; requires confirm: true. Not required for Task v2.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectId",
+          "projectPrototypeId",
+          "confirm"
+        ],
+        "properties": {
+          "projectId": {
+            "type": "string"
+          },
+          "projectPrototypeId": {
+            "type": "number"
+          },
+          "confirm": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "validate_project",
+      "description": "Validate a local project directory for Fuxi upload compatibility without modifying it.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectPath"
+        ],
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "validate_zip",
+      "description": "Inspect an existing ZIP file for Fuxi upload compatibility.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "zipPath"
+        ],
+        "properties": {
+          "zipPath": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "pack_project",
+      "description": "Create a Fuxi-compatible ZIP from a built project directory.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "projectPath",
+          "outputZipPath"
+        ],
+        "properties": {
+          "projectPath": {
+            "type": "string"
+          },
+          "outputZipPath": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "deliver_project",
+      "description": "Safely create or update one Fuxi prototype with idempotency, optimistic version checks, optional project checkout protection, and mandatory readback.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "mode",
+          "idempotencyKey",
+          "zipPath",
+          "versionNote"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "project-bound-update"
+            ]
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "minLength": 8
+          },
+          "zipPath": {
+            "type": "string"
+          },
+          "versionNote": {
+            "type": "string"
+          },
+          "versionType": {
+            "type": "string",
+            "enum": [
+              "major",
+              "minor",
+              "patch"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "categoryId": {
+            "type": "string"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prototypeId": {
+            "type": "string"
+          },
+          "expectedVersion": {
+            "type": "number"
+          },
+          "expectedEntryFile": {
+            "type": "string"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "projectPrototypeId": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "upload_project",
+      "description": "Validate a ZIP then upload it to an explicit prototype as a new version.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "prototypeId",
+          "zipPath",
+          "versionNote"
+        ],
+        "properties": {
+          "prototypeId": {
+            "type": "string"
+          },
+          "zipPath": {
+            "type": "string"
+          },
+          "versionNote": {
+            "type": "string"
+          },
+          "versionType": {
+            "type": "string",
+            "enum": [
+              "major",
+              "minor",
+              "patch"
+            ]
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  ]
+}
