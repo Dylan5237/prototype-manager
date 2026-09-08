@@ -76,6 +76,14 @@ export function getProjectTask(id, taskId) {
   return api.get(`/projects/${id}/tasks/${taskId}`)
 }
 
+export function createProjectTask(id, data) {
+  return api.post(`/projects/${id}/tasks`, data)
+}
+
+export function acceptProjectTask(id, taskId) {
+  return api.post(`/projects/${id}/tasks/${taskId}/accept`)
+}
+
 export function cancelProjectTask(id, taskId) {
   return api.post(`/projects/${id}/tasks/${taskId}/cancel`)
 }
