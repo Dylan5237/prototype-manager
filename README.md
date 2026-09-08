@@ -67,7 +67,7 @@ MCP 连接变量：
 | `FUXI_USERNAME` / `FUXI_PASSWORD` | 无连接码或 refresh token 时的兼容登录 | 仅放在当前进程环境 |
 | `FUXI_INSTALL_ROOT` | MCP/Skill 本地运行时根目录 | `~/.fuxi/agent-runtime` |
 
-完整工具清单、结果字段、错误码和接入方式见 [`mcp-server/README.md`](mcp-server/README.md)。当前源码提供 30 个 MCP 工具。
+完整工具清单、结果字段、错误码和接入方式见 [`mcp-server/README.md`](mcp-server/README.md)。当前源码提供 39 个 MCP 工具（含 Task v2 与仍列出的遗留 changeId 工具）。这不是生产切流完成声明。
 
 ## 当前能力
 
@@ -130,7 +130,7 @@ npm run test:integration
 npm run test:remote-update
 ```
 
-后端测试串行执行协作、项目绑定、直接修改、Agent 更新和公告回归；MCP 集成测试使用隔离临时后端，当前会核对 30 个工具及安全交付、连接码/刷新会话和项目协作路径。测试通过只代表本地代码证据，不替代真实 16077、16088 或 GitLab 验收。
+后端测试串行执行协作、项目绑定、直接修改、Agent 更新和公告回归；MCP 集成测试使用隔离临时后端，当前会核对 Task v2 工具、遗留 changeId 写入禁止和安全交付路径。测试通过只代表本地代码证据，不替代真实 16077、16088 或 GitLab 验收。
 
 ## 配置与发布
 

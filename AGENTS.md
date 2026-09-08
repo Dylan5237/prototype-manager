@@ -40,7 +40,7 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 
 - `backend/`：API 路由、服务层、SQLite 数据库；数据在 `backend/data/app.db` 和 `backend/repos/`。
 - `frontend/`：Vue SPA，页面在 `src/views/`，API 封装在 `src/api/`。
-- `mcp-server/`：面向 Agent 的 30 个结构化工具，源码在 `src/server.js`。
+- `mcp-server/`：面向 Agent 的 MCP 工具（本分支源码含 Task v2；生产切流未宣称完成），源码在 `src/server.js`。
 - `ops/skills/fuxi-platform-release/`：维护者发布技能，内置只读预检、不可变 release、备份和回滚脚本。
 - `docs/`：体系持续事实入口（`TECHNICAL_DESIGN.md`、`MCP_SKILLS_EVOLUTION_JOURNEY.md`、`BACKLOG.md`）。
 - `.backup/` 和 `.release/`：本地备份和发布产物，Git 忽略。

@@ -253,11 +253,13 @@ SkyUI 仅能从内部 npm registry 获取。registry 可用于开发和构建，
 
 ### 3.4 MCP 工具分组
 
-当前 MCP 共 30 个工具（以 `mcp-server/src/server.js` 和集成测试为准）：
+当前本仓库 MCP 源码共 39 个工具（以 `mcp-server/src/server.js` 和集成测试为准）。这是协作主账本 Task v2 合同在本分支上的实现，**不是**生产已完成切流的事实声明。
 
 - 原型核心：`check_connection`、`list_prototypes`、`create_prototype`、`get_prototype`、`get_readme`、`get_preview_url`、`upload_zip`
-- 项目读取与协作：`list_projects`、`get_project`、`bind_prototype_to_project`、`checkout_prototype`、`checkin_prototype`、`create_snapshot`
-- 轻协作候选：`create_change_handoff`、`create_prototype_change`、`redeem_prototype_change_handoff`、`get_prototype_change_status`、`submit_prototype_change`、`redeem_change_handoff`、`get_change_status`、`submit_change_candidate`
+- 项目读取与 Task v2：`list_projects`、`get_project`、`list_project_nodes`、`list_project_tasks`、`get_project_task`、`create_project_task`、`accept_project_task`、`submit_task_candidate`、`list_task_candidates`、`adopt_task_candidate`、`return_task_candidate`、`bind_prototype_to_project`、`create_snapshot`
+- 独立原型（未绑定）：`create_prototype_change`、`redeem_prototype_change_handoff`、`get_prototype_change_status`、`submit_prototype_change`（权威字段 `directChangeId`）
+- 兼容只读 / 写入禁止：`get_change_status`（只读）；`create_change_handoff`、`redeem_change_handoff`、`submit_change_candidate`（写入返回 `LEGACY_CHANGEID_FORBIDDEN`）
+- 遗留签出（非 Task v2 主路径）：`checkout_prototype`、`checkin_prototype`、`force_release_checkout`
 - 高风险操作：`restore_snapshot`、`delete_prototype`、`rollback_version`、`force_release_checkout`，均要求 `confirm: true`
 - 本地交付：`validate_project`、`validate_zip`、`pack_project`、`upload_project`、`deliver_project`
 

@@ -1,0 +1,64 @@
+{
+  "contract": "Skill+MCP Task v2 freeze (review artifact, not production cutover)",
+  "authorityFields": {
+    "unbound": ["directChangeId"],
+    "projectBound": ["taskId", "candidateId"],
+    "legacyCompatReadOnly": ["changeId"]
+  },
+  "addTools": [
+    {
+      "name": "list_project_nodes",
+      "required": ["projectId"]
+    },
+    {
+      "name": "list_project_tasks",
+      "required": ["projectId"]
+    },
+    {
+      "name": "get_project_task",
+      "required": ["projectId", "taskId"]
+    },
+    {
+      "name": "create_project_task",
+      "required": ["projectId", "nodeId", "bindingId", "title", "requirement"]
+    },
+    {
+      "name": "accept_project_task",
+      "required": ["projectId", "taskId"]
+    },
+    {
+      "name": "submit_task_candidate",
+      "required": ["projectId", "taskId", "zipPath"]
+    },
+    {
+      "name": "list_task_candidates",
+      "required": ["projectId", "taskId"]
+    },
+    {
+      "name": "adopt_task_candidate",
+      "required": ["projectId", "candidateId"]
+    },
+    {
+      "name": "return_task_candidate",
+      "required": ["projectId", "candidateId"]
+    }
+  ],
+  "writeForbiddenTools": [
+    "create_change_handoff",
+    "redeem_change_handoff",
+    "submit_change_candidate"
+  ],
+  "writeForbiddenCode": "LEGACY_CHANGEID_FORBIDDEN",
+  "compatReadOnlyTools": ["get_change_status"],
+  "unboundTools": [
+    "create_prototype_change",
+    "redeem_prototype_change_handoff",
+    "get_prototype_change_status",
+    "submit_prototype_change"
+  ],
+  "legacyNotRequiredForMainFlow": [
+    "checkout_prototype",
+    "checkin_prototype",
+    "force_release_checkout"
+  ]
+}
