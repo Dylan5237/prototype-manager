@@ -149,9 +149,9 @@
       @saved="loadProject"
     />
 
-    <el-dialog v-model="changeRequestVisible" :title="editingChangeId ? '修改 AI 任务' : '让 AI 修改'" width="620px" destroy-on-close>
+    <el-dialog v-model="changeRequestVisible" title="让 AI 修改" width="620px" destroy-on-close>
       <template v-if="!changeTaskResult">
-        <p class="dialog-tip">描述想看到的结果。Agent 会基于当前正式版本生成独立修订，不会直接覆盖原型。任务被 AI 领取前可以修改或删除。</p>
+        <p class="dialog-tip">描述想看到的结果。平台会创建 Task v2 任务；Agent 基于当前正式版本提交待审修订，不会直接覆盖原型。</p>
         <el-form label-position="top">
           <el-form-item label="任务标题">
             <el-input
@@ -185,20 +185,24 @@
       </template>
       <template v-else>
         <el-alert title="任务已生成" type="success" :closable="false" show-icon>
-          <p>把下面完整提示词发送给已经接入伏羲的 AI 助手。任务码十分钟内有效且只能使用一次。</p>
+          <p>把下面完整提示词发送给已经接入伏羲的 AI 助手。请使用 taskId 提交待审修订，不要走旧的 /changes 写入。</p>
         </el-alert>
         <div class="task-code-row">
+          <span>taskId</span>
+          <code>{{ changeTaskResult.taskId }}</code>
+        </div>
+        <div v-if="changeTaskResult.handoffCode" class="task-code-row">
           <span>任务码</span>
           <code>{{ changeTaskResult.handoffCode }}</code>
         </div>
-        <p class="dialog-tip">版本策略：{{ changeTaskResult.change?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.change.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
+        <p class="dialog-tip">版本策略：{{ changeTaskResult.task?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.task.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
         <pre class="task-prompt">{{ changeTaskResult.prompt }}</pre>
         <p class="dialog-tip">修订上传后仍需项目负责人采用为正式版，当前正式版本不会自动改变。</p>
       </template>
       <template #footer>
         <el-button @click="changeRequestVisible = false">{{ changeTaskResult ? '关闭' : '取消' }}</el-button>
         <el-button v-if="changeTaskResult" type="primary" @click="copyChangePrompt">复制完整提示词</el-button>
-        <el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">{{ editingChangeId ? '保存并重新生成提示词' : '生成 AI 任务' }}</el-button>
+        <el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">生成 AI 任务</el-button>
       </template>
     </el-dialog>
 
@@ -360,12 +364,13 @@ import {
   getProjectRoleLabel
 } from '../utils/project-permissions'
 import { displayPersonName, pickPendingRevision, taskStatusMeta } from '../utils/candidate-review'
+import { startBoundProjectTask } from '../utils/project-task-create'
 import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
   getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
   getProjectMembers, addProjectMember, removeProjectMember, getProjectNodes, updateProjectNodeAssignments,
-  createPrototypeChange, updateProjectChange,
+  createProjectTask, acceptProjectTask,
   getProjectTasks, getTaskCandidates, adoptProjectCandidate, returnProjectCandidate, cancelProjectTask
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
@@ -419,7 +424,6 @@ const assignmentOwnerId = ref(null)
 const assignmentContributorIds = ref([])
 
 const changeRequestVisible = ref(false)
-const editingChangeId = ref(null)
 const changeTitle = ref('')
 const changeRequirement = ref('')
 const changeVersionStrategyType = ref('auto')
@@ -686,7 +690,6 @@ async function loadCandidates() {
 }
 
 function openChangeRequest() {
-  editingChangeId.value = null
   changeTitle.value = ''
   changeRequirement.value = ''
   changeVersionStrategyType.value = 'auto'
@@ -704,23 +707,34 @@ async function submitChangeTask() {
     ElMessage.warning('请输入自定义版本号')
     return
   }
+  if (!currentBinding.value) {
+    ElMessage.warning('当前菜单尚未绑定原型')
+    return
+  }
+  if (!authStore.user?.id) {
+    ElMessage.warning('请先登录后再创建任务')
+    return
+  }
   creatingChange.value = true
   try {
-    const payload = {
+    changeTaskResult.value = await startBoundProjectTask({
+      projectId: route.params.id,
+      projectName: project.value.name,
+      binding: currentBinding.value,
+      menuPath: activePathLabel.value,
       title: (changeTitle.value.trim() || changeRequirement.value.trim()).slice(0, 120),
       requirement: changeRequirement.value.trim(),
       versionStrategy: {
         type: changeVersionStrategyType.value,
         value: changeVersionStrategyType.value === 'custom' ? changeVersionStrategyValue.value.trim() : null
-      }
-    }
-    const res = editingChangeId.value
-      ? await updateProjectChange(route.params.id, editingChangeId.value, payload)
-      : await createPrototypeChange(route.params.id, currentBinding.value.prototype_id, payload)
-    changeTaskResult.value = res.data.data
+      },
+      responsibleUserId: authStore.user.id,
+      createProjectTask,
+      acceptProjectTask
+    })
     await loadTasks()
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '生成任务失败')
+    ElMessage.error(err.response?.data?.message || err.message || '生成任务失败')
   } finally {
     creatingChange.value = false
   }

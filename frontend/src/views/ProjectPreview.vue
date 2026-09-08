@@ -133,9 +133,9 @@
       </div>
     </el-drawer>
 
-    <el-dialog v-model="changeRequestVisible" :title="editingChangeId ? '修改 AI 任务' : '让 AI 修改'" width="620px" destroy-on-close>
+    <el-dialog v-model="changeRequestVisible" title="让 AI 修改" width="620px" destroy-on-close>
       <template v-if="!changeTaskResult">
-        <p class="dialog-tip">描述想看到的结果。Agent 会基于当前正式版本生成独立修订，不会直接覆盖原型。</p>
+        <p class="dialog-tip">描述想看到的结果。平台会创建 Task v2 任务；Agent 基于当前正式版本提交待审修订，不会直接覆盖原型。</p>
         <el-form label-position="top">
           <el-form-item label="任务标题"><el-input v-model="changeTitle" maxlength="120" placeholder="例如：客户列表增加跟进筛选" /></el-form-item>
           <el-form-item label="修改目标"><el-input v-model="changeRequirement" type="textarea" :rows="6" maxlength="4000" show-word-limit placeholder="例如：在客户列表增加最近跟进时间，并支持按跟进状态筛选" /></el-form-item>
@@ -144,12 +144,13 @@
         </el-form>
       </template>
       <template v-else>
-        <el-alert title="任务已生成" type="success" :closable="false" show-icon><p>把下面完整提示词发送给已经接入伏羲的 AI 助手。任务码十分钟内有效且只能使用一次。</p></el-alert>
-        <div class="task-code-row"><span>任务码</span><code>{{ changeTaskResult.handoffCode }}</code></div>
-        <p class="dialog-tip">版本策略：{{ changeTaskResult.change?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.change.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
+        <el-alert title="任务已生成" type="success" :closable="false" show-icon><p>把下面完整提示词发送给已经接入伏羲的 AI 助手。请使用 taskId 提交待审修订，不要走旧的 /changes 写入。</p></el-alert>
+        <div class="task-code-row"><span>taskId</span><code>{{ changeTaskResult.taskId }}</code></div>
+        <div v-if="changeTaskResult.handoffCode" class="task-code-row"><span>任务码</span><code>{{ changeTaskResult.handoffCode }}</code></div>
+        <p class="dialog-tip">版本策略：{{ changeTaskResult.task?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.task.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
         <pre class="task-prompt">{{ changeTaskResult.prompt }}</pre><p class="dialog-tip">修订上传后仍需项目负责人采用为正式版，当前正式版本不会自动改变。</p>
       </template>
-      <template #footer><el-button @click="changeRequestVisible = false">{{ changeTaskResult ? '关闭' : '取消' }}</el-button><el-button v-if="changeTaskResult" type="primary" @click="copyChangePrompt">复制完整提示词</el-button><el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">{{ editingChangeId ? '保存并重新生成提示词' : '生成 AI 任务' }}</el-button></template>
+      <template #footer><el-button @click="changeRequestVisible = false">{{ changeTaskResult ? '关闭' : '取消' }}</el-button><el-button v-if="changeTaskResult" type="primary" @click="copyChangePrompt">复制完整提示词</el-button><el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">生成 AI 任务</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -162,10 +163,11 @@ import { ArrowLeft, ArrowRight, Menu, List, FullScreen, Link, MagicStick, Monito
 import { useAuthStore } from '../stores/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
 import { findFirstBoundMenu, findMenuByPath, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings } from '../utils/project-menu'
-import { getProject, getProjectPortal, getProjectTasks, getTaskCandidates, createPrototypeChange, updateProjectChange, adoptProjectCandidate, returnProjectCandidate, checkoutPrototype, checkinPrototype, releaseCheckout } from '../api/projects'
+import { getProject, getProjectPortal, getProjectTasks, getTaskCandidates, createProjectTask, acceptProjectTask, adoptProjectCandidate, returnProjectCandidate, checkoutPrototype, checkinPrototype, releaseCheckout } from '../api/projects'
 import ProjectMenuTree from '../components/project/ProjectMenuTree.vue'
 import TaskCandidateHistory from '../components/project/TaskCandidateHistory.vue'
 import { displayPersonName, pickPendingRevision, taskStatusMeta } from '../utils/candidate-review'
+import { startBoundProjectTask } from '../utils/project-task-create'
 
 const route = useRoute()
 const router = useRouter()
@@ -190,7 +192,6 @@ const candidatesLoading = ref(false)
 const selectedCandidate = ref(null)
 const reviewingChange = ref(false)
 const changeRequestVisible = ref(false)
-const editingChangeId = ref(null)
 const changeTitle = ref('')
 const changeRequirement = ref('')
 const changeVersionStrategyType = ref('auto')
@@ -350,18 +351,28 @@ function menuStateForPath(path) {
   if(binding.checkout)return {text:binding.checkout.user_id===authStore.user?.id?'我签出':'签出中',tone:'warn'}
   return {text:'稳定',tone:'stable'}
 }
-function openChangeRequest() { editingChangeId.value = null; changeTitle.value = ''; changeRequirement.value = ''; changeVersionStrategyType.value = 'auto'; changeVersionStrategyValue.value = ''; changeTaskResult.value = null; changeRequestVisible.value = true }
+function openChangeRequest() { changeTitle.value = ''; changeRequirement.value = ''; changeVersionStrategyType.value = 'auto'; changeVersionStrategyValue.value = ''; changeTaskResult.value = null; changeRequestVisible.value = true }
 async function submitChangeTask() {
   if (!changeRequirement.value.trim()) return ElMessage.warning('请描述修改目标')
   if (changeVersionStrategyType.value === 'custom' && !changeVersionStrategyValue.value.trim()) return ElMessage.warning('请输入自定义版本号')
   if (!currentBinding.value) return ElMessage.warning('当前菜单尚未绑定原型')
+  if (!authStore.user?.id) return ElMessage.warning('请先登录后再创建任务')
   creatingChange.value = true
   try {
-    const payload = { title: (changeTitle.value.trim() || changeRequirement.value.trim()).slice(0, 120), requirement: changeRequirement.value.trim(), versionStrategy: { type: changeVersionStrategyType.value, value: changeVersionStrategyType.value === 'custom' ? changeVersionStrategyValue.value.trim() : null } }
-    const res = editingChangeId.value ? await updateProjectChange(route.params.id, editingChangeId.value, payload) : await createPrototypeChange(route.params.id, currentBinding.value.prototype_id, payload)
-    changeTaskResult.value = res.data.data
+    changeTaskResult.value = await startBoundProjectTask({
+      projectId: route.params.id,
+      projectName: project.value.name,
+      binding: currentBinding.value,
+      menuPath: activePathLabel.value,
+      title: (changeTitle.value.trim() || changeRequirement.value.trim()).slice(0, 120),
+      requirement: changeRequirement.value.trim(),
+      versionStrategy: { type: changeVersionStrategyType.value, value: changeVersionStrategyType.value === 'custom' ? changeVersionStrategyValue.value.trim() : null },
+      responsibleUserId: authStore.user.id,
+      createProjectTask,
+      acceptProjectTask
+    })
     await loadTasks()
-  } catch (error) { ElMessage.error(error.response?.data?.message || '生成任务失败') } finally { creatingChange.value = false }
+  } catch (error) { ElMessage.error(error.response?.data?.message || error.message || '生成任务失败') } finally { creatingChange.value = false }
 }
 async function copyChangePrompt() { try { await copyClipboardText(changeTaskResult.value?.prompt || ''); ElMessage.success('完整提示词已复制') } catch (error) { ElMessage.warning('复制失败，请手工选择任务文字') } }
 async function adoptSelectedCandidate(candidate = selectedCandidate.value) {
