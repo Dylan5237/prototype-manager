@@ -25,6 +25,7 @@ const EVENT_DEFINITIONS = Object.freeze({
   project_prototype_unbound: { label: '解绑原型', category: '协作', effective: true },
   project_member_added: { label: '添加项目成员', category: '协作', effective: true },
   project_member_removed: { label: '移除项目成员', category: '协作', effective: true },
+  project_node_assignments_updated: { label: '更新节点分工', category: '协作', effective: true },
   checkout_created: { label: '签出模块', category: '协作', effective: true },
   checkin_completed: { label: '签入模块', category: '协作', effective: true },
   checkout_released: { label: '释放签出', category: '协作', effective: true },

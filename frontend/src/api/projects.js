@@ -80,6 +80,14 @@ export function removeProjectMember(id, userId) {
   return api.delete(`/projects/${id}/members/${userId}`)
 }
 
+export function getProjectNodes(id) {
+  return api.get(`/projects/${id}/nodes`)
+}
+
+export function updateProjectNodeAssignments(id, nodeId, data) {
+  return api.put(`/projects/${id}/nodes/${nodeId}/assignments`, data)
+}
+
 export function checkoutPrototype(id, ppId, data) {
   return api.post(`/projects/${id}/prototypes/${ppId}/checkout`, data || {})
 }

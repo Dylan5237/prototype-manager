@@ -33,6 +33,16 @@ class BindingRemovalConflictError extends Error {
   }
 }
 
+class NodeAssignmentConflictError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'NodeAssignmentConflictError';
+    this.code = 'MEMBER_HAS_NODE_ASSIGNMENTS';
+    this.status = 409;
+    this.details = details;
+  }
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -54,6 +64,54 @@ function getProjectNodes(projectId, { includeInactive = false } = {}) {
     WHERE pn.project_id = ? ${includeInactive ? '' : "AND pn.status = 'active'"}
     ORDER BY pn.depth, pn.sort_order, pn.created_at
   `, [projectId]);
+}
+
+function getProjectNodeById(nodeId) {
+  return queryOne(`SELECT * FROM project_nodes WHERE id = ?`, [nodeId]);
+}
+
+function getNodeAssignments(nodeId) {
+  return query(`
+    SELECT na.*, u.username, u.nickname
+    FROM node_assignments na
+    JOIN users u ON u.id = na.user_id
+    WHERE na.project_node_id = ? AND na.status = 'active'
+    ORDER BY CASE na.assignment_role WHEN 'owner' THEN 0 ELSE 1 END, na.created_at
+  `, [nodeId]);
+}
+
+function setNodeAssignments({ projectId, nodeId, ownerId, contributorIds = [], assignedBy }) {
+  const node = queryOne(`SELECT * FROM project_nodes WHERE id = ? AND project_id = ? AND status = 'active'`, [nodeId, projectId]);
+  if (!node) throw new Error('工作节点不存在');
+  const project = getProjectById(projectId);
+  const userIds = [...new Set([ownerId, ...contributorIds].filter(Boolean).map(Number))];
+  for (const userId of userIds) {
+    if (Number(project.created_by) === userId) continue;
+    const member = getProjectMember(projectId, userId);
+    if (!member || member.role === 'viewer') throw new Error('节点负责人和参与者必须是项目负责人、管理员或编辑者');
+  }
+  const t = now();
+  const db = getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    db.run(`UPDATE node_assignments SET status = 'inactive', updated_at = ? WHERE project_node_id = ? AND status = 'active'`, [t, nodeId]);
+    const upsert = (userId, role) => db.run(`
+      INSERT INTO node_assignments (project_node_id, user_id, assignment_role, status, assigned_by, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', ?, ?, ?)
+      ON CONFLICT(project_node_id, user_id, assignment_role)
+      DO UPDATE SET status = 'active', assigned_by = excluded.assigned_by, updated_at = excluded.updated_at
+    `, [nodeId, userId, role, assignedBy || null, t, t]);
+    if (ownerId) upsert(Number(ownerId), 'owner');
+    for (const userId of [...new Set(contributorIds.map(Number))]) {
+      if (userId !== Number(ownerId)) upsert(userId, 'contributor');
+    }
+    db.run('COMMIT');
+    saveDatabase();
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
+  return getNodeAssignments(nodeId);
 }
 
 function nodesToMenuConfig(nodes) {
@@ -412,6 +470,12 @@ function getProjectMembers(projectId) {
 }
 
 function removeProjectMember(projectId, userId) {
+  const assignments = query(`
+    SELECT pn.id AS node_id, pn.label, na.assignment_role
+    FROM node_assignments na JOIN project_nodes pn ON pn.id = na.project_node_id
+    WHERE pn.project_id = ? AND na.user_id = ? AND na.status = 'active'
+  `, [projectId, userId]);
+  if (assignments.length) throw new NodeAssignmentConflictError('成员仍负责或参与项目节点，请先调整节点分工', { assignments });
   run(`DELETE FROM project_members WHERE project_id = ? AND user_id = ?`, [projectId, userId]);
 }
 
@@ -607,9 +671,13 @@ module.exports = {
   bindPrototype,
   PrototypeProjectConflictError,
   BindingRemovalConflictError,
+  NodeAssignmentConflictError,
   getPrototypeProjectBinding,
   getProjectPrototypeById,
   getProjectPrototypes,
+  getProjectNodeById,
+  getNodeAssignments,
+  setNodeAssignments,
   updateProjectPrototype,
   removeProjectPrototype,
 

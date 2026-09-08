@@ -7,6 +7,7 @@ const {
   createProject, getProjectsPage, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
   PrototypeProjectConflictError, BindingRemovalConflictError,
+  NodeAssignmentConflictError, getProjectNodes, getNodeAssignments, setNodeAssignments,
   addProjectMember, getProjectMember, getProjectMembers, removeProjectMember,
   checkoutPrototype, checkinPrototype, forceReleaseCheckout, getActiveCheckout, getProjectCheckouts,
   createSnapshot, getProjectSnapshots, getSnapshotById, restoreSnapshot, deleteSnapshot
@@ -646,6 +647,35 @@ router.post('/:id/prototypes/:prototypeId/repository', requireAuth, async (req, 
 
 // =================== 项目成员 API ===================
 
+router.get('/:id/nodes', requireAuth, requireProjectAccess, (req, res) => {
+  const nodes = getProjectNodes(req.params.id).map(node => ({ ...node, assignments: getNodeAssignments(node.id) }));
+  res.json({ success: true, data: nodes });
+});
+
+router.put('/:id/nodes/:nodeId/assignments', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const assignments = setNodeAssignments({
+      projectId: req.params.id,
+      nodeId: req.params.nodeId,
+      ownerId: req.body.ownerId,
+      contributorIds: Array.isArray(req.body.contributorIds) ? req.body.contributorIds : [],
+      assignedBy: req.user.id
+    });
+    recordUsageEvent({
+      eventType: 'project_node_assignments_updated',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project_node',
+      resourceId: req.params.nodeId,
+      metadata: { projectId: req.params.id, ownerId: req.body.ownerId || null, contributorCount: req.body.contributorIds?.length || 0 }
+    });
+    res.json({ success: true, data: assignments });
+  } catch (error) {
+    const status = /工作节点|负责人|参与者/.test(error.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message });
+  }
+});
+
 // 成员列表
 router.get('/:id/members', requireAuth, requireProjectAccess, (req, res) => {
   res.json({ success: true, data: getProjectMembers(req.params.id) });
@@ -678,7 +708,14 @@ router.post('/:id/members', requireAuth, requireProjectRole('owner', 'admin'), (
 
 // 移除成员
 router.delete('/:id/members/:userId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  removeProjectMember(req.params.id, parseInt(req.params.userId, 10));
+  try {
+    removeProjectMember(req.params.id, parseInt(req.params.userId, 10));
+  } catch (error) {
+    if (error instanceof NodeAssignmentConflictError) {
+      return res.status(409).json({ success: false, code: error.code, message: error.message, details: error.details });
+    }
+    throw error;
+  }
   recordUsageEvent({
     eventType: 'project_member_removed',
     userId: req.user.id,

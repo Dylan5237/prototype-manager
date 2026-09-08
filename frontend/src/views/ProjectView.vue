@@ -39,6 +39,7 @@
                 <small>当前节点负责人</small>
                 <strong>{{ currentOwnerName }}</strong>
               </span>
+              <el-button v-if="canManage && activeItem?.id" text type="primary" size="small" @click="openAssignmentDialog">配置分工</el-button>
             </div>
           </section>
 
@@ -352,6 +353,25 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+
+    <el-dialog v-model="assignmentVisible" :title="`节点分工 · ${activeItem?.label || ''}`" width="520px">
+      <el-form label-width="90px" v-loading="assignmentLoading">
+        <el-form-item label="节点负责人">
+          <el-select v-model="assignmentOwnerId" clearable placeholder="暂不设置" style="width: 100%">
+            <el-option v-for="member in assignableMembers" :key="member.user_id" :label="member.nickname || member.username" :value="member.user_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="参与者">
+          <el-select v-model="assignmentContributorIds" multiple collapse-tags placeholder="选择参与者" style="width: 100%">
+            <el-option v-for="member in assignableMembers" :key="member.user_id" :label="member.nickname || member.username" :value="member.user_id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignmentVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assignmentSaving" @click="saveNodeAssignments">保存分工</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -375,7 +395,7 @@ import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
   getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
-  getProjectMembers, addProjectMember, removeProjectMember,
+  getProjectMembers, addProjectMember, removeProjectMember, getProjectNodes, updateProjectNodeAssignments,
   createPrototypeChange, getProjectChanges, updateProjectChange, deleteProjectChange,
   adoptProjectChange, rejectProjectChange
 } from '../api/projects'
@@ -422,6 +442,11 @@ const memberRole = ref('editor')
 const memberOptions = ref([])
 const memberSearching = ref(false)
 const addingMember = ref(false)
+const assignmentVisible = ref(false)
+const assignmentLoading = ref(false)
+const assignmentSaving = ref(false)
+const assignmentOwnerId = ref(null)
+const assignmentContributorIds = ref([])
 
 const changeRequestVisible = ref(false)
 const editingChangeId = ref(null)
@@ -545,8 +570,14 @@ const currentBinding = computed(() => {
 })
 
 const currentOwnerName = computed(() => {
-  const owner = project.value.members?.find(member => member.role === 'owner')
-  return owner?.nickname || owner?.username || project.value.creator_name || '未配置'
+  const node = project.value.nodes?.find(item => item.id === activeItem.value?.id)
+  return node?.owner_name || node?.owner_username || '未配置'
+})
+
+const assignableMembers = computed(() => {
+  const owner = { user_id: project.value.created_by, username: project.value.creator_name || '项目负责人', nickname: project.value.creator_name || '项目负责人' }
+  return [owner, ...(project.value.members || []).filter(member => member.role === 'editor')]
+    .filter((member, index, list) => list.findIndex(item => Number(item.user_id) === Number(member.user_id)) === index)
 })
 
 const currentCheckoutLabel = computed(() => {
@@ -1020,6 +1051,41 @@ async function handleRemoveMember(userId) {
     if (err !== 'cancel') {
       ElMessage.error(err.response?.data?.message || '移除失败')
     }
+  }
+}
+
+async function openAssignmentDialog() {
+  if (!activeItem.value?.id) return
+  assignmentVisible.value = true
+  assignmentLoading.value = true
+  try {
+    const res = await getProjectNodes(route.params.id)
+    const node = (res.data.data || []).find(item => item.id === activeItem.value.id)
+    const assignments = node?.assignments || []
+    assignmentOwnerId.value = assignments.find(item => item.assignment_role === 'owner')?.user_id || null
+    assignmentContributorIds.value = assignments.filter(item => item.assignment_role === 'contributor').map(item => item.user_id)
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '加载节点分工失败')
+  } finally {
+    assignmentLoading.value = false
+  }
+}
+
+async function saveNodeAssignments() {
+  if (!activeItem.value?.id) return
+  assignmentSaving.value = true
+  try {
+    await updateProjectNodeAssignments(route.params.id, activeItem.value.id, {
+      ownerId: assignmentOwnerId.value,
+      contributorIds: assignmentContributorIds.value
+    })
+    ElMessage.success('节点分工已更新')
+    assignmentVisible.value = false
+    await loadProject()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '保存节点分工失败')
+  } finally {
+    assignmentSaving.value = false
   }
 }
 

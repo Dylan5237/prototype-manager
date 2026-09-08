@@ -14,7 +14,10 @@ const {
   getProjectNodes,
   getProjectPrototypes,
   getProjectPrototypeById,
+  getNodeAssignments,
   removeProjectPrototype,
+  removeProjectMember,
+  setNodeAssignments,
   updateProject,
   PrototypeProjectConflictError
 } = require('../services/db-projects');
@@ -91,6 +94,16 @@ test('keeps stable node identity across rename and rejects binding to a group no
   assert.equal(after.id, entity.id);
   assert.equal(getProjectNodes('project-1').find(node => node.id === entity.id).label, '实体模型设计');
   assert.throws(() => bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' }), /叶子工作节点/);
+});
+
+test('assigns a real node owner and blocks removing an assigned member', () => {
+  database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [2, 'editor', 'hash', '节点负责人', '["uploader"]', '2026-08-24T00:00:00.000Z']);
+  database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`, ['project-1', 2, 'editor', '2026-08-24T00:00:00.000Z']);
+  const node = getProjectNodes('project-1').find(item => item.node_key === 'entity');
+  setNodeAssignments({ projectId: 'project-1', nodeId: node.id, ownerId: 2, contributorIds: [1], assignedBy: 1 });
+  const assignments = getNodeAssignments(node.id);
+  assert.equal(assignments.find(item => item.assignment_role === 'owner').user_id, 2);
+  assert.throws(() => removeProjectMember('project-1', 2), error => error.code === 'MEMBER_HAS_NODE_ASSIGNMENTS');
 });
 
 test('unbind preserves history and allows the same binding to be restored', () => {
