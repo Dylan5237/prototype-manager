@@ -23,3 +23,15 @@ export function canEditProjectTask({ role, isPlatformAdmin = false, userId, chan
   if (role === 'owner' || isPlatformAdmin) return true
   return String(change.created_by) === String(userId)
 }
+
+export function canReviewProjectCandidate({ role, candidate }) {
+  if (!candidate || candidate.status !== 'ready') return false
+  return getProjectPermissions(role).canManage
+}
+
+export function canCancelProjectTask({ role, isPlatformAdmin = false, userId, task }) {
+  if (!task || ['completed', 'cancelled'].includes(task.status)) return false
+  if (Number(task.pending_candidate_count || 0) > 0) return false
+  if (isPlatformAdmin || role === 'owner') return true
+  return String(task.requested_by) === String(userId)
+}

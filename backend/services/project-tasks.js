@@ -52,6 +52,32 @@ function decorateTask(row) {
   };
 }
 
+function attachCandidateSummaries(tasks) {
+  if (!tasks.length) return tasks;
+  const ids = tasks.map(task => task.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = query(
+    `SELECT task_id, status, COUNT(*) AS count FROM candidate_submissions WHERE task_id IN (${placeholders}) GROUP BY task_id, status`,
+    ids
+  );
+  const byTask = new Map();
+  rows.forEach(row => {
+    const current = byTask.get(row.task_id) || { candidate_count: 0, pending_candidate_count: 0 };
+    const count = Number(row.count || 0);
+    current.candidate_count += count;
+    if (['submitted', 'ready'].includes(row.status)) current.pending_candidate_count += count;
+    byTask.set(row.task_id, current);
+  });
+  return tasks.map(task => {
+    const summary = byTask.get(task.id) || { candidate_count: 0, pending_candidate_count: 0 };
+    return {
+      ...task,
+      candidate_count: summary.candidate_count,
+      pending_candidate_count: summary.pending_candidate_count
+    };
+  });
+}
+
 function selectTask(taskIdValue) {
   return queryOne(`
     SELECT pt.*, pn.label AS node_label, pn.node_type, pp.prototype_id, pp.menu_path,
@@ -75,7 +101,7 @@ class ProjectTaskService {
     this.authorization.assertCan(actor, ACTIONS.VIEW_CHANGE, { type: 'project_task', projectId });
     const task = selectTask(id);
     if (!task || String(task.project_id) !== String(projectId)) throw new ProjectTaskError('TASK_NOT_FOUND', '任务不存在', 404);
-    return decorateTask(task);
+    return attachCandidateSummaries([decorateTask(task)])[0];
   }
 
   listTasks({ actor, projectId, nodeId, status, assignedTo }) {
@@ -88,7 +114,7 @@ class ProjectTaskService {
       clauses.push(`EXISTS (SELECT 1 FROM task_assignments filter_ta WHERE filter_ta.task_id = pt.id AND filter_ta.user_id = ? AND filter_ta.acceptance_status != 'revoked')`);
       params.push(Number(assignedTo));
     }
-    return query(`
+    const rows = query(`
       SELECT pt.*, pn.label AS node_label, pn.node_type, pp.prototype_id, pp.menu_path,
         p.name AS prototype_name, requester.username AS requester_username, requester.nickname AS requester_name
       FROM project_tasks pt
@@ -98,6 +124,7 @@ class ProjectTaskService {
       JOIN users requester ON requester.id = pt.requested_by
       WHERE ${clauses.join(' AND ')} ORDER BY pt.updated_at DESC
     `, params).map(decorateTask);
+    return attachCandidateSummaries(rows);
   }
 
   createTask({ actor, projectId, nodeId, bindingId, title, requirement, responsibleUserId, participantUserIds = [], versionStrategy = {} }) {

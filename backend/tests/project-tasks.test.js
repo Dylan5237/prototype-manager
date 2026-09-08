@@ -45,7 +45,10 @@ test('creates a task against an exact work node, binding and formal base version
   assert.equal(task.base_version_number, 1);
   assert.equal(task.responsible.user_id, 2);
   assert.equal(task.assignments.find(item => item.assignment_role === 'participant').user_id, 1);
-  assert.equal(service.listTasks({ actor: owner, projectId: 'project-1', nodeId: node.id }).length, 1);
+  const listed = service.listTasks({ actor: owner, projectId: 'project-1', nodeId: node.id });
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].candidate_count, 0);
+  assert.equal(listed[0].pending_candidate_count, 0);
 });
 
 test('rejects tasks without a formal base version and invalid participants', () => {
