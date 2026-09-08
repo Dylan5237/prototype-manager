@@ -22,7 +22,7 @@ function sha256(value) {
 
 function quoteCommandArg(value) {
   const text = String(value);
-  if (/[\r\n"'`]/.test(text)) throw new Error('Onboarding command contains an unsafe argument');
+  if (/[\r\n"`]/.test(text)) throw new Error('Onboarding command contains an unsafe argument');
   return `"${text}"`;
 }
 
@@ -114,22 +114,22 @@ run().catch(error => {
 `;
 }
 
-// The only shell-visible layer: download, verify and execute the short-lived
-// onboarding script. Child output and exit status pass through unchanged.
+// The only shell-visible layer: a short, readable Node loader that downloads,
+// verifies and executes the short-lived onboarding script. Keep this layer
+// deliberately boring so an Agent can trigger it without decoding or auditing
+// a second installer. Child output and exit status pass through unchanged.
+const ONBOARDING_LAUNCHER_SOURCE = [
+  "if(Number(process.versions.node.split('.')[0])<18){process.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'LOAD',error:{code:'NODE_VERSION_UNSUPPORTED',message:'Node.js >= 18 is required'}})+'\\n');process.exitCode=1}else{",
+  "const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto'),spawn=require('node:child_process').spawn;",
+  "const [url,sha]=process.argv.slice(1),fail=(code,message,retryable=false)=>Object.assign(new Error(message||code),{code,retryable}),out=e=>{process.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'LOAD',error:{code:e.code||'ONBOARDING_LAUNCHER_FAILED',message:e.message||String(e)}})+'\\n');process.exitCode=1};",
+  "async function download(){if(!/^[a-f0-9]{64}$/i.test(sha))throw fail('ONBOARDING_ARGUMENTS_INVALID','Invalid onboarding SHA-256');for(let i=0;i<3;i++){const a=new AbortController(),t=setTimeout(()=>a.abort(),15000);try{const r=await fetch(url,{signal:a.signal});if(!r.ok)throw fail('ONBOARDING_DOWNLOAD_HTTP_'+r.status,'Onboarding download HTTP '+r.status,[408,429].includes(r.status)||r.status>=500);const b=Buffer.from(await r.arrayBuffer());if(b.length>1048576)throw fail('ONBOARDING_SCRIPT_TOO_LARGE','Onboarding script exceeds 1 MiB');return b}catch(e){if(e.name==='AbortError')e=fail('ONBOARDING_DOWNLOAD_TIMEOUT','Onboarding download timed out',true);if(i===2||!(e.retryable||e.name==='TypeError'||e.code==='ECONNRESET'||e.code==='ETIMEDOUT'))throw e;await new Promise(resolve=>setTimeout(resolve,250*(i+1)))}finally{clearTimeout(t)}}}",
+  "async function run(){const b=await download();if(crypto.createHash('sha256').update(b).digest('hex')!==sha.toLowerCase())throw fail('ONBOARDING_DIGEST_MISMATCH','Onboarding SHA-256 mismatch');const f=path.join(os.tmpdir(),'fuxi-onboard-'+crypto.randomUUID()+'.cjs');try{try{fs.writeFileSync(f,b,{mode:0o700})}catch(e){throw fail('ONBOARDING_WRITE_FAILED',e.message)}const p=spawn(process.execPath,[f],{stdio:'inherit',env:process.env});process.exitCode=await new Promise((resolve,reject)=>{p.once('error',e=>reject(fail('ONBOARDING_SPAWN_FAILED',e.message)));p.once('close',c=>resolve(c===null?1:c))})}finally{try{fs.rmSync(f,{force:true})}catch(e){}}}run().catch(out)}"
+].join('');
+
 function renderOnboardingLauncherCommand({ onboardingUrl, onboardingSha256 }) {
   const url = assertUrl(onboardingUrl, 'onboardingUrl');
   const digest = assertSha256(onboardingSha256, 'onboardingSha256');
-  const loaderSource = `if(Number(process.versions.node.split('.')[0])<18){process.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'LOAD',error:{code:'NODE_VERSION_UNSUPPORTED',message:'Node.js >= 18 is required'}})+'\\n');process.exitCode=1}else{
-const fs=require('node:fs'),os=require('node:os'),path=require('node:path'),crypto=require('node:crypto'),{spawn}=require('node:child_process');
-const [url,sha]=process.argv.slice(1),MAX=3,TIMEOUT=15000;
-const fail=(code,message,retryable=false)=>Object.assign(new Error(message||code),{code,retryable});
-const retryable=e=>Boolean(e&&(e.retryable||e.name==='TypeError'||e.code==='ECONNRESET'||e.code==='ETIMEDOUT'));
-const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-async function download(){let last;for(let attempt=1;attempt<=MAX;attempt++){const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),TIMEOUT);try{const response=await fetch(url,{signal:controller.signal});if(!response.ok)throw fail('ONBOARDING_DOWNLOAD_HTTP_'+response.status,'Onboarding script download failed with HTTP '+response.status,response.status===408||response.status===429||response.status>=500);const data=Buffer.from(await response.arrayBuffer());if(data.length>1024*1024)throw fail('ONBOARDING_SCRIPT_TOO_LARGE','Onboarding script exceeds 1 MiB');return data}catch(error){last=error.name==='AbortError'?fail('ONBOARDING_DOWNLOAD_TIMEOUT','Onboarding script download timed out',true):error;if(!retryable(last)||attempt===MAX)throw last;await sleep(250*attempt)}finally{clearTimeout(timer)}}throw last}
-async function run(){const data=await download();if(crypto.createHash('sha256').update(data).digest('hex')!==sha)throw fail('ONBOARDING_DIGEST_MISMATCH','Onboarding script SHA-256 mismatch');const file=path.join(os.tmpdir(),'fuxi-onboard-'+crypto.randomUUID()+'.cjs');try{try{fs.writeFileSync(file,data,{mode:0o700})}catch(error){throw fail('ONBOARDING_WRITE_FAILED',error.message)}const child=spawn(process.execPath,[file],{stdio:'inherit',env:process.env});const code=await new Promise((resolve,reject)=>{child.once('error',error=>reject(fail('ONBOARDING_SPAWN_FAILED',error.message)));child.once('close',value=>resolve(value===null?1:value))});process.exitCode=code}finally{try{fs.rmSync(file,{force:true})}catch(error){}}}
-run().catch(error=>{process.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'LOAD',error:{code:error.code||'ONBOARDING_LAUNCHER_FAILED',message:error.message||'Onboarding launcher failed'}})+'\\n');process.exitCode=1})}`;
-  const encodedSource = Buffer.from(loaderSource, 'utf8').toString('base64');
-  return `node -e "eval(Buffer.from('${encodedSource}','base64').toString())" -- ${quoteCommandArg(url)} ${quoteCommandArg(digest)}`;
+  return `node -e ${quoteCommandArg(ONBOARDING_LAUNCHER_SOURCE)} -- ${quoteCommandArg(url)} ${quoteCommandArg(digest)}`;
 }
 
 module.exports = { buildStandaloneBootstrap, buildOnboardingScript, renderOnboardingLauncherCommand, sha256 };

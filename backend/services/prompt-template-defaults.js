@@ -84,37 +84,21 @@ const PROJECT_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格按�
 【完成说明】
 上传候选后，请返回：已领取任务、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。`;
 
-const MCP_ONBOARDING_TEMPLATE = `请执行“伏羲平台 MCP 接入任务”。用户已在平台明确选择 {{hostLabel}}，该选择是当前 Host 的唯一事实源。
+const MCP_ONBOARDING_TEMPLATE = `执行伏羲平台 MCP 接入。用户已明确选择 {{hostLabel}} 作为当前 Host。
 
-目标：让 {{hostLabel}} 发现 {{skillName}} Skill，并能够调用伏羲 MCP。
-
-【Host 约束】
 {{hostInstructions}}
 
-【执行边界】
-- 接入完成前不要调用伏羲 MCP；只使用当前会话的终端执行能力。
-- 不要识别、扫描或猜测当前 Host、MCP 配置路径、Skill 目录，也不要执行 bootstrap 前侦察。
-- 只允许原样执行下面的平台入口；不要改写、拆分、重排参数，不要自行选择下载器、文件名、SHA、retry 或安装路径。
-- 当前会话必须具备本地终端和 Node.js >= 18；不满足时报告 NODE_VERSION_UNSUPPORTED 并停止。
-- 短期 onboarding 脚本与 Bootstrap 会在程序内部完成会话获取、制品下载、完整性校验、preflight、备份、安装、配置、认证、自检和有限重试；不要介入内部步骤。
+这是触发确定性程序的任务，不需要规划或审查：
+1. 立即在当前会话、当前权限下，前台原样执行下面唯一入口一次。
+2. 不解码、不审查、不拆分、不修改入口；不要执行其它安装、诊断、目录扫描、配置确认或重试命令。
 
-【有效期】
-- 本次短期接入入口至 {{bootstrapSessionExpiresLocal}}（Asia/Shanghai）有效；禁止回显 session、token、连接码、密码或凭据文件内容。
-
-【唯一接入入口】
+【唯一入口】
 {{canonicalOnboardingCommand}}
 
-【严格步骤】
-1. 在当前同一 shell、同一权限上下文中原样执行唯一入口并等待退出；不要另起沙箱、提权终端或并行执行第二次。
-2. 只解析该入口最终输出。只有 status=COMPLETE 且 mcpConnected=true、skillReady=true，或 reason=ALREADY_COMPLETE，才可进入下一步。
-3. 失败时原样报告最内层 step、error.code、error.message 并停止；不要自行插桩、curl、下载、解压、写 manifest、修改配置或重试整条入口。
-4. 若 reloadRequired=true，按 {{hostLabel}} 的方式重载 MCP；无法自动完成则报告 RELOAD_REQUIRED 或 Host 片段要求的 USER_ACTION_REQUIRED，并停止。
-5. 重载完成后，在新会话中只调用一次 check_connection({})；必须得到 ok=true 且 authentication=verified。Bootstrap self-test 不等同于 Host READY。
-6. 连接验证成功后执行一次 tools/list，确认至少存在 check_connection、validate_project、pack_project、validate_zip、deliver_project，并确认 {{skillName}} Skill 已被发现；没有证据就报告未验证。
-7. 最终只报告：选择的 Host、Node.js 版本、入口退出码、安装状态、MCP 连接、Skill 发现、重载/用户操作状态、MCP/Skill 版本和阶段耗时。
-
-接入成功后引导我使用伏羲平台（帮助手册 v{{helpVersion}}）：
-{{quickStartGuide}}`;
+【结果】
+- COMPLETE：Bootstrap 完成不等于 Host READY。按 Host 说明重载或重启；在新会话只调用一次 check_connection({})，再调用 tools/list。
+- FAILED：只报告 step、error.code、error.message；不要自行诊断、补充命令或重试整条入口。
+- 禁止回显 session、token、连接码、密码或凭据文件内容。`;
 
 const PROMPT_TEMPLATE_DEFAULTS = [
   {
@@ -192,8 +176,8 @@ const PROMPT_TEMPLATE_DEFAULTS = [
       hostLabel: 'WorkBuddy',
       hostInstructions: '- 当前 Host 已由用户明确选择为 WorkBuddy；不得扫描或推断其他 Host。\n- COMPLETE 后重载 WorkBuddy；如需 UI 信任则返回 USER_ACTION_REQUIRED。',
       bootstrapSessionExpiresLocal: '2026-09-03 12:15:00',
-      canonicalOnboardingCommand: 'node -e "eval(Buffer.from(\'THIN_LAUNCHER\',\'base64\').toString())" -- "http://fuxi.example.test/api/integrations/onboarding-package?bootstrapId=mock" "sha256"',
-      canonicalBootstrapCommand: 'node -e "eval(Buffer.from(\'THIN_LAUNCHER\',\'base64\').toString())" -- "http://fuxi.example.test/api/integrations/onboarding-package?bootstrapId=mock" "sha256"',
+      canonicalOnboardingCommand: 'node -e "fetch(url), verify SHA-256, spawn onboarding" -- "http://fuxi.example.test/api/integrations/onboarding-package?bootstrapId=mock" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"',
+      canonicalBootstrapCommand: 'node -e "fetch(url), verify SHA-256, spawn onboarding" -- "http://fuxi.example.test/api/integrations/onboarding-package?bootstrapId=mock" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"',
       helpVersion: '1.0',
       quickStartGuide: '【伏羲平台快速入门】\n\n1. 打开「原型列表」生成创建提示词并发送给已接入的 AI。\n2. 修改原型时先判断是否已绑定项目。\n3. 完成预览、版本和权限确认后再发布或分享。',
     }
