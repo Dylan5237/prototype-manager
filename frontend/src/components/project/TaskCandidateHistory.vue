@@ -3,7 +3,7 @@
     <header class="review-hero">
       <div>
         <h2>{{ reviewTitle }}</h2>
-        <p>对照两侧内容，决定是否将右侧修订采用为正式版。</p>
+        <p>对比正式版与待审修订内容，确认修订是否符合预期并决定是否采用。</p>
       </div>
       <div class="review-meta">
         <span>状态 <el-tag :type="statusMeta.type" size="small" effect="light">{{ statusMeta.label }}</el-tag></span>
@@ -40,7 +40,9 @@
           <strong>待审修订</strong>
           <el-tag v-if="pendingRevision" type="warning" size="small" effect="light">待你确认</el-tag>
         </div>
-        <p v-if="pendingRevision" class="revision-note">修订说明：{{ pendingNote || '暂无修订说明' }}</p>
+        <p v-if="pendingRevision" class="revision-note">
+          <strong>修订说明：</strong>{{ pendingNote || '暂无修订说明' }}
+        </p>
         <div class="panel-preview">
           <iframe
             v-if="pendingPreviewUrl"
@@ -180,11 +182,12 @@ watch(pendingRevision, (next) => {
 .panel-heading strong { color: #25344a; font-size: 14px; }
 .revision-note {
   margin: 0;
-  padding: 0 14px 10px;
+  padding: 0 14px 12px;
   color: #9a6509;
   font-size: 13px;
   line-height: 1.6;
 }
+.revision-note strong { color: #7c4a03; font-weight: 700; }
 .panel-preview {
   min-height: 320px;
   flex: 1;

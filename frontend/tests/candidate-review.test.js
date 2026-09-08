@@ -94,13 +94,17 @@ test('review IA picks the latest ready submission as the only pending revision',
   const latestReady = { id: 'b', status: 'ready', submission_no: 2, created_at: '2026-09-08T10:00:00.000Z' }
   const returned = { id: 'c', status: 'returned', submission_no: 3, created_at: '2026-09-08T08:00:00.000Z' }
   const failed = { id: 'd', status: 'validation_failed', submission_no: 4, created_at: '2026-09-08T07:00:00.000Z' }
-  const partitioned = partitionReviewSubmissions([olderReady, failed, latestReady, returned])
+  const stale = { id: 'e', status: 'stale', submission_no: 5, created_at: '2026-09-08T06:00:00.000Z' }
+  const partitioned = partitionReviewSubmissions([olderReady, failed, latestReady, returned, stale])
 
   assert.equal(pickPendingRevision([olderReady, latestReady, returned]).id, 'b')
   assert.equal(partitioned.pendingRevision.id, 'b')
-  assert.deepEqual(partitioned.historyAttempts.map(item => item.id), ['d', 'c', 'a'])
+  assert.equal(partitioned.pendingRevision.status, 'ready')
+  assert.equal(partitioned.historyAttempts.filter(item => item.status === 'ready').length, 1)
+  assert.deepEqual(partitioned.historyAttempts.map(item => item.id), ['e', 'd', 'c', 'a'])
   assert.equal(historyAttemptStatusMeta('ready').label, '已被替代')
   assert.equal(reviewStatusMeta({ status: 'awaiting_review' }, latestReady).label, '待审')
+  assert.equal(reviewStatusMeta({ status: 'awaiting_review' }, null).label, '待审核')
 })
 
 test('revision note falls back to task requirement or title without inventing fields', () => {
