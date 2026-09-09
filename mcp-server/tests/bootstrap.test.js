@@ -335,6 +335,22 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     assert.equal(repeated.reason, 'ALREADY_COMPLETE');
     assert.equal(requestCount, 2);
 
+    const staleArtifactState = JSON.parse(fs.readFileSync(path.join(installRoot, 'state.json'), 'utf8'));
+    staleArtifactState.artifacts.mcp.sha256 = '0'.repeat(64);
+    fs.writeFileSync(path.join(installRoot, 'state.json'), JSON.stringify(staleArtifactState, null, 2));
+    const artifactReinstalled = await install(manifest, {
+      'mcp-config': config,
+      'skill-target': skillTarget,
+      'install-root': installRoot,
+      state: path.join(installRoot, 'state.json'),
+      'mcp-zip': mcpZipPath,
+      'skill-zip': skillZipPath,
+      'timeout-ms': 5000
+    });
+    assert.equal(artifactReinstalled.status, 'COMPLETE');
+    assert.notEqual(artifactReinstalled.reason, 'ALREADY_COMPLETE');
+    assert.equal(artifactReinstalled.artifacts.mcp.sha256, manifest.artifacts.mcp.sha256);
+
     const launcherTampered = JSON.parse(fs.readFileSync(config, 'utf8'));
     launcherTampered.mcpServers['fuxi-platform'].args = [path.join(root, 'runtime', 'bootstrap-mcp', 'wrong-launcher.js')];
     fs.writeFileSync(config, JSON.stringify(launcherTampered, null, 2));

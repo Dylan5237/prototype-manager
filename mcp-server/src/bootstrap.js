@@ -652,6 +652,11 @@ function readCompletedInstall(stateFile, manifest) {
     const state = readJson(stateFile);
     if (state.status !== 'COMPLETE' || state.mcpConnected !== true) return null;
     if (state.apiUrl && normalizeApiUrl(state.apiUrl) !== normalizeApiUrl(manifest.apiUrl)) return null;
+    for (const kind of ['mcp', 'skill']) {
+      const installedSha = state.artifacts && state.artifacts[kind] && state.artifacts[kind].sha256;
+      const requestedSha = manifest.artifacts && manifest.artifacts[kind] && manifest.artifacts[kind].sha256;
+      if (!installedSha || !requestedSha || installedSha !== requestedSha) return null;
+    }
     const mcpReady = Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js')) && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js')));
     const skillReady = Boolean(state.skillTarget && skillTargetReady(state.skillTarget, state.client));
     const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
