@@ -10,6 +10,15 @@ const {
   getProjects,
   getProjectsPage,
   getPrototypeProjectBinding,
+  getProjectById,
+  getProjectNodes,
+  getProjectPrototypes,
+  getProjectPrototypeById,
+  getNodeAssignments,
+  removeProjectPrototype,
+  removeProjectMember,
+  setNodeAssignments,
+  updateProject,
   PrototypeProjectConflictError
 } = require('../services/db-projects');
 
@@ -27,6 +36,12 @@ test.beforeEach(async () => {
     ['project-2', '项目二', '', '{"items":[]}', 1, timestamp, timestamp]);
   database.run(`INSERT INTO prototypes (id, name, description, entry_file, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
     ['prototype-1', '原型一', '', 'index.html', 1, timestamp, timestamp]);
+  updateProject('project-1', { menuConfig: { items: [
+    { key: 'main', label: '主菜单', children: [{ key: 'list', label: '列表', children: [] }] },
+    { key: 'reports', label: '报表', children: [{ key: 'list', label: '列表', children: [] }] },
+    { key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [{ key: 'entity', label: '实体建模', children: [] }] }] }
+  ] } });
+  updateProject('project-2', { menuConfig: { items: [{ key: 'home', label: '首页', children: [] }] } });
 });
 
 test.afterEach(() => {
@@ -49,16 +64,79 @@ test('allows multiple menu positions in one project but rejects cross-project ow
   );
 });
 
+test('updates a three-level menu and migrates an existing binding atomically', () => {
+  updateProject('project-1', { menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [] }] }] } });
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' });
+  updateProject('project-1', {
+    menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [{ key: 'entity', label: '实体建模', children: [] }] }] }] },
+    bindingMigrations: [{ bindingId: binding.id, fromPath: 'design/domain', toPath: 'design/domain/entity' }]
+  });
+  assert.equal(getPrototypeProjectBinding('prototype-1').menu_positions[0].menu_path, 'design/domain/entity');
+  assert.equal(getProjectById('project-1').menu_config.items[0].children[0].children[0].label, '实体建模');
+});
+
+test('rolls back menu changes when a binding migration is stale', () => {
+  updateProject('project-1', { menuConfig: { items: [{ key: 'design', label: '建模设计', children: [{ key: 'domain', label: '业务域建模', children: [] }] }] } });
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' });
+  assert.throws(() => updateProject('project-1', {
+    menuConfig: { items: [{ key: 'changed', label: '不应保存', children: [] }] },
+    bindingMigrations: [{ bindingId: binding.id, fromPath: 'wrong/path', toPath: 'changed' }]
+  }), /原型绑定已发生变化/);
+  assert.equal(getProjectById('project-1').menu_config.items[0].children[0].label, '业务域建模');
+});
+
+test('keeps stable node identity across rename and rejects binding to a group node', () => {
+  const menu = getProjectById('project-1').menu_config;
+  const entity = menu.items[2].children[0].children[0];
+  entity.label = '实体模型设计';
+  updateProject('project-1', { menuConfig: menu });
+  const after = getProjectById('project-1').menu_config.items[2].children[0].children[0];
+  assert.equal(after.id, entity.id);
+  assert.equal(getProjectNodes('project-1').find(node => node.id === entity.id).label, '实体模型设计');
+  assert.throws(() => bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain' }), /叶子工作节点/);
+});
+
+test('assigns a real node owner and blocks removing an assigned member', () => {
+  database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`, [2, 'editor', 'hash', '节点负责人', '["uploader"]', '2026-08-24T00:00:00.000Z']);
+  database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`, ['project-1', 2, 'editor', '2026-08-24T00:00:00.000Z']);
+  const node = getProjectNodes('project-1').find(item => item.node_key === 'entity');
+  setNodeAssignments({ projectId: 'project-1', nodeId: node.id, ownerId: 2, contributorIds: [1], assignedBy: 1 });
+  const assignments = getNodeAssignments(node.id);
+  assert.equal(assignments.find(item => item.assignment_role === 'owner').user_id, 2);
+  assert.throws(() => removeProjectMember('project-1', 2), error => error.code === 'MEMBER_HAS_NODE_ASSIGNMENTS');
+});
+
+test('unbind preserves history and allows the same binding to be restored', () => {
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain/entity' });
+  removeProjectPrototype(binding.id, { projectId: 'project-1', userId: 1 });
+  assert.equal(getProjectPrototypes('project-1').length, 0);
+  assert.ok(getProjectPrototypeById(binding.id).unbound_at);
+  const restored = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain/entity' });
+  assert.equal(restored.id, binding.id);
+  assert.equal(restored.unbound_at, null);
+});
+
+test('unbind is blocked by active checkout or unfinished tasks on that binding', () => {
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'design/domain/entity' });
+  database.run(`INSERT INTO project_checkouts (project_id, project_prototype_id, user_id, checked_out_at, expires_at, status) VALUES (?, ?, ?, ?, ?, 'active')`, ['project-1', binding.id, 1, '2026-09-07T00:00:00.000Z', '2099-09-07T00:00:00.000Z']);
+  assert.throws(() => removeProjectPrototype(binding.id, { projectId: 'project-1', userId: 1 }), error => error.code === 'BINDING_HAS_ACTIVE_CHECKOUT');
+  database.run(`UPDATE project_checkouts SET status = 'released' WHERE project_prototype_id = ?`, [binding.id]);
+  database.run(`INSERT INTO prototype_versions (prototype_id, version_number, version_label, entry_file, created_by, created_at) VALUES ('prototype-1', 1, '1.0.0', 'index.html', 1, '2026-09-07T00:00:00.000Z')`);
+  const version = database.queryOne(`SELECT id FROM prototype_versions WHERE prototype_id = 'prototype-1'`);
+  database.run(`INSERT INTO project_tasks (id, project_id, node_id, binding_id, base_version_id, base_version_number, requested_by, title, requirement, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 1, '未完成任务', '要求', 'in_progress', '2026-09-07T00:00:00.000Z', '2026-09-07T00:00:00.000Z')`, ['task-active', 'project-1', binding.node_id, binding.id, version.id]);
+  assert.throws(() => removeProjectPrototype(binding.id, { projectId: 'project-1', userId: 1 }), error => error.code === 'BINDING_HAS_ACTIVE_CHANGES');
+});
+
 test('returns project summary fields for the project list', () => {
-  bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'main/list' });
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'main/list' });
+  database.run(`INSERT INTO prototype_versions (prototype_id, version_number, version_label, entry_file, created_by, created_at) VALUES ('prototype-1', 1, '1.0.0', 'index.html', 1, '2026-08-24T00:00:00.000Z')`);
+  const version = database.queryOne(`SELECT id FROM prototype_versions WHERE prototype_id = 'prototype-1'`);
+  database.run(`INSERT INTO project_tasks (id, project_id, node_id, binding_id, base_version_id, base_version_number, requested_by, title, requirement, status, created_at, updated_at) VALUES ('task-ready', 'project-1', ?, ?, ?, 1, 1, '待确认改动', '补充字段', 'awaiting_review', '2026-08-24T01:00:00.000Z', '2026-08-24T02:00:00.000Z')`, [binding.node_id, binding.id, version.id]);
   database.run(`
-    INSERT INTO prototype_changes
-      (id, project_id, prototype_id, title, requirement, created_by, branch_name, base_sha, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    'change-ready', 'project-1', 'prototype-1', '待确认改动', '补充字段', 1,
-    'no-git/change-ready', 'base-sha', 'ready', '2026-08-24T01:00:00.000Z', '2026-08-24T02:00:00.000Z'
-  ]);
+    INSERT INTO candidate_submissions
+      (id, task_id, submission_no, submitted_by, base_version_id, base_version_number, status, created_at, updated_at)
+    VALUES ('cand-ready', 'task-ready', 1, 1, ?, 1, 'ready', '2026-08-24T01:00:00.000Z', '2026-08-24T02:00:00.000Z')
+  `, [version.id]);
   database.run(`
     INSERT INTO usage_events
       (id, event_type, user_id, source, resource_type, resource_id, result, occurred_at, metadata_json)
@@ -79,14 +157,15 @@ test('supports project list scope, pending filter, and pagination', () => {
     [2, 'member', 'hash', '参与者', '["uploader"]', '2026-08-24T00:00:00.000Z']);
   database.run(`INSERT INTO project_members (project_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`,
     ['project-2', 2, 'editor', '2026-08-24T00:00:00.000Z']);
+  const binding = bindPrototype({ projectId: 'project-1', prototypeId: 'prototype-1', menuPath: 'main/list' });
+  database.run(`INSERT INTO prototype_versions (prototype_id, version_number, version_label, entry_file, created_by, created_at) VALUES ('prototype-1', 1, '1.0.0', 'index.html', 1, '2026-08-24T00:00:00.000Z')`);
+  const version = database.queryOne(`SELECT id FROM prototype_versions WHERE prototype_id = 'prototype-1'`);
+  database.run(`INSERT INTO project_tasks (id, project_id, node_id, binding_id, base_version_id, base_version_number, requested_by, title, requirement, status, created_at, updated_at) VALUES ('pending-task-1', 'project-1', ?, ?, ?, 1, 1, '待确认', '需求', 'awaiting_review', '2026-08-24T01:00:00.000Z', '2026-08-24T01:00:00.000Z')`, [binding.node_id, binding.id, version.id]);
   database.run(`
-    INSERT INTO prototype_changes
-      (id, project_id, prototype_id, title, requirement, created_by, branch_name, base_sha, status, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `, [
-    'pending-project-1', 'project-1', 'prototype-1', '待确认', '需求', 1,
-    'no-git/pending-project-1', 'base-sha', 'ready', '2026-08-24T01:00:00.000Z', '2026-08-24T01:00:00.000Z'
-  ]);
+    INSERT INTO candidate_submissions
+      (id, task_id, submission_no, submitted_by, base_version_id, base_version_number, status, created_at, updated_at)
+    VALUES ('pending-cand-1', 'pending-task-1', 1, 1, ?, 1, 'ready', '2026-08-24T01:00:00.000Z', '2026-08-24T01:00:00.000Z')
+  `, [version.id]);
 
   const paged = getProjectsPage({ createdBy: 1, page: 2, pageSize: 1 });
   assert.equal(paged.total, 2);

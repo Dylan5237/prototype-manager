@@ -6,7 +6,8 @@ const { requireAuth, isAdminUser } = require('../middleware/auth');
 const {
   createProject, getProjectsPage, getProjectById, updateProject, softDeleteProject,
   bindPrototype, getProjectPrototypes, getProjectPrototypeById, updateProjectPrototype, removeProjectPrototype,
-  PrototypeProjectConflictError,
+  PrototypeProjectConflictError, BindingRemovalConflictError,
+  NodeAssignmentConflictError, getProjectNodes, getNodeAssignments, setNodeAssignments,
   addProjectMember, getProjectMember, getProjectMembers, removeProjectMember,
   checkoutPrototype, checkinPrototype, forceReleaseCheckout, getActiveCheckout, getProjectCheckouts,
   createSnapshot, getProjectSnapshots, getSnapshotById, restoreSnapshot, deleteSnapshot
@@ -25,6 +26,8 @@ const {
   LightweightCollaborationError,
   LightweightCollaborationService
 } = require('../services/lightweight-collaboration');
+const { ProjectTaskError, ProjectTaskService } = require('../services/project-tasks');
+const { CandidateReviewError, CandidateReviewService } = require('../services/candidate-review');
 
 const candidateUpload = multer({
   dest: UPLOADS_DIR,
@@ -52,6 +55,18 @@ function sendLightweightError(res, error) {
     });
   }
   return res.status(500).json({ success: false, code: 'LIGHTWEIGHT_COLLABORATION_FAILED', message: '轻协作操作失败' });
+}
+
+function sendProjectTaskError(res, error) {
+  if (error instanceof ProjectTaskError || error instanceof CandidateReviewError || error instanceof AuthorizationError) {
+    return res.status(error.status || (error instanceof AuthorizationError ? 403 : 400)).json({
+      success: false,
+      code: error.code,
+      message: error.message,
+      details: error.details || undefined
+    });
+  }
+  return res.status(500).json({ success: false, code: 'PROJECT_TASK_FAILED', message: '项目任务操作失败' });
 }
 
 // 辅助函数
@@ -112,6 +127,28 @@ function formatMenuConfig(menuConfig) {
   return menuConfig || { items: [] };
 }
 
+function validateMenuConfig(menuConfig) {
+  const paths = new Set();
+  const leaves = new Set();
+  function walk(nodes, ancestors = []) {
+    if (!Array.isArray(nodes)) throw new Error('菜单 children 必须是数组');
+    const siblingKeys = new Set();
+    for (const node of nodes) {
+      if (!node || !String(node.key || '').trim() || !String(node.label || '').trim()) throw new Error('菜单 key 和名称不能为空');
+      if (siblingKeys.has(node.key)) throw new Error('同级菜单 key 不能重复');
+      siblingKeys.add(node.key);
+      const segments = [...ancestors, node.key];
+      if (segments.length > 3) throw new Error('项目菜单最多支持三级');
+      const path = segments.join('/');
+      paths.add(path);
+      const children = Array.isArray(node.children) ? node.children : [];
+      if (children.length) walk(children, segments); else leaves.add(path);
+    }
+  }
+  walk(menuConfig?.items || []);
+  return { paths, leaves };
+}
+
 // =================== 轻协作 MVP API ===================
 
 router.post('/handoffs/redeem', requireAuth, (req, res) => {
@@ -129,6 +166,183 @@ router.post('/handoffs/redeem', requireAuth, (req, res) => {
   } catch (error) {
     sendLightweightError(res, error);
   }
+});
+
+// =================== 项目任务 v2 API ===================
+
+router.get('/:id/tasks', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().listTasks({
+      actor: req.user,
+      projectId: req.params.id,
+      nodeId: req.query.nodeId,
+      status: req.query.status,
+      assignedTo: req.query.assignedTo
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    sendProjectTaskError(res, error);
+  }
+});
+
+router.post('/:id/tasks', requireAuth, requireProjectAccess, (req, res) => {
+  if (req.projectRole === 'viewer') return res.status(403).json({ success: false, code: 'AUTHORIZATION_DENIED', message: '查看者不能创建任务' });
+  try {
+    const task = new ProjectTaskService().createTask({
+      actor: req.user,
+      projectId: req.params.id,
+      nodeId: req.body.nodeId,
+      bindingId: req.body.bindingId,
+      title: req.body.title,
+      requirement: req.body.requirement,
+      responsibleUserId: req.body.responsibleUserId,
+      participantUserIds: req.body.participantUserIds || [],
+      versionStrategy: req.body.versionStrategy || {}
+    });
+    recordUsageEvent({ eventType: 'project_task_created', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: task.id, metadata: { projectId: req.params.id, nodeId: task.node_id } });
+    res.status(201).json({ success: true, data: task });
+  } catch (error) {
+    sendProjectTaskError(res, error);
+  }
+});
+
+router.get('/:id/tasks/:taskId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    res.json({ success: true, data: new ProjectTaskService().getTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId }) });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/accept', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().acceptTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    recordUsageEvent({ eventType: 'project_task_accepted', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: req.params.taskId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/decline', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().declineTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/reassign', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().reassignTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId, responsibleUserId: req.body.responsibleUserId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/tasks/:taskId/cancel', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new ProjectTaskService().cancelTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.get('/:id/tasks/:taskId/candidates', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const data = new CandidateReviewService().listCandidates({
+      actor: req.user, projectId: req.params.id, taskId: req.params.taskId
+    });
+    res.json({ success: true, data });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post(
+  '/:id/tasks/:taskId/candidates',
+  requireAuth,
+  requireProjectAccess,
+  (req, res, next) => candidateUpload.single('file')(req, res, error => {
+    if (error) sendProjectTaskError(res, error);
+    else next();
+  }),
+  (req, res) => {
+    try {
+      if (req.projectRole === 'viewer') return res.status(403).json({ success: false, code: 'AUTHORIZATION_DENIED', message: '查看者不能提交候选' });
+      if (!req.file) throw new CandidateReviewError('CANDIDATE_FILE_MISSING', '没有上传候选 ZIP');
+      const candidate = new CandidateReviewService().submitCandidate({
+        actor: req.user,
+        projectId: req.params.id,
+        taskId: req.params.taskId,
+        zipPath: req.file.path,
+        versionType: req.body.versionType
+      });
+      recordUsageEvent({
+        eventType: 'candidate_uploaded',
+        userId: req.user.id,
+        source: requestSource(req),
+        resourceType: 'project_task',
+        resourceId: req.params.taskId,
+        metadata: { candidateId: candidate.id, versionType: req.body.versionType }
+      });
+      res.status(201).json({ success: true, data: candidate });
+    } catch (error) {
+      sendProjectTaskError(res, error);
+    } finally {
+      if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    }
+  }
+);
+
+router.get('/:id/candidates/:candidateId', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: new CandidateReviewService().getCandidate({
+        actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId
+      })
+    });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/candidates/:candidateId/preview-validation', requireAuth, requireProjectAccess, (req, res) => {
+  try {
+    const candidate = new CandidateReviewService().recordPreviewValidation({
+      actor: req.user,
+      projectId: req.params.id,
+      candidateId: req.params.candidateId,
+      status: req.body.status,
+      errors: req.body.errors,
+      warnings: req.body.warnings,
+      durationMs: req.body.durationMs
+    });
+    res.json({ success: true, data: candidate });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/candidates/:candidateId/adopt', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const result = new CandidateReviewService().adoptCandidate({
+      actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId
+    });
+    recordUsageEvent({
+      eventType: 'candidate_adopted',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'candidate_submission',
+      resourceId: req.params.candidateId,
+      metadata: { projectId: req.params.id, versionId: result.version && result.version.id }
+    });
+    res.json({ success: true, data: result });
+  } catch (error) { sendProjectTaskError(res, error); }
+});
+
+router.post('/:id/candidates/:candidateId/return', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const candidate = new CandidateReviewService().returnCandidate({
+      actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId, note: req.body.note
+    });
+    recordUsageEvent({
+      eventType: 'candidate_returned',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'candidate_submission',
+      resourceId: req.params.candidateId
+    });
+    res.json({ success: true, data: candidate });
+  } catch (error) { sendProjectTaskError(res, error); }
 });
 
 router.get('/:id/changes', requireAuth, requireProjectAccess, (req, res) => {
@@ -450,12 +664,20 @@ router.get('/:id', requireAuth, requireProjectAccess, (req, res) => {
 
 // 更新项目
 router.put('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  const { name, description, menuConfig } = req.body;
+  const { name, description, menuConfig, bindingMigrations = [] } = req.body;
   try {
+    const formattedMenu = menuConfig !== undefined ? formatMenuConfig(menuConfig) : undefined;
+    const menuIndex = formattedMenu ? validateMenuConfig(formattedMenu) : null;
+    if (!Array.isArray(bindingMigrations)) return res.status(400).json({ success: false, message: 'bindingMigrations 必须是数组' });
+    for (const migration of bindingMigrations) {
+      if (!migration?.bindingId || !migration.fromPath || !migration.toPath) return res.status(400).json({ success: false, message: '绑定迁移参数不完整' });
+      if (menuIndex && !menuIndex.leaves.has(migration.toPath)) return res.status(400).json({ success: false, message: '绑定只能迁移到叶子菜单节点' });
+    }
     const project = updateProject(req.params.id, {
       name: name !== undefined ? name.trim() : undefined,
       description,
-      menuConfig: menuConfig !== undefined ? formatMenuConfig(menuConfig) : undefined
+      menuConfig: formattedMenu,
+      bindingMigrations
     });
     recordUsageEvent({
       eventType: 'project_updated',
@@ -466,7 +688,8 @@ router.put('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, res)
     });
     res.json({ success: true, data: project });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const status = /菜单|绑定/.test(err.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 
@@ -487,7 +710,7 @@ router.delete('/:id', requireAuth, requireProjectRole('owner', 'admin'), (req, r
 
 // 绑定原型到菜单项
 router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  const { prototypeId, menuPath, sortOrder } = req.body;
+  const { prototypeId, menuPath, nodeId, sortOrder } = req.body;
   if (!prototypeId || !menuPath) {
     return res.status(400).json({ success: false, message: 'prototypeId 和 menuPath 不能为空' });
   }
@@ -500,6 +723,7 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
       projectId: req.params.id,
       prototypeId,
       menuPath,
+      nodeId,
       sortOrder: sortOrder || 0
     });
     recordUsageEvent({
@@ -515,20 +739,21 @@ router.post('/:id/prototypes', requireAuth, requireProjectRole('owner', 'admin')
     if (err instanceof PrototypeProjectConflictError) {
       return res.status(409).json({ success: false, code: err.code, message: err.message, details: err.details });
     }
-    res.status(500).json({ success: false, message: err.message });
+    const status = /工作节点|叶子/.test(err.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 
 // 更新绑定
 router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  const { menuPath, sortOrder } = req.body;
+  const { menuPath, nodeId, sortOrder } = req.body;
   try {
     const ppId = parseInt(req.params.ppId, 10);
     const existing = getProjectPrototypeById(ppId);
     if (!existing || existing.project_id !== req.params.id) {
       return res.status(404).json({ success: false, message: '绑定不存在' });
     }
-    const binding = updateProjectPrototype(ppId, { menuPath, sortOrder });
+    const binding = updateProjectPrototype(ppId, { menuPath, nodeId, sortOrder });
     if (!binding) {
       return res.status(404).json({ success: false, message: '绑定不存在' });
     }
@@ -542,7 +767,8 @@ router.put('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 'ad
     });
     res.json({ success: true, data: binding });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    const status = /工作节点|叶子|绑定/.test(err.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: err.message });
   }
 });
 
@@ -553,7 +779,15 @@ router.delete('/:id/prototypes/:ppId', requireAuth, requireProjectRole('owner', 
   if (!existing || existing.project_id !== req.params.id) {
     return res.status(404).json({ success: false, message: '绑定不存在' });
   }
-  removeProjectPrototype(ppId);
+  try {
+    const removed = removeProjectPrototype(ppId, { projectId: req.params.id, userId: req.user.id });
+    if (!removed) return res.status(404).json({ success: false, message: '绑定不存在或已解绑' });
+  } catch (error) {
+    if (error instanceof BindingRemovalConflictError) {
+      return res.status(409).json({ success: false, code: error.code, message: error.message, details: error.details });
+    }
+    throw error;
+  }
   recordUsageEvent({
     eventType: 'project_prototype_unbound',
     userId: req.user.id,
@@ -604,6 +838,35 @@ router.post('/:id/prototypes/:prototypeId/repository', requireAuth, async (req, 
 
 // =================== 项目成员 API ===================
 
+router.get('/:id/nodes', requireAuth, requireProjectAccess, (req, res) => {
+  const nodes = getProjectNodes(req.params.id).map(node => ({ ...node, assignments: getNodeAssignments(node.id) }));
+  res.json({ success: true, data: nodes });
+});
+
+router.put('/:id/nodes/:nodeId/assignments', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
+  try {
+    const assignments = setNodeAssignments({
+      projectId: req.params.id,
+      nodeId: req.params.nodeId,
+      ownerId: req.body.ownerId,
+      contributorIds: Array.isArray(req.body.contributorIds) ? req.body.contributorIds : [],
+      assignedBy: req.user.id
+    });
+    recordUsageEvent({
+      eventType: 'project_node_assignments_updated',
+      userId: req.user.id,
+      source: requestSource(req),
+      resourceType: 'project_node',
+      resourceId: req.params.nodeId,
+      metadata: { projectId: req.params.id, ownerId: req.body.ownerId || null, contributorCount: req.body.contributorIds?.length || 0 }
+    });
+    res.json({ success: true, data: assignments });
+  } catch (error) {
+    const status = /工作节点|负责人|参与者/.test(error.message) ? 400 : 500;
+    res.status(status).json({ success: false, message: error.message });
+  }
+});
+
 // 成员列表
 router.get('/:id/members', requireAuth, requireProjectAccess, (req, res) => {
   res.json({ success: true, data: getProjectMembers(req.params.id) });
@@ -636,7 +899,14 @@ router.post('/:id/members', requireAuth, requireProjectRole('owner', 'admin'), (
 
 // 移除成员
 router.delete('/:id/members/:userId', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
-  removeProjectMember(req.params.id, parseInt(req.params.userId, 10));
+  try {
+    removeProjectMember(req.params.id, parseInt(req.params.userId, 10));
+  } catch (error) {
+    if (error instanceof NodeAssignmentConflictError) {
+      return res.status(409).json({ success: false, code: error.code, message: error.message, details: error.details });
+    }
+    throw error;
+  }
   recordUsageEvent({
     eventType: 'project_member_removed',
     userId: req.user.id,

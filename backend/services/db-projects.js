@@ -23,6 +23,26 @@ class PrototypeProjectConflictError extends Error {
   }
 }
 
+class BindingRemovalConflictError extends Error {
+  constructor(details) {
+    super(details.activeCheckout ? '原型仍处于签出状态，请先签入或释放签出' : '原型仍有未完成任务或待确认候选，请先处理后再解绑');
+    this.name = 'BindingRemovalConflictError';
+    this.code = details.activeCheckout ? 'BINDING_HAS_ACTIVE_CHECKOUT' : 'BINDING_HAS_ACTIVE_CHANGES';
+    this.status = 409;
+    this.details = details;
+  }
+}
+
+class NodeAssignmentConflictError extends Error {
+  constructor(message, details = {}) {
+    super(message);
+    this.name = 'NodeAssignmentConflictError';
+    this.code = 'MEMBER_HAS_NODE_ASSIGNMENTS';
+    this.status = 409;
+    this.details = details;
+  }
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -33,25 +53,164 @@ function addHours(dateStr, hours) {
   return d.toISOString();
 }
 
+function getProjectNodes(projectId, { includeInactive = false } = {}) {
+  return query(`
+    SELECT pn.*,
+      owner.user_id AS owner_id, owner_user.username AS owner_username, owner_user.nickname AS owner_name,
+      (SELECT COUNT(*) FROM node_assignments na WHERE na.project_node_id = pn.id AND na.assignment_role = 'contributor' AND na.status = 'active') AS contributor_count
+    FROM project_nodes pn
+    LEFT JOIN node_assignments owner ON owner.project_node_id = pn.id AND owner.assignment_role = 'owner' AND owner.status = 'active'
+    LEFT JOIN users owner_user ON owner_user.id = owner.user_id
+    WHERE pn.project_id = ? ${includeInactive ? '' : "AND pn.status = 'active'"}
+    ORDER BY pn.depth, pn.sort_order, pn.created_at
+  `, [projectId]);
+}
+
+function getProjectNodeById(nodeId) {
+  return queryOne(`SELECT * FROM project_nodes WHERE id = ?`, [nodeId]);
+}
+
+function getNodeAssignments(nodeId) {
+  return query(`
+    SELECT na.*, u.username, u.nickname
+    FROM node_assignments na
+    JOIN users u ON u.id = na.user_id
+    WHERE na.project_node_id = ? AND na.status = 'active'
+    ORDER BY CASE na.assignment_role WHEN 'owner' THEN 0 ELSE 1 END, na.created_at
+  `, [nodeId]);
+}
+
+function setNodeAssignments({ projectId, nodeId, ownerId, contributorIds = [], assignedBy }) {
+  const node = queryOne(`SELECT * FROM project_nodes WHERE id = ? AND project_id = ? AND status = 'active'`, [nodeId, projectId]);
+  if (!node) throw new Error('工作节点不存在');
+  const project = getProjectById(projectId);
+  const userIds = [...new Set([ownerId, ...contributorIds].filter(Boolean).map(Number))];
+  for (const userId of userIds) {
+    if (Number(project.created_by) === userId) continue;
+    const member = getProjectMember(projectId, userId);
+    if (!member || member.role === 'viewer') throw new Error('节点负责人和参与者必须是项目负责人、管理员或编辑者');
+  }
+  const t = now();
+  const db = getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    db.run(`UPDATE node_assignments SET status = 'inactive', updated_at = ? WHERE project_node_id = ? AND status = 'active'`, [t, nodeId]);
+    const upsert = (userId, role) => db.run(`
+      INSERT INTO node_assignments (project_node_id, user_id, assignment_role, status, assigned_by, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', ?, ?, ?)
+      ON CONFLICT(project_node_id, user_id, assignment_role)
+      DO UPDATE SET status = 'active', assigned_by = excluded.assigned_by, updated_at = excluded.updated_at
+    `, [nodeId, userId, role, assignedBy || null, t, t]);
+    if (ownerId) upsert(Number(ownerId), 'owner');
+    for (const userId of [...new Set(contributorIds.map(Number))]) {
+      if (userId !== Number(ownerId)) upsert(userId, 'contributor');
+    }
+    db.run('COMMIT');
+    saveDatabase();
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
+  return getNodeAssignments(nodeId);
+}
+
+function nodesToMenuConfig(nodes) {
+  const childrenByParent = new Map();
+  for (const node of nodes) {
+    const key = node.parent_id || '__root__';
+    if (!childrenByParent.has(key)) childrenByParent.set(key, []);
+    childrenByParent.get(key).push(node);
+  }
+  const build = parentId => (childrenByParent.get(parentId || '__root__') || []).map(node => ({
+    id: node.id,
+    key: node.node_key,
+    label: node.label,
+    children: build(node.id)
+  }));
+  return { items: build(null) };
+}
+
+function findProjectNodeByPath(projectId, menuPath) {
+  const segments = String(menuPath || '').split('/').filter(Boolean);
+  let parentId = null;
+  let current = null;
+  for (const segment of segments) {
+    const parentClause = parentId ? 'parent_id = ?' : 'parent_id IS NULL';
+    const params = parentId ? [projectId, segment, parentId] : [projectId, segment];
+    current = queryOne(`SELECT * FROM project_nodes WHERE project_id = ? AND node_key = ? AND status = 'active' AND ${parentClause}`, params);
+    if (!current) return null;
+    parentId = current.id;
+  }
+  return current;
+}
+
+function syncProjectNodes(db, projectId, menuConfig, timestamp, bindingMigrations = []) {
+  const existingRows = getProjectNodes(projectId, { includeInactive: true });
+  const existing = new Map(existingRows.map(node => [node.id, node]));
+  const migratingBindingIds = new Set(bindingMigrations.map(item => Number(item.bindingId)));
+  const seen = new Set();
+  const normalize = (nodes, parentId = null, depth = 1) => (Array.isArray(nodes) ? nodes : []).map((node, index) => {
+    if (depth > 3) throw new Error('项目菜单最多支持三级');
+    const id = node.id || generateId();
+    const previous = existing.get(id);
+    if (previous && previous.project_id !== projectId) throw new Error('工作节点不属于当前项目');
+    if (seen.has(id)) throw new Error('工作节点 ID 不能重复');
+    seen.add(id);
+    const children = normalize(node.children || [], id, depth + 1);
+    const nodeType = children.length ? 'group' : 'work';
+    if (previous) {
+      db.run(`UPDATE project_nodes SET parent_id = ?, node_key = ?, label = ?, node_type = ?, depth = ?, sort_order = ?, status = 'active', updated_at = ? WHERE id = ?`, [parentId, node.key, node.label, nodeType, depth, index, timestamp, id]);
+    } else {
+      db.run(`INSERT INTO project_nodes (id, project_id, parent_id, node_key, label, node_type, depth, sort_order, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`, [id, projectId, parentId, node.key, node.label, nodeType, depth, index, timestamp, timestamp]);
+    }
+    return { id, key: node.key, label: node.label, children };
+  });
+  const normalizedItems = normalize(menuConfig?.items || []);
+  for (const oldNode of existingRows) {
+    if (seen.has(oldNode.id) || oldNode.status !== 'active') continue;
+    const binding = queryOne(`SELECT id FROM project_prototypes WHERE node_id = ? AND unbound_at IS NULL`, [oldNode.id]);
+    const openTask = queryOne(`SELECT id FROM project_tasks WHERE node_id = ? AND status IN ('assigned','in_progress','awaiting_review')`, [oldNode.id]);
+    const pendingCandidate = queryOne(`
+      SELECT cs.id FROM candidate_submissions cs
+      JOIN project_tasks pt ON pt.id = cs.task_id
+      WHERE pt.node_id = ? AND cs.status IN ('submitted','ready')
+    `, [oldNode.id]);
+    if ((binding && !migratingBindingIds.has(Number(binding.id))) || openTask || pendingCandidate) {
+      throw new Error(`工作节点「${oldNode.label}」仍有绑定、未完成任务或待审候选，不能移除`);
+    }
+    db.run(`UPDATE project_nodes SET status = 'inactive', updated_at = ? WHERE id = ?`, [timestamp, oldNode.id]);
+  }
+  return { items: normalizedItems };
+}
+
 // =================== 项目基础 CRUD ===================
 
 function createProject({ name, description, menuConfig, createdBy }) {
   const id = generateId();
   const t = now();
-  run(`
-    INSERT INTO projects (id, name, description, menu_config, created_by, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `, [id, name, description || '', JSON.stringify(menuConfig || { items: [] }), createdBy, t, t]);
+  const db = getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    db.run(`INSERT INTO projects (id, name, description, menu_config, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`, [id, name, description || '', '{"items":[]}', createdBy, t, t]);
+    const normalizedMenu = syncProjectNodes(db, id, menuConfig || { items: [] }, t);
+    db.run(`UPDATE projects SET menu_config = ? WHERE id = ?`, [JSON.stringify(normalizedMenu), id]);
+    db.run('COMMIT');
+    saveDatabase();
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
   return getProjectById(id);
 }
 
 function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingOnly } = {}) {
   const selectSql = `
     SELECT p.*, u.nickname as creator_name,
-      (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id) AS prototype_count,
+      (SELECT COUNT(*) FROM project_prototypes pp WHERE pp.project_id = p.id AND pp.unbound_at IS NULL) AS prototype_count,
       (1 + (SELECT COUNT(*) FROM project_members pm WHERE pm.project_id = p.id)) AS member_count,
-      (SELECT COUNT(*) FROM prototype_changes c
-        WHERE c.project_id = p.id AND c.status = 'ready') AS pending_candidate_count,
+      (SELECT COUNT(*) FROM candidate_submissions cs
+        JOIN project_tasks pt ON pt.id = cs.task_id
+        WHERE pt.project_id = p.id AND cs.status = 'ready') AS pending_candidate_count,
       COALESCE(
         (SELECT MAX(e.occurred_at) FROM usage_events e
           WHERE e.resource_type = 'project' AND e.resource_id = p.id),
@@ -85,7 +244,11 @@ function projectListQuery({ keyword, createdBy, memberOf, accessibleBy, pendingO
     params.push(accessibleBy, accessibleBy);
   }
   if (pendingOnly) {
-    whereSql += ` AND EXISTS (SELECT 1 FROM prototype_changes c_scope WHERE c_scope.project_id = p.id AND c_scope.status = 'ready')`;
+    whereSql += ` AND EXISTS (
+      SELECT 1 FROM candidate_submissions cs_scope
+      JOIN project_tasks pt_scope ON pt_scope.id = cs_scope.task_id
+      WHERE pt_scope.project_id = p.id AND cs_scope.status = 'ready'
+    )`;
   }
   return {
     sql: `${selectSql}${whereSql} ORDER BY p.updated_at DESC`,
@@ -117,25 +280,43 @@ function getProjectById(id) {
     WHERE p.id = ? AND p.deleted_at IS NULL
   `, [id]);
   if (!project) return null;
-  try {
-    project.menu_config = JSON.parse(project.menu_config || '{"items":[]}');
-  } catch (e) {
-    project.menu_config = { items: [] };
-  }
+  const nodes = getProjectNodes(id);
+  if (nodes.length) project.menu_config = nodesToMenuConfig(nodes);
+  else try { project.menu_config = JSON.parse(project.menu_config || '{"items":[]}'); } catch (e) { project.menu_config = { items: [] }; }
+  project.nodes = nodes;
   return project;
 }
 
-function updateProject(id, { name, description, menuConfig }) {
-  const fields = [];
-  const values = [];
-  if (name !== undefined) { fields.push('name = ?'); values.push(name); }
-  if (description !== undefined) { fields.push('description = ?'); values.push(description); }
-  if (menuConfig !== undefined) { fields.push('menu_config = ?'); values.push(JSON.stringify(menuConfig)); }
-  fields.push('updated_at = ?');
-  values.push(now());
-  values.push(id);
-  if (fields.length === 1) return getProjectById(id);
-  run(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values);
+function updateProject(id, { name, description, menuConfig, bindingMigrations = [] }) {
+  const db = getDb();
+  db.run('BEGIN TRANSACTION');
+  try {
+    const t = now();
+    const fields = [];
+    const values = [];
+    if (name !== undefined) { fields.push('name = ?'); values.push(name); }
+    if (description !== undefined) { fields.push('description = ?'); values.push(description); }
+    if (menuConfig !== undefined) {
+      const normalizedMenu = syncProjectNodes(db, id, menuConfig, t, bindingMigrations);
+      fields.push('menu_config = ?'); values.push(JSON.stringify(normalizedMenu));
+    }
+    fields.push('updated_at = ?'); values.push(t); values.push(id);
+    db.run(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`, values);
+    for (const migration of bindingMigrations) {
+      const existing = queryOne(`SELECT id, menu_path, node_id FROM project_prototypes WHERE id = ? AND project_id = ? AND unbound_at IS NULL`, [migration.bindingId, id]);
+      if (!existing || existing.menu_path !== migration.fromPath) {
+        throw new Error('原型绑定已发生变化，请刷新项目后重试');
+      }
+      const targetNode = findProjectNodeByPath(id, migration.toPath);
+      if (!targetNode || targetNode.node_type !== 'work') throw new Error('绑定只能迁移到叶子工作节点');
+      db.run(`UPDATE project_prototypes SET node_id = ?, menu_path = ? WHERE id = ? AND project_id = ?`, [targetNode.id, migration.toPath, migration.bindingId, id]);
+    }
+    db.run('COMMIT');
+    saveDatabase();
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
+  }
   return getProjectById(id);
 }
 
@@ -145,15 +326,28 @@ function softDeleteProject(id) {
 
 // =================== 项目-原型绑定 ===================
 
-function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
+function bindPrototype({ projectId, prototypeId, menuPath, nodeId, sortOrder = 0 }) {
   const t = now();
-  const existing = findBinding(projectId, prototypeId, menuPath);
-  if (existing) return existing;
+  const node = nodeId
+    ? queryOne(`SELECT * FROM project_nodes WHERE id = ? AND project_id = ? AND status = 'active'`, [nodeId, projectId])
+    : findProjectNodeByPath(projectId, menuPath);
+  if (!node) throw new Error('工作节点不存在');
+  if (node.node_type !== 'work') throw new Error('原型只能绑定到叶子工作节点');
+  nodeId = node.id;
+  const existing = findBinding(projectId, prototypeId, menuPath, { includeUnbound: true });
+  if (existing && !existing.unbound_at) {
+    if (existing.node_id !== nodeId) run(`UPDATE project_prototypes SET node_id = ? WHERE id = ?`, [nodeId, existing.id]);
+    return getProjectPrototypeById(existing.id);
+  }
+  if (existing?.unbound_at) {
+    run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, node_id = ?, sort_order = ?, created_at = ? WHERE id = ?`, [nodeId, sortOrder, t, existing.id]);
+    return getProjectPrototypeById(existing.id);
+  }
   const otherProject = queryOne(`
     SELECT pp.project_id, p.name AS project_name
     FROM project_prototypes pp
     LEFT JOIN projects p ON p.id = pp.project_id
-    WHERE pp.prototype_id = ? AND pp.project_id <> ?
+    WHERE pp.prototype_id = ? AND pp.project_id <> ? AND pp.unbound_at IS NULL
     ORDER BY pp.id ASC
     LIMIT 1
   `, [prototypeId, projectId]);
@@ -166,16 +360,17 @@ function bindPrototype({ projectId, prototypeId, menuPath, sortOrder = 0 }) {
     });
   }
   const id = insertAndGetId(`
-    INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
-    VALUES (?, ?, ?, ?, ?)
-  `, [projectId, prototypeId, menuPath, sortOrder, t]);
+    INSERT INTO project_prototypes (project_id, prototype_id, node_id, menu_path, sort_order, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `, [projectId, prototypeId, nodeId, menuPath, sortOrder, t]);
   return getProjectPrototypeById(id);
 }
 
-function findBinding(projectId, prototypeId, menuPath) {
+function findBinding(projectId, prototypeId, menuPath, { includeUnbound = false } = {}) {
   return queryOne(`
     SELECT * FROM project_prototypes
     WHERE project_id = ? AND prototype_id = ? AND menu_path = ?
+      ${includeUnbound ? '' : 'AND unbound_at IS NULL'}
   `, [projectId, prototypeId, menuPath]);
 }
 
@@ -193,19 +388,19 @@ function getProjectPrototypes(projectId) {
     FROM project_prototypes pp
     LEFT JOIN prototypes p ON pp.prototype_id = p.id
     LEFT JOIN users u ON p.created_by = u.id
-    WHERE pp.project_id = ?
+    WHERE pp.project_id = ? AND pp.unbound_at IS NULL
     ORDER BY pp.sort_order ASC, pp.id ASC
   `, [projectId]);
 }
 
 function getPrototypeProjectBinding(prototypeId) {
   const rows = query(`
-    SELECT pp.id AS binding_id, pp.project_id, pp.prototype_id, pp.menu_path, pp.sort_order,
+    SELECT pp.id AS binding_id, pp.project_id, pp.prototype_id, pp.node_id, pp.menu_path, pp.sort_order,
       pp.created_at AS bound_at, p.name AS project_name, p.description AS project_description,
       p.created_by AS project_owner_id
     FROM project_prototypes pp
     LEFT JOIN projects p ON p.id = pp.project_id
-    WHERE pp.prototype_id = ? AND p.deleted_at IS NULL
+    WHERE pp.prototype_id = ? AND p.deleted_at IS NULL AND pp.unbound_at IS NULL
     ORDER BY pp.project_id, pp.sort_order, pp.id
   `, [prototypeId]);
   if (!rows.length) return null;
@@ -217,6 +412,7 @@ function getPrototypeProjectBinding(prototypeId) {
     project_owner_id: first.project_owner_id,
     menu_positions: rows.map(row => ({
       binding_id: row.binding_id,
+      node_id: row.node_id,
       menu_path: row.menu_path,
       sort_order: row.sort_order,
       bound_at: row.bound_at
@@ -224,21 +420,44 @@ function getPrototypeProjectBinding(prototypeId) {
   };
 }
 
-function updateProjectPrototype(id, { menuPath, sortOrder }) {
+function updateProjectPrototype(id, { menuPath, nodeId, sortOrder }) {
   const fields = [];
   const values = [];
+  const currentBinding = queryOne(`SELECT * FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
+  if (!currentBinding) return null;
+  if (menuPath !== undefined || nodeId !== undefined) {
+    const targetNode = nodeId
+      ? queryOne(`SELECT * FROM project_nodes WHERE id = ? AND project_id = ? AND status = 'active'`, [nodeId, currentBinding.project_id])
+      : findProjectNodeByPath(currentBinding.project_id, menuPath);
+    if (!targetNode || targetNode.node_type !== 'work') throw new Error('绑定只能迁移到叶子工作节点');
+    fields.push('node_id = ?'); values.push(targetNode.id);
+  }
   if (menuPath !== undefined) { fields.push('menu_path = ?'); values.push(menuPath); }
   if (sortOrder !== undefined) { fields.push('sort_order = ?'); values.push(sortOrder); }
   if (fields.length === 0) return getProjectPrototypeById(id);
   values.push(id);
-  run(`UPDATE project_prototypes SET ${fields.join(', ')} WHERE id = ?`, values);
+  run(`UPDATE project_prototypes SET ${fields.join(', ')} WHERE id = ? AND unbound_at IS NULL`, values);
   return getProjectPrototypeById(id);
 }
 
-function removeProjectPrototype(id) {
-  // 先清理该绑定上的签出记录
-  run(`DELETE FROM project_checkouts WHERE project_prototype_id = ?`, [id]);
-  run(`DELETE FROM project_prototypes WHERE id = ?`, [id]);
+function removeProjectPrototype(id, { projectId, userId } = {}) {
+  const binding = queryOne(`SELECT * FROM project_prototypes WHERE id = ? AND unbound_at IS NULL`, [id]);
+  if (!binding || (projectId && String(binding.project_id) !== String(projectId))) return null;
+  const activeCheckout = queryOne(`SELECT id, user_id, expires_at FROM project_checkouts WHERE project_prototype_id = ? AND status = 'active' AND expires_at > ?`, [id, now()]);
+  const openTasks = query(`SELECT id, title, status FROM project_tasks WHERE binding_id = ? AND status IN ('assigned','in_progress','awaiting_review') ORDER BY updated_at DESC`, [id]);
+  const pendingCandidates = query(`
+    SELECT cs.id, cs.status, cs.task_id, pt.title
+    FROM candidate_submissions cs
+    JOIN project_tasks pt ON pt.id = cs.task_id
+    WHERE pt.binding_id = ? AND cs.status IN ('submitted','ready')
+    ORDER BY cs.updated_at DESC
+  `, [id]);
+  if (activeCheckout || openTasks.length || pendingCandidates.length) {
+    throw new BindingRemovalConflictError({ activeCheckout, openTasks, pendingCandidates, activeChanges: openTasks });
+  }
+  const unboundAt = now();
+  run(`UPDATE project_prototypes SET unbound_at = ?, unbound_by = ? WHERE id = ? AND unbound_at IS NULL`, [unboundAt, userId || null, id]);
+  return { ...binding, unbound_at: unboundAt, unbound_by: userId || null };
 }
 
 // =================== 项目成员 ===================
@@ -272,6 +491,25 @@ function getProjectMembers(projectId) {
 }
 
 function removeProjectMember(projectId, userId) {
+  const assignments = query(`
+    SELECT pn.id AS node_id, pn.label, na.assignment_role
+    FROM node_assignments na JOIN project_nodes pn ON pn.id = na.project_node_id
+    WHERE pn.project_id = ? AND na.user_id = ? AND na.status = 'active'
+  `, [projectId, userId]);
+  if (assignments.length) throw new NodeAssignmentConflictError('成员仍负责或参与项目节点，请先调整节点分工', { assignments });
+  const openTasks = query(`
+    SELECT pt.id, pt.title, ta.assignment_role
+    FROM task_assignments ta
+    JOIN project_tasks pt ON pt.id = ta.task_id
+    WHERE pt.project_id = ? AND ta.user_id = ?
+      AND ta.acceptance_status IN ('assigned','accepted')
+      AND pt.status IN ('assigned','in_progress','awaiting_review')
+  `, [projectId, userId]);
+  if (openTasks.length) {
+    const error = new NodeAssignmentConflictError('成员仍有未完成任务，请先调整任务分派', { openTasks });
+    error.code = 'MEMBER_HAS_OPEN_TASKS';
+    throw error;
+  }
   run(`DELETE FROM project_members WHERE project_id = ? AND user_id = ?`, [projectId, userId]);
 }
 
@@ -347,6 +585,7 @@ function createSnapshot({ projectId, name, versionLabel, createdBy }) {
   if (!project) throw new Error('项目不存在');
   const bindings = getProjectPrototypes(projectId).map(pp => ({
     prototypeId: pp.prototype_id,
+    nodeId: pp.node_id,
     menuPath: pp.menu_path,
     prototypeName: pp.prototype_name,
     versionNumber: pp.version_number,
@@ -404,14 +643,21 @@ function restoreSnapshot(snapshotId, { restoredBy }) {
   // 更新项目菜单
   updateProject(projectId, { menuConfig });
 
-  // 重建绑定关系：先删除旧绑定（保留快照中存在的）
-  run(`DELETE FROM project_prototypes WHERE project_id = ?`, [projectId]);
+  // 重建当前绑定视图，但保留历史绑定、签出与审计引用。
   const t = now();
+  run(`UPDATE project_prototypes SET unbound_at = ?, unbound_by = ? WHERE project_id = ? AND unbound_at IS NULL`, [t, restoredBy || null, projectId]);
   bindings.forEach((b, idx) => {
-    run(`
-      INSERT INTO project_prototypes (project_id, prototype_id, menu_path, sort_order, created_at)
-      VALUES (?, ?, ?, ?, ?)
-    `, [projectId, b.prototypeId, b.menuPath, idx, t]);
+    const historical = findBinding(projectId, b.prototypeId, b.menuPath, { includeUnbound: true });
+    if (historical) {
+      const targetNode = b.nodeId ? queryOne(`SELECT id FROM project_nodes WHERE id = ? AND project_id = ?`, [b.nodeId, projectId]) : findProjectNodeByPath(projectId, b.menuPath);
+      run(`UPDATE project_prototypes SET unbound_at = NULL, unbound_by = NULL, node_id = ?, sort_order = ? WHERE id = ?`, [targetNode?.id || null, idx, historical.id]);
+    } else {
+      const targetNode = b.nodeId ? queryOne(`SELECT id FROM project_nodes WHERE id = ? AND project_id = ?`, [b.nodeId, projectId]) : findProjectNodeByPath(projectId, b.menuPath);
+      run(`
+        INSERT INTO project_prototypes (project_id, prototype_id, node_id, menu_path, sort_order, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [projectId, b.prototypeId, targetNode?.id || null, b.menuPath, idx, t]);
+    }
   });
 
   // 回滚每个原型到快照版本
@@ -452,14 +698,20 @@ module.exports = {
   getProjects,
   getProjectsPage,
   getProjectById,
+  getProjectNodes,
   updateProject,
   softDeleteProject,
 
   bindPrototype,
   PrototypeProjectConflictError,
+  BindingRemovalConflictError,
+  NodeAssignmentConflictError,
   getPrototypeProjectBinding,
   getProjectPrototypeById,
   getProjectPrototypes,
+  getProjectNodeById,
+  getNodeAssignments,
+  setNodeAssignments,
   updateProjectPrototype,
   removeProjectPrototype,
 

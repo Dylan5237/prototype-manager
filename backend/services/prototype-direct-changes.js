@@ -12,7 +12,7 @@ const {
   getSharedUserIds
 } = require('./db-prototypes');
 const { getPrototypeProjectBinding } = require('./db-projects');
-const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb } = require('./storage');
+const { REPOS_DIR, UPLOADS_DIR, findEntryFile, getDirSizeKb, moveDirectory } = require('./storage');
 const { validateCandidateDirectory } = require('./candidate-validation');
 const { normalizeRoles } = require('./authorization');
 const { normalizeVersionStrategy, resolveVersionLabel } = require('./version-strategy');
@@ -110,6 +110,7 @@ function decorate(row) {
   if (!row) return null;
   return {
     ...row,
+    directChangeId: row.id,
     base_version_number: Number(row.base_version_number || 0),
     candidate_size_kb: row.candidate_size_kb == null ? null : Number(row.candidate_size_kb),
     validation_errors: parseJson(row.validation_errors_json),
@@ -141,6 +142,7 @@ function buildPrompt(change, handoffCode, expiresAt) {
   return renderPromptTemplate('prototype.modify.standalone', {
     prototypeName: change.prototype_name || change.prototype_id,
     prototypeId: change.prototype_id,
+    directChangeId: change.id,
     changeId: change.id,
     baseVersion: change.base_version_number,
     handoffCode,
@@ -447,8 +449,8 @@ class PrototypeDirectChangeService {
           throw new PrototypeDirectChangeError('INVALID_VERSION_STRATEGY', error.message, 409);
         }
         copyTree(candidateDir, path.join(staging, 'versions', `v${currentVersion + 1}`), { exclude: new Set(['versions']) });
-        if (fs.existsSync(repoDir)) { fs.renameSync(repoDir, backup); hadCurrent = true; }
-        fs.renameSync(staging, repoDir); swapped = true;
+        if (fs.existsSync(repoDir)) { moveDirectory(repoDir, backup); hadCurrent = true; }
+        moveDirectory(staging, repoDir); swapped = true;
         const version = createVersion({
           prototypeId: current.prototype_id,
           versionNumber: currentVersion + 1,
@@ -478,7 +480,7 @@ class PrototypeDirectChangeService {
     } catch (error) {
       if (swapped && !committed) {
         if (fs.existsSync(repoDir)) fs.rmSync(repoDir, { recursive: true, force: true });
-        if (hadCurrent && fs.existsSync(backup)) fs.renameSync(backup, repoDir);
+        if (hadCurrent && fs.existsSync(backup)) moveDirectory(backup, repoDir);
       }
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       if (error instanceof PrototypeDirectChangeError) throw error;

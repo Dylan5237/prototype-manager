@@ -134,7 +134,8 @@ test('collaboration migration preserves legacy data and adds safe defaults', () 
   const expectedTables = [
     'agent_handoffs', 'delegated_sessions', 'prototype_changes', 'prototype_builds',
     'project_draft_items', 'project_releases', 'prototype_version_routes',
-    'webhook_events', 'audit_events', 'schema_migrations'
+    'webhook_events', 'audit_events', 'schema_migrations',
+    'project_tasks', 'candidate_submissions', 'candidate_validations', 'review_decisions'
   ];
   const tables = new Set(database.query(`SELECT name FROM sqlite_master WHERE type = 'table'`).map(row => row.name));
   expectedTables.forEach(tableName => assert.ok(tables.has(tableName), `missing table ${tableName}`));

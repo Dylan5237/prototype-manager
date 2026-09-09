@@ -1,6 +1,6 @@
 # 伏羲平台 Backlog
 
-> 更新日期：2026-09-03
+> 更新日期：2026-09-07
 > 用途：集中记录当前暂放、未完成和待决事项。已完成事项不在此重复维护；历史阶段中的旧待办必须结合日期阅读。
 
 ## 状态说明
@@ -23,6 +23,8 @@
 | BL-008 | P1 | `completed` | 帮助中心与手册维护 | `/help`、`/admin/help`、published API 和草稿/预览/发布能力完成；16077 release `20260903-143813-1a396d03` 真实部署与业务回读通过；提示词变量和 MCP `get_help/search_help` 顺延下一阶段。 |
 | BL-009 | P1 | `completed` | 操作手册补全与帮助分类 | `OPERATION_MANUAL.md` 和 11 篇内置手册完成；系统管理下的分层分类、多分类分发和读者筛选完成；16077 release `20260903-174757-464ee5d9` 页面/API/权限回读通过；不包含手册注入提示词。 |
 | BL-010 | P1 | `completed` | 接入提示词引用已发布快速入门 | `mcp.onboarding` 使用 `{{quickStartGuide}}` / `{{helpVersion}}` 读取 published 快照，旧默认模板安全升级、自定义正文不覆盖；16077 release `20260904-094353-730a24ab` 真实生成回读通过；不包含 MCP 帮助工具。 |
+| BL-011 | P0 | `in-progress` | 完整项目管理模块 | 以 `docs/PROJECT_MANAGEMENT_ACCEPTANCE_BOUNDARY.md` 为唯一验收入口；稳定节点/分工/绑定、任务分派、多候选、审核、签出、快照和三角色 16077 闭环全部满足后才可关闭。 |
+| BL-012 | P0 | `in-progress` | Contract Freeze「Skill+MCP 切 Task v2」 | 平台 MCP/后端按冻结合同落地（见 `docs/CONTRACT_FREEZE_TASK_V2.md`）并经 PR 评审；**不得**把本项代码合并或测试通过写成生产切流完成。Skill 仓 `fuxi-prototype` 的 `tools.json` 需按平台 PR 中的 patch 另提交。前端审核 UI 不在本项。 |
 
 ## BL-007 需求边界与验收口径
 

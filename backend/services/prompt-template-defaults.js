@@ -27,7 +27,7 @@ const STANDALONE_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格�
 
 【任务上下文】
 - 原型：{{prototypeName}}（{{prototypeId}}）
-- 修改 ID：{{changeId}}
+- 权威 ID：directChangeId={{directChangeId}}（兼容别名 changeId 同值）
 - 基线版本：v{{baseVersion}}（领取后锁定）
 - 任务码：{{handoffCode}}
 - 任务码有效期：{{expiresAt}}
@@ -38,14 +38,14 @@ const STANDALONE_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格�
 2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。
 3. 在源码基础上实现修改要求，先执行项目自己的构建或静态检查。
 4. 调用 validate_project 检查交付目录，再调用 pack_project 生成完整 ZIP。
-5. 调用 submit_prototype_change 上传 ZIP；参数必须使用本任务的 prototypeId、changeId，versionType 只能是 major、minor、patch。
+5. 调用 submit_prototype_change 上传 ZIP；参数必须使用本任务的 prototypeId、directChangeId（或兼容字段 changeId），versionType 只能是 major、minor、patch。
 6. 上传后调用 get_prototype_change_status 确认最终状态为 completed；平台已完成 ZIP、入口和资源引用静态校验并直接形成正式版本。
 
 【交付约束】
 - 这是独立原型修改，平台会在静态校验和基线版本 CAS 通过后直接形成正式版本；如果正式预览打不开，请回到伏羲平台让 AI 排查并重新上传。
 - ZIP 必须包含可预览入口 index.html 或系统识别的 HTML 入口，所有引用必须使用相对路径。
 - ZIP 不得包含 .git、versions、node_modules、绝对路径、凭证、密码或长期 token。
-- 保持未涉及页面和交互不变；遇到歧义先保留现有行为并在完成说明中指出。
+- 保持未涉及页面和交互不变；遇到歧义先保留现有行为并在完成说明中标注。
 
 【修改要求】
 {{requirement}}
@@ -53,36 +53,40 @@ const STANDALONE_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格�
 【完成说明】
 请返回：已领取任务、修改摘要、构建与校验结果、ZIP 路径、versionType 和最终状态。未收到 completed 前不要宣称已上线。`;
 
-const PROJECT_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格按下面的任务完成一次“候选版本”交付。
+const PROJECT_CHANGE_TEMPLATE = `你是伏羲原型修改 Agent。请严格按 Task v2 完成一次“候选版本”交付。项目绑定路径的权威账本是 taskId + candidateId，不要再使用 prototype_changes / 裸 changeId 写入。
 
 【任务上下文】
 - 项目：{{projectName}}（{{projectId}}）
 - 原型：{{prototypeName}}（{{prototypeId}}）
 - 菜单路径：{{menuPath}}
-- 任务 ID：{{changeId}}
+- 权威任务 ID：taskId={{taskId}}
+- 节点：nodeId={{nodeId}}
+- 绑定：bindingId={{bindingId}}
 - 基础版本：v{{baseVersion}}
 - 版本策略：{{versionStrategy}}
 - 任务码：{{handoffCode}}
 - 任务码有效期：{{expiresAt}}
 
 【必须执行的步骤】
-1. 调用 redeem_change_handoff，参数 handoffCode 使用上面的任务码。
-2. 领取成功后，使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。
+1. 若任务尚未接受，调用 accept_project_task，参数使用 projectId 与 taskId。
+2. 使用返回的 sourceDownloadUrl 下载当前正式版本源码；不要凭空重建原型。不要调用 checkout_prototype / checkin_prototype / force_release_checkout，它们不是项目绑定主路径。
 3. 在源码基础上实现“修改要求”，先本地检查入口、相对路径和主要交互。
-4. 将完整候选产物打成 ZIP，调用 submit_change_candidate 上传；参数必须使用本任务的 projectId、changeId，并传入 ZIP 的本地路径。AI 决定版本策略时必须额外传入 versionType=major、minor 或 patch。
-5. 上传成功后调用 get_change_status 确认状态为 ready；平台已完成 ZIP、入口和资源引用静态校验，负责人可在伏羲候选页面查看预览并决定是否采纳。
+4. 将完整候选产物打成 ZIP，调用 submit_task_candidate 上传；参数必须使用本任务的 projectId、taskId 和 ZIP 本地路径。AI 决定版本策略时必须额外传入 versionType=major、minor 或 patch。
+5. 上传成功后调用 list_task_candidates 或 get_project_task 确认存在唯一待审候选（candidateId，status=ready）。是否采用由项目负责人在平台或通过 adopt_task_candidate 决定。
 
 【交付约束】
 - 这是候选版本，绝对不要直接覆盖正式版本，也不要调用正式版本上传接口。
+- 同一 taskId 最多一个待审 ready 候选；再次成功提交会替换先前待审候选。
 - ZIP 必须包含可预览入口 index.html 或系统识别的 HTML 入口，路径使用相对路径。
 - ZIP 不得包含 .git、versions、node_modules 或绝对路径；不要把凭证、密码、长期 token 写入产物。
 - 保持未涉及页面和交互不变；如果需求存在歧义，优先保留现有行为并在完成说明中指出。
+- create_change_handoff / redeem_change_handoff / submit_change_candidate 已写入禁止；get_change_status 仅只读兼容。
 
 【修改要求】
 {{requirement}}
 
 【完成说明】
-上传候选后，请返回：已领取任务、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。`;
+上传候选后，请返回：taskId、candidateId、修改摘要、验证结果、ZIP 路径和候选状态。不要自行宣称已上线；最终是否采用由项目负责人决定。本提示词不代表生产已完成切流。`;
 
 const MCP_ONBOARDING_TEMPLATE = `执行伏羲平台 MCP 接入。用户已明确选择 {{hostLabel}} 作为当前 Host。
 
@@ -132,10 +136,11 @@ const PROMPT_TEMPLATE_DEFAULTS = [
     name: '修改原型 · 独立原型',
     description: '让 AI 基于正式版本源码提交一次独立原型修改。',
     template: STANDALONE_CHANGE_TEMPLATE,
-    variables: ['prototypeName', 'prototypeId', 'changeId', 'baseVersion', 'handoffCode', 'expiresAt', 'versionStrategy', 'requirement'],
+    variables: ['prototypeName', 'prototypeId', 'directChangeId', 'changeId', 'baseVersion', 'handoffCode', 'expiresAt', 'versionStrategy', 'requirement'],
     mockData: {
       prototypeName: '客户管理台',
       prototypeId: 'proto_demo_001',
+      directChangeId: 'direct_chg_demo001',
       changeId: 'direct_chg_demo001',
       baseVersion: '1',
       handoffCode: 'FX-MOCK-STANDALONE',
@@ -149,17 +154,19 @@ const PROMPT_TEMPLATE_DEFAULTS = [
     name: '修改原型 · 项目候选',
     description: '让 AI 为项目内原型创建可预览、待负责人采用的候选版本。',
     template: PROJECT_CHANGE_TEMPLATE,
-    variables: ['projectName', 'projectId', 'prototypeName', 'prototypeId', 'menuPath', 'changeId', 'baseVersion', 'versionStrategy', 'handoffCode', 'expiresAt', 'requirement'],
+    variables: ['projectName', 'projectId', 'prototypeName', 'prototypeId', 'menuPath', 'taskId', 'nodeId', 'bindingId', 'baseVersion', 'versionStrategy', 'handoffCode', 'expiresAt', 'requirement'],
     mockData: {
       projectName: '销售运营平台',
       projectId: 'project_demo_001',
       prototypeName: '客户管理台',
       prototypeId: 'proto_demo_001',
       menuPath: '客户管理 / 客户列表',
-      changeId: 'chg_demo001',
+      taskId: 'task_demo001',
+      nodeId: 'node_demo001',
+      bindingId: '12',
       baseVersion: '3',
       versionStrategy: '由 AI 选择 major、minor 或 patch，平台根据当前版本计算最终版本号',
-      handoffCode: 'FX-MOCK-PROJECT',
+      handoffCode: 'FXT-MOCK-PROJECT',
       expiresAt: '2026-09-03T12:00:00.000Z',
       requirement: '增加按客户等级筛选，并在无结果时显示清晰的空状态和恢复动作。'
     }

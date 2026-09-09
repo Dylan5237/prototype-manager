@@ -56,6 +56,7 @@ test('direct change is redeemed once and becomes a formal version after static c
     versionStrategy: { type: 'auto' }
   });
   assert.equal(created.change.status, 'editing');
+  assert.equal(created.change.directChangeId, created.change.id);
   const redeemed = service.redeemHandoff({ actor: owner, handoffCode: created.handoffCode });
   assert.equal(redeemed.change.handoff_status, 'redeemed');
   assert.throws(
@@ -74,6 +75,43 @@ test('direct change is redeemed once and becomes a formal version after static c
   assert.equal(completed.version.version_label, '1.1.0');
   assert.equal(database.queryOne(`SELECT MAX(version_number) AS number FROM prototype_versions WHERE prototype_id = ?`, ['prototype-1']).number, 2);
   assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /candidate/);
+});
+
+test('direct change falls back safely when Windows blocks the repository rename', () => {
+  const created = service.createChange({
+    actor: owner,
+    prototypeId: 'prototype-1',
+    requirement: '验证 Windows 目录切换回退',
+    versionStrategy: { type: 'auto' }
+  });
+  service.redeemHandoff({ actor: owner, handoffCode: created.handoffCode });
+
+  const originalRenameSync = fs.renameSync;
+  let injected = false;
+  fs.renameSync = (source, target) => {
+    if (!injected && source === path.join(reposRoot, 'prototype-1') && target.includes('-backup')) {
+      injected = true;
+      const error = new Error('simulated Windows directory lock');
+      error.code = 'EPERM';
+      throw error;
+    }
+    return originalRenameSync(source, target);
+  };
+
+  try {
+    const completed = service.submitCandidate({
+      actor: owner,
+      changeId: created.change.id,
+      zipPath: candidateZip('windows-rename-fallback.zip'),
+      versionType: 'patch'
+    });
+    assert.equal(injected, true);
+    assert.equal(completed.change.status, 'completed');
+    assert.equal(completed.version.version_label, '1.0.1');
+    assert.match(fs.readFileSync(path.join(reposRoot, 'prototype-1', 'index.html'), 'utf8'), /candidate/);
+  } finally {
+    fs.renameSync = originalRenameSync;
+  }
 });
 
 test('custom version must be a higher unique SemVer and stale base cannot be delivered', () => {

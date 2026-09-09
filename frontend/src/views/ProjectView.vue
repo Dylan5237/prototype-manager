@@ -13,25 +13,7 @@
 
     <div class="portal-body">
       <aside class="portal-menu" aria-label="项目菜单">
-        <div v-for="group in project.menu_config?.items" :key="group.key" class="menu-group">
-          <div class="group-label">{{ group.label }}</div>
-          <div
-            v-for="item in group.children"
-            :key="item.key"
-            :class="['menu-item', { active: isActive(group, item) }]"
-            role="button"
-            tabindex="0"
-            :aria-current="isActive(group, item) ? 'page' : undefined"
-            @click="selectMenu(group, item)"
-            @keydown.enter="selectMenu(group, item)"
-            @keydown.space.prevent="selectMenu(group, item)"
-          >
-            <span class="item-label"><i class="menu-dot"></i>{{ item.label }}</span>
-            <span v-if="getMenuState(group, item)" class="menu-state" :class="getMenuState(group, item).tone">
-              {{ getMenuState(group, item).text }}
-            </span>
-          </div>
-        </div>
+        <ProjectMenuTree :nodes="project.menu_config?.items" :active-path="activePath" :state-for="getMenuStateByPath" @select="selectMenuNode" />
         <el-empty v-if="!hasMenu" description="暂无菜单配置" />
         <div v-else class="nav-footnote">
           <strong>项目结构提示</strong>
@@ -47,7 +29,7 @@
         <template v-else>
           <section class="module-hero">
             <div class="module-heading">
-              <p class="eyebrow">{{ activeGroup?.label || '当前功能模块' }}</p>
+              <p class="eyebrow">{{ activeParentLabel || '当前功能模块' }}</p>
               <h2>{{ activeItem.label }}</h2>
               <p>查看该菜单节点的负责人、绑定原型、正式版本与协作状态。</p>
             </div>
@@ -57,6 +39,7 @@
                 <small>当前节点负责人</small>
                 <strong>{{ currentOwnerName }}</strong>
               </span>
+              <el-button v-if="canManage && activeItem?.id" text type="primary" size="small" @click="openAssignmentDialog">配置分工</el-button>
             </div>
           </section>
 
@@ -78,6 +61,7 @@
                   <div class="card-actions">
                     <el-button type="primary" @click="enterWorkspace">进入原型工作台</el-button>
                     <el-button text @click="goPrototype(currentBinding.prototype_id)"><el-icon><Link /></el-icon>原型详情</el-button>
+                    <el-button v-if="canManage" text type="danger" :loading="unbinding" @click="handleUnbind">解绑原型</el-button>
                   </div>
                 </div>
               </div>
@@ -124,7 +108,7 @@
               <div class="card-kicker"><span>模块协作</span><el-tag v-if="pendingReadyCount" type="warning" effect="light" size="small">待处理</el-tag></div>
               <div class="metric-list">
                 <div><span>当前负责人</span><strong>{{ currentOwnerName }}</strong></div>
-                <div><span>待处理候选</span><strong :class="{ 'metric-warning': pendingReadyCount }">{{ pendingReadyCount }}</strong></div>
+                <div><span>待审修订</span><strong :class="{ 'metric-warning': pendingReadyCount }">{{ pendingReadyCount }}</strong></div>
                 <div><span>绑定状态</span><strong>{{ currentBinding ? '已绑定' : '未绑定' }}</strong></div>
                 <div v-if="currentBinding"><span>签出状态</span><strong>{{ currentCheckoutLabel }}</strong></div>
               </div>
@@ -142,14 +126,14 @@
               <div><p class="eyebrow">协作动态</p><h3>围绕当前菜单节点</h3></div>
               <el-button v-if="canEdit && currentBinding" text type="primary" @click="openChangeRequest">让 AI 修改</el-button>
             </div>
-            <div v-if="changes.length" class="activity-list">
-              <div v-for="change in changes.slice(0, 4)" :key="change.id" class="activity-item">
-                <span class="activity-dot" :class="`status-${change.status}`"></span>
+            <div v-if="tasks.length" class="activity-list">
+              <div v-for="task in tasks.slice(0, 4)" :key="task.id" class="activity-item">
+                <span class="activity-dot" :class="`status-${task.status}`"></span>
                 <div class="activity-copy">
-                  <strong>{{ change.title }}</strong>
-                  <p>{{ change.creator_name || change.creator_username || '协作者' }} · {{ changeStatusMeta(change.status).label }} · 基于 v{{ change.base_version_number }}</p>
+                  <strong>{{ task.title }}</strong>
+                  <p>{{ displayPersonName(task.requester_name, task.requester_username, '发起人') }} · {{ taskStatusMeta(task.status).label }} · 提交 {{ task.candidate_count || 0 }} · 基线 v{{ task.base_version_number }}</p>
                 </div>
-                <el-button text type="primary" size="small" @click="openChangesDialog">查看</el-button>
+                <el-button text type="primary" size="small" @click="openChangesDialog(task)">查看</el-button>
               </div>
             </div>
             <el-empty v-else description="当前菜单暂无协作任务" :image-size="72" />
@@ -165,9 +149,9 @@
       @saved="loadProject"
     />
 
-    <el-dialog v-model="changeRequestVisible" :title="editingChangeId ? '修改 AI 任务' : '让 AI 修改'" width="620px" destroy-on-close>
+    <el-dialog v-model="changeRequestVisible" title="让 AI 修改" width="620px" destroy-on-close>
       <template v-if="!changeTaskResult">
-        <p class="dialog-tip">描述想看到的结果。Agent 会基于当前正式版本生成独立候选，不会直接覆盖原型。任务被 AI 领取前可以修改或删除。</p>
+        <p class="dialog-tip">描述想看到的结果。平台会创建 Task v2 任务；Agent 基于当前正式版本提交待审修订，不会直接覆盖原型。</p>
         <el-form label-position="top">
           <el-form-item label="任务标题">
             <el-input
@@ -201,110 +185,82 @@
       </template>
       <template v-else>
         <el-alert title="任务已生成" type="success" :closable="false" show-icon>
-          <p>把下面完整提示词发送给已经接入伏羲的 AI 助手。任务码十分钟内有效且只能使用一次。</p>
+          <p>把下面完整提示词发送给已经接入伏羲的 AI 助手。请使用 taskId 提交待审修订，不要走旧的 /changes 写入。</p>
         </el-alert>
         <div class="task-code-row">
+          <span>taskId</span>
+          <code>{{ changeTaskResult.taskId }}</code>
+        </div>
+        <div v-if="changeTaskResult.handoffCode" class="task-code-row">
           <span>任务码</span>
           <code>{{ changeTaskResult.handoffCode }}</code>
         </div>
-        <p class="dialog-tip">版本策略：{{ changeTaskResult.change?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.change.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
+        <p class="dialog-tip">版本策略：{{ changeTaskResult.task?.version_strategy_type === 'custom' ? `自定义 v${changeTaskResult.task.version_strategy_value}` : 'AI 决定 major / minor / patch' }}</p>
         <pre class="task-prompt">{{ changeTaskResult.prompt }}</pre>
-        <p class="dialog-tip">候选上传后仍需项目负责人采用，当前正式版本不会自动改变。</p>
+        <p class="dialog-tip">修订上传后仍需项目负责人采用为正式版，当前正式版本不会自动改变。</p>
       </template>
       <template #footer>
         <el-button @click="changeRequestVisible = false">{{ changeTaskResult ? '关闭' : '取消' }}</el-button>
         <el-button v-if="changeTaskResult" type="primary" @click="copyChangePrompt">复制完整提示词</el-button>
-        <el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">{{ editingChangeId ? '保存并重新生成提示词' : '生成 AI 任务' }}</el-button>
+        <el-button v-else type="primary" :loading="creatingChange" @click="submitChangeTask">生成 AI 任务</el-button>
       </template>
     </el-dialog>
 
     <el-dialog v-model="changesVisible" title="任务管理器" width="90%" top="5vh" destroy-on-close>
-      <div class="changes-layout" v-loading="changesLoading">
+      <div class="changes-layout" v-loading="tasksLoading">
         <div class="changes-list">
-          <div class="task-manager-hint">这里记录本项目的 AI 修改任务。任务被领取前可编辑或删除，领取后进入候选审核流程。</div>
+          <div class="task-manager-hint">这里记录本节点的协作任务。审核时只对照正式版与当前待审修订；校验失败、退回和被替代的旧提议收在历史尝试里。</div>
           <button
-            v-for="change in changes"
-            :key="change.id"
-            :class="['change-card', { active: selectedChange?.id === change.id }]"
-            @click="selectChange(change)"
+            v-for="task in tasks"
+            :key="task.id"
+            :class="['change-card', { active: selectedTask?.id === task.id }]"
+            @click="selectTask(task)"
           >
             <div class="change-card-head">
-              <strong>{{ change.title }}</strong>
-              <el-tag :type="changeStatusMeta(change.status).type" size="small">
-                {{ changeStatusMeta(change.status).label }}
+              <strong>{{ task.title }}</strong>
+              <el-tag :type="taskStatusMeta(task.status).type" size="small">
+                {{ taskStatusMeta(task.status).label }}
               </el-tag>
             </div>
-            <span>{{ change.creator_name || change.creator_username }} · 基于 v{{ change.base_version_number }}</span>
+            <span>{{ displayPersonName(task.requester_name, task.requester_username, '发起人') }} · 基线 v{{ task.base_version_number }} · 提交 {{ task.candidate_count || 0 }}</span>
           </button>
-          <el-empty v-if="!changesLoading && !changes.length" description="暂无候选修改" />
+          <el-empty v-if="!tasksLoading && !tasks.length" description="暂无协作任务" />
         </div>
-        <div v-if="selectedChange" class="change-detail">
+        <div v-if="selectedTask" class="change-detail">
           <div class="change-summary">
             <div>
-              <h3>{{ selectedChange.title }}</h3>
-              <p>{{ selectedChange.requirement }}</p>
-              <div class="change-meta">
-                <span>状态：{{ changeStatusMeta(selectedChange.status).label }}</span>
-                <span>任务码：{{ handoffStatusMeta(selectedChange).label }}</span>
-                <span>基础版本：v{{ selectedChange.base_version_number }}</span>
-              </div>
+              <h3>{{ selectedTask.title }}</h3>
+              <p>{{ selectedTask.requirement }}</p>
             </div>
-            <el-alert
-              v-if="selectedChange.status === 'stale'"
-              title="这个候选基于旧版本，当前正式版本没有受到影响。请基于最新版重新发起。"
-              type="warning"
-              :closable="false"
-              show-icon
-            />
-            <el-alert
-              v-else-if="selectedChange.status === 'preview_pending'"
-              title="候选已上传，正在整理交付状态；如预览无法加载，请让 AI 排查后重新上传。"
-              type="info"
-              :closable="false"
-              show-icon
-            />
-            <el-alert
-              v-else-if="selectedChange.status === 'invalid' && selectedChange.validation_errors?.length"
-              title="候选静态校验失败，不能采纳"
-              type="error"
-              :closable="false"
-              show-icon
-            >
-              <ul class="validation-errors">
-                <li v-for="error in selectedChange.validation_errors" :key="error">{{ error }}</li>
-              </ul>
-            </el-alert>
-            <div v-if="selectedChange.status === 'ready' && canManage" class="review-actions">
-              <el-button type="danger" plain @click="rejectSelectedChange">退回</el-button>
-              <el-button type="primary" :loading="reviewingChange" @click="adoptSelectedChange">采用候选</el-button>
+            <div class="review-actions">
+              <el-button
+                v-if="canCancelTask(selectedTask)"
+                type="danger"
+                plain
+                @click="cancelSelectedTask"
+              >取消任务</el-button>
             </div>
-            <div v-else-if="canEditTask(selectedChange)" class="review-actions">
-              <el-button plain @click="editSelectedTask">编辑任务</el-button>
-              <el-button type="danger" plain @click="deleteSelectedTask">删除任务</el-button>
-            </div>
-            <el-alert
-              v-else-if="selectedChange.status === 'editing' && selectedChange.handoff_status === 'redeemed'"
-              title="AI 已领取任务，任务内容已锁定；请等待候选上传。"
-              type="info"
-              :closable="false"
-              show-icon
+          </div>
+          <div class="task-history-pane">
+            <TaskCandidateHistory
+              :candidates="candidates"
+              :selected-candidate="selectedCandidate"
+              :loading="candidatesLoading"
+              :reviewing="reviewingChange"
+              :role="role"
+              :task="selectedTask"
+              :module-label="activeItem?.label || ''"
+              :owner-name="taskOwnerName"
+              :official-preview-url="previewUrl || ''"
+              :official-binding="currentBinding"
+              :preview-token="authStore.token || ''"
+              @select="selectCandidate"
+              @adopt="adoptSelectedCandidate"
+              @return="returnSelectedCandidate"
             />
           </div>
-          <div v-if="selectedChange.preview_path" class="candidate-boundary">
-            <div class="candidate-boundary-bar">
-              <span class="candidate-chip">候选版本</span>
-              <span>仅供审核预览 · 不会自动改变正式原型</span>
-            </div>
-            <iframe
-              :key="candidatePreviewUrl"
-              :src="candidatePreviewUrl"
-              class="candidate-preview"
-              frameborder="0"
-            />
-          </div>
-          <el-empty v-else description="候选尚未准备好预览" />
         </div>
-        <el-empty v-else class="change-detail" description="请选择一个候选" />
+        <el-empty v-else class="change-detail" description="请选择一个任务" />
       </div>
     </el-dialog>
 
@@ -369,6 +325,25 @@
         </el-table-column>
       </el-table>
     </el-dialog>
+
+    <el-dialog v-model="assignmentVisible" :title="`节点分工 · ${activeItem?.label || ''}`" width="520px">
+      <el-form label-width="90px" v-loading="assignmentLoading">
+        <el-form-item label="节点负责人">
+          <el-select v-model="assignmentOwnerId" clearable placeholder="暂不设置" style="width: 100%">
+            <el-option v-for="member in assignableMembers" :key="member.user_id" :label="member.nickname || member.username" :value="member.user_id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="参与者">
+          <el-select v-model="assignmentContributorIds" multiple collapse-tags placeholder="选择参与者" style="width: 100%">
+            <el-option v-for="member in assignableMembers" :key="member.user_id" :label="member.nickname || member.username" :value="member.user_id" />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="assignmentVisible = false">取消</el-button>
+        <el-button type="primary" :loading="assignmentSaving" @click="saveNodeAssignments">保存分工</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -382,22 +357,26 @@ import { useAuthStore } from '../stores/auth'
 import { getPrototypes } from '../api/prototypes'
 import { searchUsers } from '../api/auth'
 import { copyText as copyClipboardText } from '../utils/clipboard'
-import { findFirstBoundMenu, normalizeMenuConfigForBindings } from '../utils/project-menu'
+import { buildProjectWorkspaceQuery, listMenuLeaves, menuNodeLabelPath, menuNodePath, normalizeMenuConfigForBindings, resolveRequestedProjectMenu } from '../utils/project-menu'
 import {
-  canEditProjectTask,
+  canCancelProjectTask,
   getProjectPermissions,
   getProjectRoleLabel
 } from '../utils/project-permissions'
+import { displayPersonName, pickPendingRevision, taskStatusMeta } from '../utils/candidate-review'
+import { startBoundProjectTask } from '../utils/project-task-create'
 import {
   getProject, bindPrototype, removeProjectPrototype,
   checkoutPrototype, checkinPrototype, releaseCheckout,
   getProjectSnapshots, createProjectSnapshot, restoreProjectSnapshot, deleteProjectSnapshot,
-  getProjectMembers, addProjectMember, removeProjectMember,
-  createPrototypeChange, getProjectChanges, updateProjectChange, deleteProjectChange,
-  adoptProjectChange, rejectProjectChange
+  getProjectMembers, addProjectMember, removeProjectMember, getProjectNodes, updateProjectNodeAssignments,
+  createProjectTask, acceptProjectTask,
+  getProjectTasks, getTaskCandidates, adoptProjectCandidate, returnProjectCandidate, cancelProjectTask
 } from '../api/projects'
 import ProjectFormDialog from '../components/ProjectFormDialog.vue'
 import ProjectHeader from '../components/project/ProjectHeader.vue'
+import ProjectMenuTree from '../components/project/ProjectMenuTree.vue'
+import TaskCandidateHistory from '../components/project/TaskCandidateHistory.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -409,6 +388,7 @@ const role = ref(null)
 
 const activeGroup = ref(null)
 const activeItem = ref(null)
+const activeAncestors = ref([])
 
 const showMenuDialog = ref(false)
 
@@ -420,6 +400,7 @@ const prototypesPageSize = 20
 const prototypeKeyword = ref('')
 const selectedPrototypeId = ref('')
 const binding = ref(false)
+const unbinding = ref(false)
 let prototypeSearchTimer = null
 
 const snapshotVisible = ref(false)
@@ -436,9 +417,13 @@ const memberRole = ref('editor')
 const memberOptions = ref([])
 const memberSearching = ref(false)
 const addingMember = ref(false)
+const assignmentVisible = ref(false)
+const assignmentLoading = ref(false)
+const assignmentSaving = ref(false)
+const assignmentOwnerId = ref(null)
+const assignmentContributorIds = ref([])
 
 const changeRequestVisible = ref(false)
-const editingChangeId = ref(null)
 const changeTitle = ref('')
 const changeRequirement = ref('')
 const changeVersionStrategyType = ref('auto')
@@ -446,9 +431,12 @@ const changeVersionStrategyValue = ref('')
 const changeTaskResult = ref(null)
 const creatingChange = ref(false)
 const changesVisible = ref(false)
-const changes = ref([])
-const changesLoading = ref(false)
-const selectedChange = ref(null)
+const tasks = ref([])
+const tasksLoading = ref(false)
+const selectedTask = ref(null)
+const candidates = ref([])
+const candidatesLoading = ref(false)
+const selectedCandidate = ref(null)
 const reviewingChange = ref(false)
 const previewNonce = ref(0)
 
@@ -509,7 +497,7 @@ function handlePrototypePageChange(page) {
 }
 
 const hasMenu = computed(() => {
-  return project.value.menu_config?.items?.some(g => g.children?.length > 0)
+  return listMenuLeaves(project.value.menu_config).length > 0
 })
 
 const projectPermissions = computed(() => getProjectPermissions(role.value))
@@ -517,58 +505,26 @@ const canManage = computed(() => projectPermissions.value.canManage)
 const canEdit = computed(() => projectPermissions.value.canEdit)
 const roleLabel = computed(() => getProjectRoleLabel(role.value))
 
-function menuPath(group, item) {
-  return `${group.key}/${item.key}`
-}
-
-function menuPathLabel(group, item) {
-  return `${group.label} / ${item.label}`
-}
-
-function findMenuByPath(path) {
-  if (!path) return null
-  for (const group of project.value.menu_config?.items || []) {
-    for (const item of group.children || []) {
-      if (menuPath(group, item) === path) return { group, item }
-    }
-  }
-  return null
-}
-
 function selectRequestedMenu() {
-  const requestedPrototypeId = Array.isArray(route.query.prototypeId)
-    ? route.query.prototypeId[0]
-    : route.query.prototypeId
-  const requestedMenuPath = Array.isArray(route.query.menuPath)
-    ? route.query.menuPath[0]
-    : route.query.menuPath
-
-  const requestedBinding = project.value.prototypes?.find(binding => {
-    if (requestedPrototypeId && binding.prototype_id !== requestedPrototypeId) return false
-    if (requestedMenuPath && binding.menu_path !== requestedMenuPath) return false
-    return Boolean(requestedPrototypeId || requestedMenuPath)
+  const { target } = resolveRequestedProjectMenu({
+    menuConfig: project.value.menu_config,
+    bindings: project.value.prototypes,
+    prototypeId: route.query.prototypeId,
+    menuPath: route.query.menuPath
   })
-  const target = findMenuByPath(requestedBinding?.menu_path || requestedMenuPath)
-  if (target) {
-    selectMenu(target.group, target.item)
-    return
-  }
-
-  // 无有效深链接时固定打开菜单配置顺序中的第一个已绑定菜单。
-  // 深链接失效时也回退到同一默认入口，避免落在空白工作区。
-  const firstBound = findFirstBoundMenu(project.value.menu_config, project.value.prototypes)
-  if (firstBound) selectMenu(firstBound.group, firstBound.item)
+  if (target) selectMenuNode(target)
 }
 
 const activePath = computed(() => {
-  if (!activeGroup.value || !activeItem.value) return null
-  return menuPath(activeGroup.value, activeItem.value)
+  if (!activeItem.value) return null
+  return menuNodePath(activeAncestors.value, activeItem.value)
 })
 
 const activePathLabel = computed(() => {
-  if (!activeGroup.value || !activeItem.value) return ''
-  return menuPathLabel(activeGroup.value, activeItem.value)
+  if (!activeItem.value) return ''
+  return menuNodeLabelPath(activeAncestors.value, activeItem.value)
 })
+const activeParentLabel = computed(() => activeAncestors.value.map(item => item.label).join(' / '))
 
 const currentBinding = computed(() => {
   if (!activePath.value) return null
@@ -576,8 +532,14 @@ const currentBinding = computed(() => {
 })
 
 const currentOwnerName = computed(() => {
-  const owner = project.value.members?.find(member => member.role === 'owner')
-  return owner?.nickname || owner?.username || project.value.creator_name || '未配置'
+  const node = project.value.nodes?.find(item => item.id === activeItem.value?.id)
+  return node?.owner_name || node?.owner_username || '未配置'
+})
+
+const assignableMembers = computed(() => {
+  const owner = { user_id: project.value.created_by, username: project.value.creator_name || '项目负责人', nickname: project.value.creator_name || '项目负责人' }
+  return [owner, ...(project.value.members || []).filter(member => member.role === 'editor')]
+    .filter((member, index, list) => list.findIndex(item => Number(item.user_id) === Number(member.user_id)) === index)
 })
 
 const currentCheckoutLabel = computed(() => {
@@ -604,13 +566,13 @@ const previewUrl = computed(() => {
   return `/preview/${pp.prototype_id}/${pp.entry_file}?token=${token}&refresh=${previewNonce.value}`
 })
 
-const pendingReadyCount = computed(() => changes.value.filter(change => change.status === 'ready').length)
+const pendingReadyCount = computed(() => tasks.value.reduce((sum, task) => sum + Number(task.pending_candidate_count || 0), 0))
 
-const candidatePreviewUrl = computed(() => {
-  if (!selectedChange.value?.preview_path) return ''
-  const token = authStore.token || ''
-  return `${selectedChange.value.preview_path}?token=${encodeURIComponent(token)}`
-})
+const taskOwnerName = computed(() => displayPersonName(
+  selectedTask.value?.responsible?.nickname,
+  selectedTask.value?.responsible?.username,
+  currentOwnerName.value || '未接受'
+))
 
 const isMyCheckout = computed(() => {
   const c = currentBinding.value?.checkout
@@ -628,110 +590,95 @@ const expireTip = computed(() => {
   return `${Math.floor(diff / 60)} 小时后释放`
 })
 
-function selectMenu(group, item) {
-  activeGroup.value = group
-  activeItem.value = item
+function selectMenuNode({ node, ancestors }) {
+  activeAncestors.value = ancestors || []
+  activeGroup.value = ancestors?.[0] || node
+  activeItem.value = node
   selectedPrototypeId.value = ''
-  selectedChange.value = null
-  loadChanges()
+  selectedTask.value = null
+  selectedCandidate.value = null
+  loadTasks()
 }
 
-function selectChange(change) {
-  selectedChange.value = change
+async function selectTask(task) {
+  selectedTask.value = task
+  selectedCandidate.value = null
+  await loadCandidates()
 }
 
-function isActive(group, item) {
-  return activeGroup.value?.key === group.key && activeItem.value?.key === item.key
+function selectCandidate(candidate) {
+  selectedCandidate.value = candidate
 }
 
-function getCheckoutStatus(group, item) {
-  const path = menuPath(group, item)
-  const pp = project.value.prototypes?.find(p => p.menu_path === path)
-  if (!pp || !pp.checkout) return null
-  const isMe = pp.checkout.user_id === authStore.user?.id
-  return {
-    type: isMe ? 'success' : 'warning',
-    text: isMe ? '我签出' : `${pp.checkout.nickname || pp.checkout.username} 签出`
-  }
-}
-
-function getMenuState(group, item) {
-  const path = menuPath(group, item)
+function getMenuStateByPath(path) {
   const pp = project.value.prototypes?.find(p => p.menu_path === path)
   if (!pp) return { text: '未绑定', tone: 'empty' }
-  const hasPending = changes.value.some(change => change.status === 'ready' && change.prototype_id === pp.prototype_id)
+  const hasPending = tasks.value.some(task => Number(task.pending_candidate_count || 0) > 0 && (task.node_id === pp.node_id || task.prototype_id === pp.prototype_id))
   if (hasPending) return { text: '待确认', tone: 'warn' }
   if (pp.checkout) return { text: '签出中', tone: 'warn' }
   return { text: '稳定', tone: 'stable' }
 }
 
-function changeStatusMeta(status) {
-  const map = {
-    editing: { label: '进行中', type: 'info' },
-    preview_pending: { label: '交付状态整理中', type: 'info' },
-    ready: { label: '待确认', type: 'warning' },
-    invalid: { label: '预览失败', type: 'danger' },
-    adopted: { label: '已采用', type: 'success' },
-    rejected: { label: '已退回', type: 'danger' },
-    stale: { label: '已过期', type: 'warning' },
-    cancelled: { label: '已取消', type: 'info' }
-  }
-  return map[status] || { label: status, type: 'info' }
+function currentNodeId() {
+  return currentBinding.value?.node_id || activeItem.value?.id || null
 }
 
-function handoffStatusMeta(change) {
-  if (change.handoff_status === 'redeemed') return { label: '已领取' }
-  if (change.handoff_status === 'expired') return { label: '已过期，可重新生成' }
-  if (change.handoff_status === 'revoked') return { label: '已撤销' }
-  return { label: '待领取' }
-}
-
-function canEditTask(change) {
-  return canEditProjectTask({
+function canCancelTask(task) {
+  return canCancelProjectTask({
     role: role.value,
     isPlatformAdmin: authStore.isAdmin,
     userId: authStore.user?.id,
-    change
+    task
   })
 }
 
-async function loadChanges() {
-  const prototypeId = currentBinding.value?.prototype_id
-  if (!prototypeId) {
-    changes.value = []
+async function loadTasks() {
+  const nodeId = currentNodeId()
+  if (!nodeId) {
+    tasks.value = []
+    selectedTask.value = null
+    candidates.value = []
+    selectedCandidate.value = null
     return
   }
-  changesLoading.value = true
+  tasksLoading.value = true
   try {
-    const res = await getProjectChanges(route.params.id, { prototypeId })
-    changes.value = res.data.data || []
-    if (selectedChange.value) {
-      selectedChange.value = changes.value.find(change => change.id === selectedChange.value.id) || changes.value[0] || null
+    const res = await getProjectTasks(route.params.id, { nodeId })
+    tasks.value = res.data.data || []
+    if (selectedTask.value) {
+      selectedTask.value = tasks.value.find(task => task.id === selectedTask.value.id) || tasks.value[0] || null
     }
+    await loadCandidates()
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '加载候选失败')
+    ElMessage.error(err.response?.data?.message || '加载任务失败')
   } finally {
-    changesLoading.value = false
+    tasksLoading.value = false
+  }
+}
+
+async function loadCandidates() {
+  if (!selectedTask.value) {
+    candidates.value = []
+    selectedCandidate.value = null
+    return
+  }
+  candidatesLoading.value = true
+  try {
+    const res = await getTaskCandidates(route.params.id, selectedTask.value.id)
+    candidates.value = res.data.data || []
+    selectedCandidate.value = pickPendingRevision(candidates.value)
+  } catch (err) {
+    ElMessage.error(err.response?.data?.message || '加载修订记录失败')
+  } finally {
+    candidatesLoading.value = false
   }
 }
 
 function openChangeRequest() {
-  editingChangeId.value = null
   changeTitle.value = ''
   changeRequirement.value = ''
   changeVersionStrategyType.value = 'auto'
   changeVersionStrategyValue.value = ''
-  changeTaskResult.value = null
-  changeRequestVisible.value = true
-}
-
-function editSelectedTask() {
-  if (!canEditTask(selectedChange.value)) return
-  editingChangeId.value = selectedChange.value.id
-  changeTitle.value = selectedChange.value.title || ''
-  changeRequirement.value = selectedChange.value.requirement || ''
-  changeVersionStrategyType.value = selectedChange.value.version_strategy_type || 'auto'
-  changeVersionStrategyValue.value = selectedChange.value.version_strategy_value || ''
   changeTaskResult.value = null
   changeRequestVisible.value = true
 }
@@ -745,23 +692,34 @@ async function submitChangeTask() {
     ElMessage.warning('请输入自定义版本号')
     return
   }
+  if (!currentBinding.value) {
+    ElMessage.warning('当前菜单尚未绑定原型')
+    return
+  }
+  if (!authStore.user?.id) {
+    ElMessage.warning('请先登录后再创建任务')
+    return
+  }
   creatingChange.value = true
   try {
-    const payload = {
+    changeTaskResult.value = await startBoundProjectTask({
+      projectId: route.params.id,
+      projectName: project.value.name,
+      binding: currentBinding.value,
+      menuPath: activePathLabel.value,
       title: (changeTitle.value.trim() || changeRequirement.value.trim()).slice(0, 120),
       requirement: changeRequirement.value.trim(),
       versionStrategy: {
         type: changeVersionStrategyType.value,
         value: changeVersionStrategyType.value === 'custom' ? changeVersionStrategyValue.value.trim() : null
-      }
-    }
-    const res = editingChangeId.value
-      ? await updateProjectChange(route.params.id, editingChangeId.value, payload)
-      : await createPrototypeChange(route.params.id, currentBinding.value.prototype_id, payload)
-    changeTaskResult.value = res.data.data
-    await loadChanges()
+      },
+      responsibleUserId: authStore.user.id,
+      createProjectTask,
+      acceptProjectTask
+    })
+    await loadTasks()
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '生成任务失败')
+    ElMessage.error(err.response?.data?.message || err.message || '生成任务失败')
   } finally {
     creatingChange.value = false
   }
@@ -778,30 +736,29 @@ async function copyChangePrompt() {
   }
 }
 
-async function openChangesDialog(preferredChange = null) {
+async function openChangesDialog(preferredTask = null) {
   changesVisible.value = true
-  await loadChanges()
-  selectChange(
-    (preferredChange && changes.value.find(change => change.id === preferredChange.id))
-      || changes.value.find(change => change.status === 'ready')
-      || changes.value[0]
-      || null
-  )
+  await loadTasks()
+  const nextTask = (preferredTask && tasks.value.find(task => task.id === preferredTask.id))
+    || tasks.value.find(task => Number(task.pending_candidate_count || 0) > 0)
+    || tasks.value[0]
+    || null
+  if (nextTask) await selectTask(nextTask)
 }
 
-async function adoptSelectedChange() {
-  if (!selectedChange.value) return
+async function adoptSelectedCandidate(candidate = selectedCandidate.value) {
+  if (!candidate) return
   try {
     await ElMessageBox.confirm(
-      `采用后将生成新的正式版本；其他基于 v${selectedChange.value.base_version_number} 的候选可能过期。`,
-      '采用候选',
+      `采用后将生成新的正式版本，当前线上正式版会被这次待审修订替换。`,
+      '采用为正式版',
       { type: 'warning', confirmButtonText: '确认采用' }
     )
     reviewingChange.value = true
-    await adoptProjectChange(route.params.id, selectedChange.value.id)
-    ElMessage.success('候选已采用，正式版本已更新')
+    await adoptProjectCandidate(route.params.id, candidate.id)
+    ElMessage.success('已采用为正式版')
     previewNonce.value += 1
-    await Promise.all([loadProject(), loadChanges()])
+    await Promise.all([loadProject(), loadTasks()])
   } catch (err) {
     if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '采用失败')
   } finally {
@@ -809,33 +766,32 @@ async function adoptSelectedChange() {
   }
 }
 
-async function deleteSelectedTask() {
-  if (!canEditTask(selectedChange.value)) return
+async function cancelSelectedTask() {
+  if (!canCancelTask(selectedTask.value)) return
   try {
     await ElMessageBox.confirm(
-      '删除后任务码立即失效，当前正式版本和其他候选不受影响。',
-      '删除任务',
-      { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      '取消后任务保留历史并撤销未使用交接，当前正式版本不受影响。',
+      '取消任务',
+      { type: 'warning', confirmButtonText: '确认取消', cancelButtonText: '返回' }
     )
-    await deleteProjectChange(route.params.id, selectedChange.value.id)
-    ElMessage.success('任务已删除')
-    selectedChange.value = null
-    await loadChanges()
+    await cancelProjectTask(route.params.id, selectedTask.value.id)
+    ElMessage.success('任务已取消')
+    await loadTasks()
   } catch (err) {
-    if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '删除任务失败')
+    if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '取消任务失败')
   }
 }
 
-async function rejectSelectedChange() {
-  if (!selectedChange.value) return
+async function returnSelectedCandidate(candidate = selectedCandidate.value) {
+  if (!candidate) return
   try {
-    const { value } = await ElMessageBox.prompt('请说明退回原因，当前正式版本不会改变。', '退回候选', {
+    const { value } = await ElMessageBox.prompt('请说明退回原因，当前正式版本不会改变。', '退回修订', {
       confirmButtonText: '确认退回',
       inputValidator: input => Boolean(input?.trim()) || '请输入退回原因'
     })
-    await rejectProjectChange(route.params.id, selectedChange.value.id, { note: value.trim() })
-    ElMessage.success('候选已退回')
-    await loadChanges()
+    await returnProjectCandidate(route.params.id, candidate.id, { note: value.trim() })
+    ElMessage.success('已退回，正式版未改变')
+    await loadTasks()
   } catch (err) {
     if (err !== 'cancel') ElMessage.error(err.response?.data?.message || '退回失败')
   }
@@ -861,6 +817,25 @@ async function handleBind() {
     ElMessage.error(message)
   } finally {
     binding.value = false
+  }
+}
+
+async function handleUnbind() {
+  if (!currentBinding.value) return
+  try {
+    await ElMessageBox.confirm(
+      `只解除「${activePathLabel.value}」与「${currentBinding.value.prototype_name}」的项目绑定；原型、正式版本和历史记录不会删除。`,
+      '解绑原型',
+      { type: 'warning', confirmButtonText: '确认解绑', cancelButtonText: '取消' }
+    )
+    unbinding.value = true
+    await removeProjectPrototype(route.params.id, currentBinding.value.id)
+    ElMessage.success('已解除绑定，原型和历史记录保持不变')
+    await loadProject()
+  } catch (error) {
+    if (error !== 'cancel') ElMessage.error(error.response?.data?.message || '解绑失败')
+  } finally {
+    unbinding.value = false
   }
 }
 
@@ -912,7 +887,10 @@ function enterWorkspace() {
   router.push({
     name: 'project-preview',
     params: { id: route.params.id },
-    query: activePath.value ? { menuPath: activePath.value } : {}
+    query: buildProjectWorkspaceQuery({
+      prototypeId: currentBinding.value?.prototype_id,
+      menuPath: activePath.value
+    })
   })
 }
 
@@ -1050,6 +1028,41 @@ async function handleRemoveMember(userId) {
   }
 }
 
+async function openAssignmentDialog() {
+  if (!activeItem.value?.id) return
+  assignmentVisible.value = true
+  assignmentLoading.value = true
+  try {
+    const res = await getProjectNodes(route.params.id)
+    const node = (res.data.data || []).find(item => item.id === activeItem.value.id)
+    const assignments = node?.assignments || []
+    assignmentOwnerId.value = assignments.find(item => item.assignment_role === 'owner')?.user_id || null
+    assignmentContributorIds.value = assignments.filter(item => item.assignment_role === 'contributor').map(item => item.user_id)
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '加载节点分工失败')
+  } finally {
+    assignmentLoading.value = false
+  }
+}
+
+async function saveNodeAssignments() {
+  if (!activeItem.value?.id) return
+  assignmentSaving.value = true
+  try {
+    await updateProjectNodeAssignments(route.params.id, activeItem.value.id, {
+      ownerId: assignmentOwnerId.value,
+      contributorIds: assignmentContributorIds.value
+    })
+    ElMessage.success('节点分工已更新')
+    assignmentVisible.value = false
+    await loadProject()
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '保存节点分工失败')
+  } finally {
+    assignmentSaving.value = false
+  }
+}
+
 function formatDate(row, col, val) {
   if (!val) return ''
   const d = new Date(val)
@@ -1138,7 +1151,7 @@ function formatDate(row, col, val) {
 .prototype-card-copy { min-width: 0; flex: 1; }.prototype-title-row { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }.prototype-title-row h3 { margin: 0; color: #172033; font-size: 19px; font-weight: 650; }.prototype-card-copy > p { margin: 9px 0 0; color: #718096; font-size: 13px; line-height: 1.6; }.prototype-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 11px; color: #8a96a8; font-size: 12px; }.card-actions { display: flex; align-items: center; gap: 10px; margin-top: 19px; }
 .bind-card { min-height: 250px; }.bind-tip { margin: 8px 0 0; color: #8a96a8; font-size: 13px; }.bind-form { display: flex; width: min(460px, 100%); flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 14px; }.prototype-pagination { margin-top: 14px; }
 .collab-card { min-height: 250px; }.metric-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 18px; border-bottom: 1px solid #edf1f6; padding: 14px 2px; color: #718096; font-size: 13px; }.metric-list > div:last-child { border-bottom: 0; }.metric-list strong { color: #24344d; font-size: 13px; text-align: right; }.metric-list .metric-warning { color: #c27803; }.collab-actions { display: flex; flex-wrap: wrap; gap: 2px 10px; border-top: 1px solid #edf1f6; padding: 10px 16px 12px; }
-.activity-section { width: min(1180px, 100%); margin: 0 auto; }.section-heading { min-height: 62px; }.section-heading h3 { margin: 0; color: #25344a; font-size: 16px; font-weight: 650; }.activity-list { padding: 2px 20px 8px; }.activity-item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid #edf1f6; padding: 14px 0; }.activity-item:last-child { border-bottom: 0; }.activity-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }.activity-dot.status-ready { background: #f59e0b; }.activity-dot.status-adopted { background: #10b981; }.activity-dot.status-invalid, .activity-dot.status-rejected { background: #ef4444; }.activity-copy { min-width: 0; }.activity-copy strong { display: block; overflow: hidden; color: #334155; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.activity-copy p { margin: 4px 0 0; color: #8a96a8; font-size: 12px; }
+.activity-section { width: min(1180px, 100%); margin: 0 auto; }.section-heading { min-height: 62px; }.section-heading h3 { margin: 0; color: #25344a; font-size: 16px; font-weight: 650; }.activity-list { padding: 2px 20px 8px; }.activity-item { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 12px; border-bottom: 1px solid #edf1f6; padding: 14px 0; }.activity-item:last-child { border-bottom: 0; }.activity-dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }.activity-dot.status-ready, .activity-dot.status-awaiting_review { background: #f59e0b; }.activity-dot.status-adopted, .activity-dot.status-completed { background: #10b981; }.activity-dot.status-invalid, .activity-dot.status-rejected { background: #ef4444; }.activity-copy { min-width: 0; }.activity-copy strong { display: block; overflow: hidden; color: #334155; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }.activity-copy p { margin: 4px 0 0; color: #8a96a8; font-size: 12px; }
 .candidate-boundary-bar {
   min-height: 34px;
   padding: 0 14px;
@@ -1258,6 +1271,14 @@ function formatDate(row, col, val) {
   display: grid;
   grid-template-rows: auto 1fr;
 }
+.task-history-pane {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 .change-summary {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1291,28 +1312,8 @@ function formatDate(row, col, val) {
   padding-left: 18px;
   line-height: 1.6;
 }
-.candidate-boundary {
-  min-width: 0;
+.task-history-pane :deep(.revision-review) {
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: #fff7ed;
-}
-.candidate-boundary-bar {
-  color: #7c4a03;
-  background: #fff1d6;
-  border-bottom-color: #f6d58c;
-}
-.candidate-chip {
-  color: #7c4a03;
-  background: #f6ad55;
-}
-.candidate-preview {
-  width: 100%;
-  flex: 1;
-  height: 0;
-  min-height: 58vh;
-  background: #fff;
 }
 @media (max-width: 900px) {
   .portal-body { grid-template-columns: 190px minmax(0, 1fr); }

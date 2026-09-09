@@ -137,7 +137,7 @@ const tools = [
   },
   {
     name: 'get_project',
-    description: 'Read one accessible project with prototype bindings, members, and checkout status.',
+    description: 'Read one accessible project with prototype bindings, members, and checkout status. Checkout is legacy and not required for Task v2.',
     inputSchema: {
       type: 'object',
       required: ['projectId'],
@@ -148,8 +148,137 @@ const tools = [
     }
   },
   {
+    name: 'list_project_nodes',
+    description: 'List project work/group nodes with ids needed to create Task v2 tasks (nodeId).',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId'],
+      properties: {
+        projectId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'list_project_tasks',
+    description: 'List Task v2 collaboration tasks for a project. Authority field is taskId.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId'],
+      properties: {
+        projectId: { type: 'string' },
+        nodeId: { type: 'string' },
+        status: { type: 'string' },
+        assignedTo: { type: 'number' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'get_project_task',
+    description: 'Read one Task v2 task. Authority field is taskId. Includes pending_candidate_count (at most one ready pending).',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'taskId'],
+      properties: {
+        projectId: { type: 'string' },
+        taskId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'create_project_task',
+    description: 'Create a Task v2 project-bound collaboration task. This is the sole writable main ledger for project-bound prototypes. Returns taskId. Does not require checkout.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'nodeId', 'bindingId', 'title', 'requirement'],
+      properties: {
+        projectId: { type: 'string' },
+        nodeId: { type: 'string' },
+        bindingId: { type: 'number', description: 'project_prototypes.id for the bound prototype' },
+        title: { type: 'string' },
+        requirement: { type: 'string', minLength: 1, maxLength: 4000 },
+        responsibleUserId: { type: 'number', description: 'Defaults to the connected account when omitted' },
+        participantUserIds: { type: 'array', items: { type: 'number' } },
+        versionStrategyType: { type: 'string', enum: ['auto', 'custom'] },
+        versionStrategyValue: { type: 'string', description: 'Required for custom strategy; a higher SemVer.' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'accept_project_task',
+    description: 'Accept a Task v2 assignment as the responsible user. Returns taskId and a handoff if issued. Checkout is not required.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'taskId'],
+      properties: {
+        projectId: { type: 'string' },
+        taskId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'submit_task_candidate',
+    description: 'Upload a ZIP as a Task v2 review candidate. Authority fields: taskId on input, candidateId on success. A new ready candidate replaces any previous ready candidate on the same task.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'taskId', 'zipPath'],
+      properties: {
+        projectId: { type: 'string' },
+        taskId: { type: 'string' },
+        zipPath: { type: 'string' },
+        versionType: { type: 'string', enum: ['major', 'minor', 'patch'] },
+        note: { type: 'string', description: 'Optional summary recorded in audit metadata only' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'list_task_candidates',
+    description: 'List candidate_submissions for a Task v2 task. Authority fields: taskId, candidateId.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'taskId'],
+      properties: {
+        projectId: { type: 'string' },
+        taskId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'adopt_task_candidate',
+    description: 'Adopt a ready Task v2 candidate into the formal prototype version. Owner/admin only. Authority field: candidateId. Stales sibling ready candidates for the same prototype and base version.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'candidateId'],
+      properties: {
+        projectId: { type: 'string' },
+        candidateId: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
+    name: 'return_task_candidate',
+    description: 'Return a ready Task v2 candidate to the responsible user. Owner/admin only. Authority field: candidateId.',
+    inputSchema: {
+      type: 'object',
+      required: ['projectId', 'candidateId'],
+      properties: {
+        projectId: { type: 'string' },
+        candidateId: { type: 'string' },
+        note: { type: 'string' }
+      },
+      additionalProperties: false
+    }
+  },
+  {
     name: 'create_change_handoff',
-    description: 'Create a lightweight Fuxi collaboration task for one project prototype. Returns a one-time handoff prompt; it does not change the current prototype.',
+    description: 'DEPRECATED WRITE-FORBIDDEN. Project-bound collaboration must use create_project_task (Task v2, taskId). Returns LEGACY_CHANGEID_FORBIDDEN.',
     inputSchema: {
       type: 'object',
       required: ['projectId', 'prototypeId', 'requirement'],
@@ -166,7 +295,7 @@ const tools = [
   },
   {
     name: 'create_prototype_change',
-    description: 'Create a standalone prototype AI change. It is unavailable once the prototype belongs to a project; the generated code is valid for ten minutes and does not change the current version.',
+    description: 'Create a standalone unbound prototype AI change (table prototype_direct_changes). Authority field is directChangeId. Unavailable once the prototype belongs to a project.',
     inputSchema: {
       type: 'object',
       required: ['prototypeId', 'requirement'],
@@ -191,26 +320,28 @@ const tools = [
   },
   {
     name: 'get_prototype_change_status',
-    description: 'Read a standalone prototype change, including preview status, version strategy, and final version.',
+    description: 'Read a standalone prototype change. Authority field is directChangeId (changeId accepted as alias).',
     inputSchema: {
       type: 'object',
-      required: ['prototypeId', 'changeId'],
+      required: ['prototypeId'],
       properties: {
         prototypeId: { type: 'string' },
-        changeId: { type: 'string' }
+        directChangeId: { type: 'string' },
+        changeId: { type: 'string', description: 'Compat alias for directChangeId' }
       },
       additionalProperties: false
     }
   },
   {
     name: 'submit_prototype_change',
-    description: 'Upload a validated ZIP for a redeemed standalone prototype change. The Fuxi page runs browser preview and then forms the formal version automatically; it never bypasses the base-version check.',
+    description: 'Upload a validated ZIP for a redeemed standalone prototype change. Authority field is directChangeId (changeId accepted as alias).',
     inputSchema: {
       type: 'object',
-      required: ['prototypeId', 'changeId', 'zipPath'],
+      required: ['prototypeId', 'zipPath'],
       properties: {
         prototypeId: { type: 'string' },
-        changeId: { type: 'string' },
+        directChangeId: { type: 'string' },
+        changeId: { type: 'string', description: 'Compat alias for directChangeId' },
         zipPath: { type: 'string' },
         versionType: { type: 'string', enum: ['major', 'minor', 'patch'] }
       },
@@ -219,7 +350,7 @@ const tools = [
   },
   {
     name: 'redeem_change_handoff',
-    description: 'Redeem a one-time lightweight collaboration task code and read the authoritative base version and source download path.',
+    description: 'DEPRECATED WRITE-FORBIDDEN. Use accept_project_task / submit_task_candidate. Returns LEGACY_CHANGEID_FORBIDDEN.',
     inputSchema: {
       type: 'object',
       required: ['handoffCode'],
@@ -229,7 +360,7 @@ const tools = [
   },
   {
     name: 'get_change_status',
-    description: 'Read one lightweight collaboration change, including its base/current version, candidate status, and preview path.',
+    description: 'COMPAT READ-ONLY. Read a legacy prototype_changes row by changeId. Do not use this as the project-bound main ledger; prefer get_project_task / list_task_candidates.',
     inputSchema: {
       type: 'object',
       required: ['projectId', 'changeId'],
@@ -242,7 +373,7 @@ const tools = [
   },
   {
     name: 'submit_change_candidate',
-    description: 'Validate and upload a ZIP as a reviewable candidate for a redeemed task. This never changes the current prototype; a project owner/admin must adopt it in Fuxi.',
+    description: 'DEPRECATED WRITE-FORBIDDEN. Project-bound candidate submit must use submit_task_candidate (taskId). Returns LEGACY_CHANGEID_FORBIDDEN.',
     inputSchema: {
       type: 'object',
       required: ['projectId', 'changeId', 'zipPath'],
@@ -272,7 +403,7 @@ const tools = [
   },
   {
     name: 'checkout_prototype',
-    description: 'Check out a bound project prototype for exclusive editing.',
+    description: 'LEGACY exclusive checkout of a bound project prototype. Not required for the Task v2 project-bound candidate flow (create_project_task → submit_task_candidate → adopt_task_candidate).',
     inputSchema: {
       type: 'object',
       required: ['projectId', 'projectPrototypeId'],
@@ -287,7 +418,7 @@ const tools = [
   },
   {
     name: 'checkin_prototype',
-    description: 'Check in a project prototype that the current user checked out.',
+    description: 'LEGACY check-in of a project prototype the current user checked out. Not required for Task v2.',
     inputSchema: {
       type: 'object',
       required: ['projectId', 'projectPrototypeId'],
@@ -355,7 +486,7 @@ const tools = [
   },
   {
     name: 'force_release_checkout',
-    description: 'Force-release a checked-out project prototype. Owner/admin only; requires explicit confirm: true.',
+    description: 'LEGACY force-release of a checked-out prototype; owner/admin only; requires confirm: true. Not required for Task v2.',
     inputSchema: {
       type: 'object',
       required: ['projectId', 'projectPrototypeId', 'confirm'],
@@ -777,6 +908,66 @@ function withFields(payload, fields) {
   return { ...payload, fields };
 }
 
+const LEGACY_CHANGEID_WRITE_TOOLS = new Set([
+  'create_change_handoff',
+  'redeem_change_handoff',
+  'submit_change_candidate'
+]);
+
+function throwLegacyChangeIdForbidden(toolName) {
+  throw new ToolError(
+    'LEGACY_CHANGEID_FORBIDDEN',
+    `Tool ${toolName} is write-forbidden. Project-bound collaboration uses Task v2 with taskId and candidateId. Unbound prototypes use prototype_direct_changes with directChangeId.`,
+    {
+      toolName,
+      authorityFields: {
+        projectBound: ['taskId', 'candidateId'],
+        unbound: ['directChangeId']
+      },
+      replacementTools: [
+        'create_project_task',
+        'accept_project_task',
+        'submit_task_candidate',
+        'get_project_task',
+        'list_task_candidates',
+        'adopt_task_candidate',
+        'return_task_candidate'
+      ]
+    }
+  );
+}
+
+function resolveDirectChangeId(args) {
+  const value = args.directChangeId || args.changeId;
+  if (!value) {
+    throw new ToolError('INVALID_REQUEST', 'directChangeId is required (changeId is a compat alias)');
+  }
+  return value;
+}
+
+function taskAuthority(task, extras = {}) {
+  if (!task) return extras;
+  return {
+    taskId: task.taskId || task.id,
+    projectId: task.project_id,
+    nodeId: task.node_id,
+    bindingId: task.binding_id,
+    prototypeId: task.prototype_id,
+    status: task.status,
+    ...extras
+  };
+}
+
+function candidateAuthority(candidate, extras = {}) {
+  if (!candidate) return extras;
+  return {
+    candidateId: candidate.candidateId || candidate.id,
+    taskId: candidate.taskId || candidate.task_id,
+    status: candidate.status,
+    ...extras
+  };
+}
+
 function stableFingerprint(value) {
   if (Array.isArray(value)) return `[${value.map(stableFingerprint).join(',')}]`;
   if (value && typeof value === 'object') {
@@ -1131,6 +1322,149 @@ async function callTool(name, args) {
     return contentJson(withFields(project, projectFields(project.data)));
   }
 
+  if (name === 'list_project_nodes') {
+    return contentJson(await authed(`/api/projects/${encodeURIComponent(args.projectId)}/nodes`));
+  }
+
+  if (name === 'list_project_tasks') {
+    const params = new URLSearchParams();
+    if (args.nodeId) params.set('nodeId', args.nodeId);
+    if (args.status) params.set('status', args.status);
+    if (args.assignedTo != null) params.set('assignedTo', String(args.assignedTo));
+    const suffix = params.toString() ? `?${params}` : '';
+    const listed = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/tasks${suffix}`);
+    return contentJson({
+      ...listed,
+      taskIds: Array.isArray(listed.data) ? listed.data.map(item => item.taskId || item.id) : []
+    });
+  }
+
+  if (name === 'get_project_task') {
+    const payload = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/tasks/${encodeURIComponent(args.taskId)}`);
+    const task = payload.data;
+    return contentJson({
+      ...payload,
+      ...taskAuthority(task, {
+        sourceDownloadUrl: task && task.prototype_id
+          ? new URL(`/api/prototypes/${encodeURIComponent(task.prototype_id)}/download`, `${API_URL}/`).toString()
+          : null
+      })
+    });
+  }
+
+  if (name === 'create_project_task') {
+    const me = await authed('/api/auth/me');
+    const responsibleUserId = args.responsibleUserId != null ? args.responsibleUserId : me.data && me.data.id;
+    const created = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nodeId: args.nodeId,
+        bindingId: args.bindingId,
+        title: args.title,
+        requirement: args.requirement,
+        responsibleUserId,
+        participantUserIds: args.participantUserIds || [],
+        versionStrategy: {
+          type: args.versionStrategyType || 'auto',
+          value: args.versionStrategyValue || null
+        }
+      })
+    });
+    const task = created.data;
+    return contentJson({
+      ...created,
+      ...taskAuthority(task, {
+        responsibleUserId,
+        nextAction: 'If you are the responsible user, call accept_project_task, download sourceDownloadUrl from that result, then submit_task_candidate. Do not call checkout_prototype.'
+      })
+    });
+  }
+
+  if (name === 'accept_project_task') {
+    const accepted = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/tasks/${encodeURIComponent(args.taskId)}/accept`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const task = accepted.data && accepted.data.task;
+    return contentJson({
+      ...accepted,
+      ...taskAuthority(task, {
+        handoffCode: accepted.data && accepted.data.handoffCode,
+        expiresAt: accepted.data && accepted.data.expiresAt,
+        sourceDownloadUrl: task && task.prototype_id
+          ? new URL(`/api/prototypes/${encodeURIComponent(task.prototype_id)}/download`, `${API_URL}/`).toString()
+          : null,
+        nextAction: 'Download sourceDownloadUrl, build a Fuxi-compatible ZIP, then call submit_task_candidate with this taskId. Do not use submit_change_candidate or checkout_prototype.'
+      })
+    });
+  }
+
+  if (name === 'submit_task_candidate') {
+    const zipPath = path.resolve(args.zipPath);
+    if (!fs.existsSync(zipPath)) {
+      throw new ToolError('FILE_NOT_FOUND', 'ZIP file not found', { fileName: path.basename(zipPath) });
+    }
+    validateZipFile(zipPath);
+    const bytes = fs.readFileSync(zipPath);
+    const form = new FormData();
+    form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
+    if (args.versionType) form.set('versionType', args.versionType);
+    if (args.note) form.set('note', args.note);
+    const submitted = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/tasks/${encodeURIComponent(args.taskId)}/candidates`, {
+      method: 'POST',
+      body: form
+    });
+    const candidate = submitted.data;
+    return contentJson({
+      ...submitted,
+      ...candidateAuthority(candidate, {
+        projectId: args.projectId,
+        nextAction: 'A project owner or admin must review this candidate (adopt_task_candidate or return_task_candidate). At most one ready candidate is kept per taskId.'
+      })
+    });
+  }
+
+  if (name === 'list_task_candidates') {
+    const listed = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/tasks/${encodeURIComponent(args.taskId)}/candidates`);
+    return contentJson({
+      ...listed,
+      taskId: args.taskId,
+      candidateIds: Array.isArray(listed.data) ? listed.data.map(item => item.candidateId || item.id) : []
+    });
+  }
+
+  if (name === 'adopt_task_candidate') {
+    const adopted = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/candidates/${encodeURIComponent(args.candidateId)}/adopt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+    const candidate = adopted.data && adopted.data.candidate;
+    const version = adopted.data && adopted.data.version;
+    return contentJson({
+      ...adopted,
+      ...candidateAuthority(candidate, {
+        projectId: args.projectId,
+        versionNumber: version && version.version_number,
+        versionId: version && version.id
+      })
+    });
+  }
+
+  if (name === 'return_task_candidate') {
+    const returned = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/candidates/${encodeURIComponent(args.candidateId)}/return`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: args.note || '' })
+    });
+    return contentJson({
+      ...returned,
+      ...candidateAuthority(returned.data, { projectId: args.projectId })
+    });
+  }
+
   if (name === 'create_prototype_change') {
     const created = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes`, {
       method: 'POST',
@@ -1146,6 +1480,7 @@ async function callTool(name, args) {
     const change = created.data.change;
     return contentJson({
       ...created,
+      directChangeId: change.id,
       changeId: change.id,
       prototypeId: change.prototype_id,
       baseVersion: change.base_version_number,
@@ -1153,7 +1488,8 @@ async function callTool(name, args) {
       versionStrategyValue: change.version_strategy_value,
       handoffCode: created.data.handoffCode,
       prompt: created.data.prompt,
-      expiresAt: created.data.expiresAt
+      expiresAt: created.data.expiresAt,
+      authorityField: 'directChangeId'
     });
   }
 
@@ -1166,6 +1502,7 @@ async function callTool(name, args) {
     const change = redeemed.data.change;
     return contentJson({
       ...redeemed,
+      directChangeId: change.id,
       changeId: change.id,
       prototypeId: change.prototype_id,
       requirement: change.requirement,
@@ -1173,15 +1510,18 @@ async function callTool(name, args) {
       versionStrategyType: change.version_strategy_type,
       versionStrategyValue: change.version_strategy_value,
       sourceDownloadUrl: new URL(redeemed.data.sourceDownloadPath, `${API_URL}/`).toString(),
-      nextAction: 'Download source, build and validate a Fuxi-compatible ZIP, then call submit_prototype_change.'
+      nextAction: 'Download source, build and validate a Fuxi-compatible ZIP, then call submit_prototype_change with directChangeId.',
+      authorityField: 'directChangeId'
     });
   }
 
   if (name === 'get_prototype_change_status') {
-    const status = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes/${encodeURIComponent(args.changeId)}`);
+    const directChangeId = resolveDirectChangeId(args);
+    const status = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes/${encodeURIComponent(directChangeId)}`);
     const change = status.data;
     return contentJson({
       ...status,
+      directChangeId: change.id,
       changeId: change.id,
       prototypeId: change.prototype_id,
       status: change.status,
@@ -1193,11 +1533,13 @@ async function callTool(name, args) {
       chosenVersionType: change.chosen_version_type,
       candidateEntryFile: change.candidate_entry_file,
       candidatePreviewPath: change.preview_path,
-      finalVersionId: change.version_id || null
+      finalVersionId: change.version_id || null,
+      authorityField: 'directChangeId'
     });
   }
 
   if (name === 'submit_prototype_change') {
+    const directChangeId = resolveDirectChangeId(args);
     const zipPath = path.resolve(args.zipPath);
     if (!fs.existsSync(zipPath)) {
       throw new ToolError('FILE_NOT_FOUND', 'ZIP file not found', { fileName: path.basename(zipPath) });
@@ -1207,13 +1549,14 @@ async function callTool(name, args) {
     const form = new FormData();
     form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
     if (args.versionType) form.set('versionType', args.versionType);
-    const submitted = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes/${encodeURIComponent(args.changeId)}/candidate`, {
+    const submitted = await authed(`/api/prototypes/${encodeURIComponent(args.prototypeId)}/direct-changes/${encodeURIComponent(directChangeId)}/candidate`, {
       method: 'POST',
       body: form
     });
     const change = submitted.data;
     return contentJson({
       ...submitted,
+      directChangeId: change.id,
       changeId: change.id,
       prototypeId: change.prototype_id,
       status: change.status,
@@ -1221,52 +1564,13 @@ async function callTool(name, args) {
       currentVersion: change.current_version_number,
       candidateEntryFile: change.candidate_entry_file,
       candidatePreviewPath: change.preview_path,
-      nextAction: 'Wait for the Fuxi page browser preview validation, then call get_prototype_change_status until status is completed.'
+      nextAction: 'Wait for the Fuxi page browser preview validation, then call get_prototype_change_status until status is completed.',
+      authorityField: 'directChangeId'
     });
   }
 
-  if (name === 'create_change_handoff') {
-    const created = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/prototypes/${encodeURIComponent(args.prototypeId)}/changes`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: args.title || '',
-        requirement: args.requirement,
-        versionStrategy: {
-          type: args.versionStrategyType || 'auto',
-          value: args.versionStrategyValue || null
-        }
-      })
-    });
-    return contentJson({
-      ...created,
-      changeId: created.data.change.id,
-      prototypeId: created.data.change.prototype_id,
-      projectId: created.data.change.project_id,
-      baseVersion: created.data.change.base_version_number,
-      handoffCode: created.data.handoffCode,
-      prompt: created.data.prompt,
-      expiresAt: created.data.expiresAt
-    });
-  }
-
-  if (name === 'redeem_change_handoff') {
-    const redeemed = await authed('/api/projects/handoffs/redeem', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handoffCode: args.handoffCode })
-    });
-    const change = redeemed.data.change;
-    return contentJson({
-      ...redeemed,
-      changeId: change.id,
-      prototypeId: change.prototype_id,
-      projectId: change.project_id,
-      requirement: change.requirement,
-      baseVersion: change.base_version_number,
-      sourceDownloadUrl: new URL(redeemed.data.sourceDownloadPath, `${API_URL}/`).toString(),
-      nextAction: 'Download the source, build a Fuxi-compatible ZIP, then call submit_change_candidate.'
-    });
+  if (LEGACY_CHANGEID_WRITE_TOOLS.has(name)) {
+    throwLegacyChangeIdForbidden(name);
   }
 
   if (name === 'get_change_status') {
@@ -1281,36 +1585,9 @@ async function callTool(name, args) {
       baseVersion: change.base_version_number,
       currentVersion: change.current_version_number,
       candidateEntryFile: change.candidate_entry_file,
-      candidatePreviewPath: change.preview_path
-    });
-  }
-
-  if (name === 'submit_change_candidate') {
-    const zipPath = path.resolve(args.zipPath);
-    if (!fs.existsSync(zipPath)) {
-      throw new ToolError('FILE_NOT_FOUND', 'ZIP file not found', { fileName: path.basename(zipPath) });
-    }
-    validateZipFile(zipPath);
-    const bytes = fs.readFileSync(zipPath);
-    const form = new FormData();
-    form.set('file', new Blob([bytes], { type: 'application/zip' }), path.basename(zipPath));
-    if (args.versionType) form.set('versionType', args.versionType);
-    const submitted = await authed(`/api/projects/${encodeURIComponent(args.projectId)}/changes/${encodeURIComponent(args.changeId)}/candidate`, {
-      method: 'POST',
-      body: form
-    });
-    const change = submitted.data;
-    return contentJson({
-      ...submitted,
-      changeId: change.id,
-      prototypeId: change.prototype_id,
-      projectId: change.project_id,
-      status: change.status,
-      baseVersion: change.base_version_number,
-      currentVersion: change.current_version_number,
-      candidateEntryFile: change.candidate_entry_file,
       candidatePreviewPath: change.preview_path,
-      nextAction: 'A project owner or admin must review and adopt this candidate in Fuxi.'
+      deprecated: true,
+      warning: 'get_change_status is a compat read of prototype_changes. Project-bound main ledger is Task v2 (taskId / candidateId).'
     });
   }
 

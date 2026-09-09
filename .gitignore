@@ -33,6 +33,10 @@ docs/*
 !docs/PHASE26_HELP_CENTER.md
 !docs/PHASE27_HELP_MANUAL_CATEGORIES.md
 !docs/PHASE28_HELP_PROMPT_SNAPSHOT.md
+!docs/BACKLOG.md
+!docs/CONTRACT_FREEZE_TASK_V2.md
+!docs/skill-patches/
+!docs/skill-patches/**
 !docs/prototypes/
 docs/prototypes/*
 !docs/prototypes/team-collaboration-mvp/

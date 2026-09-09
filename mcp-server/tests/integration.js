@@ -202,8 +202,13 @@ async function main() {
     const initialized = await mcp.send('initialize', { protocolVersion: '2024-11-05' });
     assert.equal(initialized.result.serverInfo.name, 'fuxi-platform-mcp-server');
     const listedTools = await mcp.send('tools/list');
-    assert.equal(listedTools.result.tools.length, 30);
-    for (const toolName of ['create_change_handoff', 'redeem_change_handoff', 'get_change_status', 'submit_change_candidate']) {
+    assert.equal(listedTools.result.tools.length, 39);
+    for (const toolName of [
+      'list_project_nodes', 'list_project_tasks', 'get_project_task', 'create_project_task',
+      'accept_project_task', 'submit_task_candidate', 'list_task_candidates',
+      'adopt_task_candidate', 'return_task_candidate',
+      'create_change_handoff', 'redeem_change_handoff', 'get_change_status', 'submit_change_candidate'
+    ]) {
       assert(listedTools.result.tools.some(tool => tool.name === toolName), `missing ${toolName}`);
     }
 
@@ -592,7 +597,22 @@ async function main() {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${login.data.token}`
       },
-      body: JSON.stringify({ name: 'MCP integration project', description: 'Isolated project fixture' })
+      body: JSON.stringify({
+        name: 'MCP integration project',
+        description: 'Isolated project fixture',
+        menuConfig: {
+          items: [
+            {
+              key: 'mcp',
+              label: 'MCP',
+              children: [
+                { key: 'fixture', label: 'Fixture', children: [] },
+                { key: 'lightweight', label: 'Lightweight', children: [] }
+              ]
+            }
+          ]
+        }
+      })
     });
     const project = await projectCreateResponse.json();
     const projects = await callTool(mcp, 'list_projects', { keyword: 'integration project' });
@@ -635,7 +655,8 @@ async function main() {
     assert.equal(projectWithBinding.body.data.prototypes.length, 1);
     const projectPrototypeId = projectWithBinding.body.data.prototypes[0].id;
 
-    // 无 Git 轻协作闭环：一次性任务 -> 候选上传 -> 独立预览 -> 人工采用。
+    // Task v2 项目绑定闭环：create_project_task -> accept -> submit_task_candidate -> adopt。
+    // 旧 changeId 写入工具必须返回 LEGACY_CHANGEID_FORBIDDEN。
     const lightweightPrototype = await callTool(mcp, 'create_prototype', {
       name: 'MCP lightweight collaboration fixture',
       description: 'Candidate adoption must be explicit'
@@ -646,74 +667,91 @@ async function main() {
       zipPath,
       versionNote: 'Lightweight base upload'
     });
-    await callTool(mcp, 'bind_prototype_to_project', {
+    await callTool(mcp, 'upload_zip', {
+      prototypeId: lightweightPrototypeId,
+      zipPath,
+      versionNote: 'Record formal v1 for Task v2'
+    });
+    const lightweightBound = await callTool(mcp, 'bind_prototype_to_project', {
       projectId: project.data.id,
       prototypeId: lightweightPrototypeId,
       menuPath: '/mcp/lightweight'
     });
-    const handoff = await callTool(mcp, 'create_change_handoff', {
+    const forbiddenCreate = parseTool(await mcp.send('tools/call', {
+      name: 'create_change_handoff',
+      arguments: {
+        projectId: project.data.id,
+        prototypeId: lightweightPrototypeId,
+        title: '不应创建',
+        requirement: '项目绑定必须走 Task v2'
+      }
+    }));
+    assert.equal(forbiddenCreate.result.isError, true);
+    assert.equal(forbiddenCreate.body.error.code, 'LEGACY_CHANGEID_FORBIDDEN');
+    const forbiddenSubmit = parseTool(await mcp.send('tools/call', {
+      name: 'submit_change_candidate',
+      arguments: {
+        projectId: project.data.id,
+        changeId: 'chg_should_not_write',
+        zipPath: secondZipPath
+      }
+    }));
+    assert.equal(forbiddenSubmit.result.isError, true);
+    assert.equal(forbiddenSubmit.body.error.code, 'LEGACY_CHANGEID_FORBIDDEN');
+
+    const createdTask = await callTool(mcp, 'create_project_task', {
       projectId: project.data.id,
-      prototypeId: lightweightPrototypeId,
+      nodeId: lightweightBound.body.data.node_id,
+      bindingId: lightweightBound.body.data.id,
       title: '候选版本修改',
       requirement: '将页面标题和正文更新为候选版本，但不要直接采用'
     });
-    assert(handoff.body.handoffCode.startsWith('FX-'));
-    assert.equal(handoff.body.baseVersion, 0);
-    const redeemedHandoff = await callTool(mcp, 'redeem_change_handoff', {
-      handoffCode: handoff.body.handoffCode
-    });
-    assert.equal(redeemedHandoff.body.changeId, handoff.body.changeId);
-    assert.equal(redeemedHandoff.body.prototypeId, lightweightPrototypeId);
-    assert.equal(redeemedHandoff.body.baseVersion, 0);
-    assert(redeemedHandoff.body.sourceDownloadUrl.includes(`/api/prototypes/${lightweightPrototypeId}/download`));
-    const reusedHandoffResponse = await mcp.send('tools/call', {
-      name: 'redeem_change_handoff',
-      arguments: { handoffCode: handoff.body.handoffCode }
-    });
-    const reusedHandoff = parseTool(reusedHandoffResponse);
-    assert.equal(reusedHandoff.result.isError, true);
-    assert.equal(reusedHandoff.body.error.code, 'HANDOFF_ALREADY_REDEEMED');
-
-    const submittedCandidate = await callTool(mcp, 'submit_change_candidate', {
+    assert(createdTask.body.taskId);
+    assert.equal(createdTask.body.status, 'assigned');
+    const acceptedTask = await callTool(mcp, 'accept_project_task', {
       projectId: project.data.id,
-      changeId: handoff.body.changeId,
+      taskId: createdTask.body.taskId
+    });
+    assert.equal(acceptedTask.body.status, 'in_progress');
+    assert(acceptedTask.body.handoffCode.startsWith('FXT-'));
+    assert(acceptedTask.body.sourceDownloadUrl.includes(`/api/prototypes/${lightweightPrototypeId}/download`));
+
+    const submittedCandidate = await callTool(mcp, 'submit_task_candidate', {
+      projectId: project.data.id,
+      taskId: createdTask.body.taskId,
       zipPath: secondZipPath
     });
     assert.equal(submittedCandidate.body.status, 'ready');
-    assert.equal(submittedCandidate.body.candidateEntryFile, 'index.html');
-    const pendingStatus = await callTool(mcp, 'get_change_status', {
+    assert.equal(submittedCandidate.body.candidateId, submittedCandidate.body.data.id);
+    assert.equal(submittedCandidate.body.taskId, createdTask.body.taskId);
+    const listedCandidates = await callTool(mcp, 'list_task_candidates', {
       projectId: project.data.id,
-      changeId: handoff.body.changeId
+      taskId: createdTask.body.taskId
     });
-    assert.equal(pendingStatus.body.status, 'ready');
-    assert.equal(pendingStatus.body.currentVersion, 0);
+    assert.equal(listedCandidates.body.candidateIds.length, 1);
+    const pendingTask = await callTool(mcp, 'get_project_task', {
+      projectId: project.data.id,
+      taskId: createdTask.body.taskId
+    });
+    assert.equal(pendingTask.body.status, 'awaiting_review');
+    assert.equal(pendingTask.body.data.pending_candidate_count, 1);
     const candidatePreviewResponse = await fetch(
-      `${apiUrl}${pendingStatus.body.candidatePreviewPath}?token=${encodeURIComponent(login.data.token)}`
+      `${apiUrl}${submittedCandidate.body.data.preview_path}?token=${encodeURIComponent(login.data.token)}`
     );
     assert.equal(candidatePreviewResponse.status, 200);
     assert.match(await candidatePreviewResponse.text(), /MCP integration v2/);
 
-    const readyStatus = await callTool(mcp, 'get_change_status', {
+    const adoptedCandidate = await callTool(mcp, 'adopt_task_candidate', {
       projectId: project.data.id,
-      changeId: handoff.body.changeId
+      candidateId: submittedCandidate.body.candidateId
     });
-    assert.equal(readyStatus.body.status, 'ready');
-    assert.equal(readyStatus.body.currentVersion, 0);
-
-    const adoptResponse = await fetch(`${apiUrl}/api/projects/${project.data.id}/changes/${handoff.body.changeId}/adopt`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${login.data.token}` }
-    });
-    const adoptedCandidate = await adoptResponse.json();
-    assert.equal(adoptResponse.status, 200);
-    assert.equal(adoptedCandidate.data.change.status, 'adopted');
-    assert.equal(adoptedCandidate.data.version.version_number, 1);
-    const adoptedStatus = await callTool(mcp, 'get_change_status', {
+    assert.equal(adoptedCandidate.body.status, 'adopted');
+    assert.equal(adoptedCandidate.body.versionNumber, 2);
+    const completedTask = await callTool(mcp, 'get_project_task', {
       projectId: project.data.id,
-      changeId: handoff.body.changeId
+      taskId: createdTask.body.taskId
     });
-    assert.equal(adoptedStatus.body.status, 'adopted');
-    assert.equal(adoptedStatus.body.currentVersion, 1);
+    assert.equal(completedTask.body.status, 'completed');
 
     const checkedOut = await callTool(mcp, 'checkout_prototype', {
       projectId: project.data.id,

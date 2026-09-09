@@ -48,22 +48,31 @@ stderr so MCP JSON-RPC stdout remains clean. If no update is available, it start
 - `upload_zip`: upload an existing ZIP file as a new prototype version.
 - `list_projects`: list accessible collaboration projects.
 - `get_project`: read project details, bindings, members, and checkout status.
-- `create_change_handoff`: create a one-time task handoff for a project-bound prototype.
-- `create_prototype_change`: create a one-time task handoff for an independent prototype change.
-- `redeem_prototype_change_handoff`: redeem an independent-prototype task handoff and receive the source download contract.
-- `get_prototype_change_status`: read an independent-prototype change status.
-- `submit_prototype_change`: upload an independent-prototype candidate ZIP.
-- `redeem_change_handoff`: redeem a project task handoff and receive the source download contract.
-- `get_change_status`: read a project change status.
-- `submit_change_candidate`: upload a project candidate ZIP for owner/admin review.
+- `list_project_nodes`: list work/group nodes (`nodeId`) for Task v2.
+- `list_project_tasks`: list Task v2 tasks. Authority field: `taskId`.
+- `get_project_task`: read one Task v2 task. Authority field: `taskId`.
+- `create_project_task`: create the project-bound main-ledger task (`nodeId`, `bindingId`, `title`, `requirement`, optional `responsibleUserId`, version strategy).
+- `accept_project_task`: accept the assignment; returns `taskId` and handoff if issued. Checkout is not required.
+- `submit_task_candidate`: upload a ZIP for `taskId`. Success returns `candidateId`. A new ready candidate replaces any previous ready candidate on the same task.
+- `list_task_candidates`: list `candidate_submissions` for a task.
+- `adopt_task_candidate`: owner/admin adopt of `candidateId`; stales sibling ready candidates for the same prototype base.
+- `return_task_candidate`: owner/admin return of `candidateId`.
+- `create_change_handoff`: **WRITE-FORBIDDEN** (`LEGACY_CHANGEID_FORBIDDEN`). Use `create_project_task`.
+- `create_prototype_change`: create an unbound standalone change. Authority field: `directChangeId` (`changeId` is a compat alias).
+- `redeem_prototype_change_handoff`: redeem a standalone change handoff.
+- `get_prototype_change_status`: read a standalone change by `directChangeId`.
+- `submit_prototype_change`: upload a standalone ZIP by `directChangeId`.
+- `redeem_change_handoff`: **WRITE-FORBIDDEN** (`LEGACY_CHANGEID_FORBIDDEN`).
+- `get_change_status`: **compat READ-ONLY** of `prototype_changes` / `changeId`. Not the project-bound main ledger.
+- `submit_change_candidate`: **WRITE-FORBIDDEN** (`LEGACY_CHANGEID_FORBIDDEN`). Use `submit_task_candidate`.
 - `bind_prototype_to_project`: bind a prototype into a project menu.
-- `checkout_prototype`: check out a bound project prototype for exclusive editing.
-- `checkin_prototype`: check in a project prototype checked out by the current user.
+- `checkout_prototype`: **legacy** exclusive checkout. Not required for Task v2.
+- `checkin_prototype`: **legacy** check-in. Not required for Task v2.
 - `create_snapshot`: create a named project snapshot of menu configuration and bound versions.
 - `restore_snapshot`: restore a project snapshot (requires `confirm: true`).
 - `delete_prototype`: move a prototype to the recycle bin (requires `confirm: true`).
 - `rollback_version`: roll a prototype back to a previous version (requires `confirm: true`).
-- `force_release_checkout`: force-release a checked-out prototype; owner/admin only (requires `confirm: true`).
+- `force_release_checkout`: **legacy** force-release; owner/admin only (requires `confirm: true`). Not required for Task v2.
 - `validate_project`: validate a local project directory without modifying it.
 - `validate_zip`: inspect an existing ZIP without extracting it.
 - `pack_project`: build a Fuxi-compatible ZIP from a built project.
@@ -71,6 +80,19 @@ stderr so MCP JSON-RPC stdout remains clean. If no update is available, it start
 - `upload_project`: validate then upload a ZIP to an explicit prototype, then read back the result.
 
 Destructive tools always require `confirm: true`; otherwise they return `CONFIRMATION_REQUIRED`.
+
+## Authority fields and deprecation
+
+This table is the Skill+MCP Task v2 contract on this branch. It is **not** a claim that production cutover is complete.
+
+| Path | Writable ledger | Authority fields | Notes |
+|---|---|---|---|
+| Unbound prototype | `prototype_direct_changes` | `directChangeId` | `changeId` may appear as a compat alias with the same value. |
+| Project-bound | Task v2 `project_tasks` + `candidate_submissions` | `taskId`, `candidateId` | Product model: one formal version vs at most one pending `ready` candidate per `taskId`. New ready submit replaces the previous ready candidate. Adopt stales sibling ready candidates for the same prototype + base version. |
+| Legacy `prototype_changes` | **read-only** | `changeId` | Writes return `LEGACY_CHANGEID_FORBIDDEN`. |
+| `checkout_prototype` / `checkin_prototype` / `force_release_checkout` | legacy lock | n/a | Must not be required for the project-bound Task v2 main flow. |
+
+Write-forbidden MCP tools (still listed so old Skill caches fail loudly): `create_change_handoff`, `redeem_change_handoff`, `submit_change_candidate`.
 
 ## Unified Result Fields
 
@@ -100,7 +122,7 @@ npm run test:integration
 
 The integration test runs a copied backend in a temporary isolated directory. It verifies one-time connect-code
 exchange, device-session registration, refresh-token rotation, session revocation, short-lived and expired-token
-authentication, all 30 MCP tools, local validation and packaging, idempotent create/update/project-bound delivery,
+authentication, all 39 MCP tools (including Task v2 and still-listed legacy changeId tools), local validation and packaging, idempotent create/update/project-bound delivery,
 optimistic version and checkout protection, partial-failure reporting, README and browser preview behavior, project
 collaboration, destructive-operation confirmation gates, and structured failures. It removes the temporary workspace
 afterward and does not modify the platform's current database or prototype repository.
