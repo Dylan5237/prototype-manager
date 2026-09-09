@@ -1553,7 +1553,8 @@ async function callTool(name, args) {
       method: 'POST',
       body: form
     });
-    const change = submitted.data;
+    const submission = submitted.data;
+    const change = submission && submission.change ? submission.change : submission;
     return contentJson({
       ...submitted,
       directChangeId: change.id,

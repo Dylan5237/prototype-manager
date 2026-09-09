@@ -591,6 +591,37 @@ async function main() {
     });
     const tokenList = await callTool(tokenMcp, 'list_prototypes', { scope: 'my' });
     assert(Array.isArray(tokenList.body.data));
+
+    // 未绑定原型必须继续使用 directChangeId；submit 返回体需展开后端 { change, prototype }。
+    const directFixture = await callTool(mcp, 'create_prototype', {
+      name: 'MCP direct change fixture',
+      description: 'Unbound directChangeId contract'
+    });
+    await callTool(mcp, 'upload_zip', {
+      prototypeId: directFixture.body.data.id,
+      zipPath,
+      versionNote: 'Direct change initial upload'
+    });
+    await callTool(mcp, 'upload_zip', {
+      prototypeId: directFixture.body.data.id,
+      zipPath,
+      versionNote: 'Direct change formal baseline'
+    });
+    const directCreated = await callTool(mcp, 'create_prototype_change', {
+      prototypeId: directFixture.body.data.id,
+      requirement: 'Verify directChangeId response authority'
+    });
+    await callTool(mcp, 'redeem_prototype_change_handoff', { handoffCode: directCreated.body.handoffCode });
+    const directSubmitted = await callTool(mcp, 'submit_prototype_change', {
+      prototypeId: directFixture.body.data.id,
+      directChangeId: directCreated.body.directChangeId,
+      zipPath: secondZipPath,
+      versionType: 'patch'
+    });
+    assert.equal(directSubmitted.body.directChangeId, directCreated.body.directChangeId);
+    assert.equal(directSubmitted.body.status, 'completed');
+    assert.equal(directSubmitted.body.authorityField, 'directChangeId');
+
     const projectCreateResponse = await fetch(`${apiUrl}/api/projects`, {
       method: 'POST',
       headers: {
