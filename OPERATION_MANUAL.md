@@ -36,27 +36,27 @@
 
 ### 1.2 接入平台 MCP
 
-在页面中点击「接入平台 MCP」，复制或使用页面生成的完整提示词，发送给你正在使用的 AI 助手。该提示词不是业务聊天指令，而是一份明确的本地安装和验证任务书。
+在页面中点击「接入平台 MCP」时，先显式选择当前使用的 AI Host，再复制或使用页面生成的完整提示词，发送给该 AI 助手。提示词不是业务聊天指令，而是触发唯一 onboarding 程序的任务入口。
 
-AI 助手必须按下面顺序执行：
+当前 Host 策略为：
 
-1. 识别当前 AI 工具、版本、操作系统、MCP 配置文件路径和 Skill/Rules 目录；识别不了就停止，不猜固定路径。
-2. 在临时 staging 目录下载 MCP ZIP 和 `fuxi-prototype` Skill ZIP，检查 HTTP 状态、ZIP 可读性、文件结构和 manifest 摘要。
-3. 调用 MCP 包内的 `bootstrap.js preflight`，确认配置可写、格式为 JSON、目标目录正确。
-4. 运行 `bootstrap.js install`：备份原 MCP 配置，原子写入伏羲 MCP 条目，安装 Skill，并保留其他 MCP 条目。
-5. 首次调用伏羲 MCP 工具 `check_connection({})`，完成连接码兑换。
-6. 让当前 AI 工具重新加载 MCP；需要重启就报告 `RELOAD_REQUIRED`，不要无限等待。
-7. 重新调用 `check_connection({})`，再完成 `tools/list`，确认至少发现 `check_connection`、`validate_project`、`pack_project`、`validate_zip`、`deliver_project`。
-8. 检查最终 `fuxi-prototype/SKILL.md` 是否在当前 AI 工具实际加载的 Skill 目录下。
+- **WorkBuddy**：推荐并稳定支持；
+- **Cursor**：兼容支持；
+- **Codex**：当前不提供确定性自动安装配置；
+- **其他 Host**：仅进行能力发现，不自动猜测配置路径或伪造安装。
 
-只有同时满足以下条件，才算接入成功：
+Known Host 的标准配置路径、下载、校验、安装、认证和验证均由 onboarding 程序决定。正常路径不要求 AI 解码 launcher、扫描 `.workbuddy/.cursor`、自行做 Node 预检查或二次确认配置。
 
-- MCP 连接结果为 `ok=true` 且 `authentication=verified`；
-- AI 工具的工具列表中能看到伏羲 MCP 工具；
-- `fuxi-prototype` Skill 在实际目录存在并被当前客户端发现；
-- AI 已明确说明是否需要重启，以及重启/刷新后的验证结果。
+接入程序会同时校验 MCP 与 Skill artifact SHA-256。只有两者都与当前平台发布版本一致时，才允许判定为 `ALREADY_COMPLETE`；任一摘要不一致都必须执行真实升级。
 
-“文件下载成功”“launcher 进程启动”或“配置文件已经写入”都不等于接入成功。连接码、安装 token、refresh token、密码和完整凭据文件内容不应出现在聊天回复、日志、业务仓库或 Skill 文件中。
+完成安装或升级后：
+
+1. 按客户端要求完成终端执行授权；
+2. 如 WorkBuddy 提示信任自定义连接器，在「连接器 → 自定义连接器」中信任 `fuxi-platform`；
+3. 重新加载客户端或新开会话；
+4. 调用 `check_connection({})`，并完成工具发现验证，确认伏羲 MCP 工具已正常加载。
+
+只有 MCP/Skill 摘要匹配、`check_connection` 返回 `ok=true` 且 `authentication=verified`、工具已发现，并完成 reload/new session 后的验证，才算接入成功。文件下载成功、launcher 启动或配置文件写入都不等于接入成功。连接码、安装 token、refresh token、密码和完整凭据文件内容不应出现在聊天回复、日志、业务仓库或 Skill 文件中。
 
 ### 1.3 接入失败怎么处理
 
@@ -64,12 +64,12 @@ AI 助手必须按下面顺序执行：
 
 | 阶段 | 常见现象 | 正确处理 |
 |---|---|---|
-| 客户端识别 | 不知道 MCP/Skill 配置目录 | 停止，报告 `CLIENT_CONFIG_REQUIRED`，由用户确认客户端能力 |
-| 下载校验 | HTTP 非 2xx、ZIP 损坏、摘要不一致 | 不安装，保留错误阶段，不重复覆盖 |
+| Host 选择 | 已支持 Host 或 other Host | 已支持 Host 按程序内置 profile 执行；不支持/other Host 只做 capability discovery，不能伪造自动安装 |
+| 下载校验 | HTTP 非 2xx、ZIP 损坏、摘要不一致 | 不安装；摘要不匹配时执行升级而不是返回 `ALREADY_COMPLETE` |
 | 本地安装 | 权限不足、配置不是 JSON、目录不可写 | 使用客户端原生授权；失败时恢复备份 |
 | 首次连接 | 连接码过期、认证失败 | 报告 `AUTHENTICATION_FAILED`，重新从平台生成一次接入提示词 |
-| 工具加载 | MCP 已安装但工具列表没有伏羲工具 | 刷新或重启 AI 工具，再验证；不要直接声称成功 |
-| Skill 加载 | 文件存在但 AI 不认识 Skill | 确认 Skill 目标目录和当前客户端加载规则，必要时新开会话 |
+| 工具加载 | MCP 已安装但工具列表没有伏羲工具 | 按 Host 要求 reload 或重启，再验证；不要直接声称成功 |
+| UI 信任 | WorkBuddy 要求信任自定义连接器 | 提示用户在「连接器 → 自定义连接器」信任 `fuxi-platform` 后再验证 |
 
 接入完成后，后续 MCP/Skill 更新由稳定 launcher 在 AI 工具下次启动时处理。一般不需要用户重复执行完整接入流程。
 
@@ -163,29 +163,32 @@ redeem_prototype_change_handoff
 
 1. 进入顶部「项目」，打开目标项目。
 2. 在项目菜单中选择目标原型，确认项目 ID、绑定 ID、菜单路径和当前版本。
-3. 点击「让 AI 修改」生成项目候选任务。
-4. 先完成页面中的签出；没有签出证据时，不要让 AI 上传。
-5. 把完整提示词发送给 AI。
+3. 点击「让 AI 修改」创建或生成项目任务。
+4. 把平台生成的完整提示词发送给 AI。
 
-AI 必须使用：
+Task v2 主流程为：
 
 ```text
-redeem_change_handoff
-  → 使用 sourceDownloadUrl 下载当前正式源码
-  → 在源码基础上修改
-  → validate_project
-  → pack_project
-  → submit_change_candidate
-  → get_change_status(status=ready)
+create_project_task
+  → accept_project_task
+  → AI 在任务上下文修改
+  → submit_task_candidate
+  → 审核：return_task_candidate / adopt_task_candidate
+  → list_task_candidates / get_project_task 回读状态与历史
 ```
 
-候选上传成功后：
+用户侧的完整流程是：
 
-- 候选不会自动改变正式原型；
-- 项目 Owner/Admin 在项目任务或候选区域预览；
-- 确认无误后点击「采用候选」才会生成新的正式版本；
-- 退回候选不会改变正式版本；
-- 修改完成后点击「签入」，释放编辑锁。
+1. 进入项目目标节点；
+2. 点击「让 AI 修改」创建/生成任务；
+3. 把平台生成的完整提示词发送给 AI；
+4. AI 接受任务并提交修订；
+5. 负责人在“正式版 vs 唯一待审修订”中审核；
+6. 可退回，AI 再提交；
+7. 采用后才形成新的正式版本；
+8. 历史尝试保留。
+
+同一任务只保留一个当前 `ready` 待审修订，再次提交会把旧待审候选转入历史。项目绑定原型禁止旧 `changeId` 写入；legacy project write 返回 `LEGACY_CHANGEID_FORBIDDEN`。独立原型仍使用 `directChangeId` 流程。
 
 ---
 
@@ -203,11 +206,13 @@ redeem_change_handoff
    - **查看者**：查看项目和预览，不可签出。
 5. 在重大评审点创建命名快照，记录菜单结构、绑定关系和版本。
 
-### 4.2 签出/签入规则
+### 4.2 项目任务与兼容编辑锁
 
-签出是菜单绑定级别的编辑锁，不同成员可以同时修改不同菜单节点。
+Task v2 项目修改主流程不依赖 checkout/checkin。项目任务通过 `taskId + candidateId` 追踪，AI 提交修订后由负责人退回或采用；不要在新 Task v2 使用说明中要求用户先签出再提交候选。
 
-- 修改前先签出；
+现有签出/签入工具仅作为兼容/存量场景能力保留：
+
+- 签出是菜单绑定级别的编辑锁，不同成员可以同时修改不同菜单节点；
 - 只能签入自己签出的模块；
 - 不再修改时尽快签入；
 - Owner/Admin 可在确认影响后强制释放他人的签出锁；
@@ -289,12 +294,13 @@ redeem_change_handoff
 | 浏览原型 | `list_prototypes`、`get_prototype`、`get_readme`、`get_preview_url` |
 | 创建/直接上传 | `create_prototype`、`upload_zip`、`upload_project`、`deliver_project` |
 | 独立修改 | `create_prototype_change`、`redeem_prototype_change_handoff`、`get_prototype_change_status`、`submit_prototype_change` |
-| 项目协作任务 | `list_projects`、`get_project`、`create_change_handoff`、`redeem_change_handoff`、`get_change_status`、`submit_change_candidate` |
+| 项目协作任务 | `list_project_nodes`、`list_project_tasks`、`get_project_task`、`create_project_task`、`accept_project_task`、`submit_task_candidate`、`list_task_candidates`、`adopt_task_candidate`、`return_task_candidate` |
+| Legacy 项目写入（禁止用于 Task v2） | `create_change_handoff`、`redeem_change_handoff`、`submit_change_candidate`；新流程写入应 fail-closed，`get_change_status` 仅兼容读取 |
 | 项目绑定与编辑锁 | `bind_prototype_to_project`、`checkout_prototype`、`checkin_prototype` |
 | 版本安全 | `create_snapshot`、`restore_snapshot`、`rollback_version`、`force_release_checkout`、`delete_prototype` |
 | 本地交付检查 | `validate_project`、`pack_project`、`validate_zip` |
 
-工具的关键参数通常包括 `prototypeId`、`projectId`、`projectPrototypeId`、`changeId`、`zipPath`、`versionNote` 和 `expectedVersion`。项目候选和独立修改都要以平台返回的任务上下文为准。
+工具的关键参数通常包括 `prototypeId`、`projectId`、`projectPrototypeId`、`taskId`、`candidateId`、`directChangeId`、`zipPath`、`versionNote` 和 `expectedVersion`。项目 Task v2 以 `taskId + candidateId` 为权威主键；独立原型继续以 `directChangeId` 为权威 ID。
 
 ---
 
@@ -361,7 +367,7 @@ redeem_change_handoff
 
 ### 项目候选上传了，为什么正式版本没变？
 
-这是项目协作的设计：候选上传只是把修改交给负责人审核，只有项目 Owner/Admin 点击「采用候选」后才会生成正式版本。
+这是项目协作的设计：AI 提交的是待审修订，只有项目 Owner/Admin 执行「采用为正式版」后才会生成正式版本；退回后允许再次提交，同一任务只有一个当前待审修订，旧候选会进入历史尝试。
 
 ### 可以直接回滚或删除吗？
 
@@ -376,7 +382,7 @@ redeem_change_handoff
 | 首次接入 | 登录 → 接入平台 MCP → 复制提示词给 AI → 新会话验证 |
 | 创建原型 | 原型列表 → 让 AI 创建原型 → 填需求 → 选模式 → 复制提示词 |
 | 修改独立原型 | 原型详情 → 让 AI 修改 → 复制提示词 → 等待正式版本完成 |
-| 修改项目原型 | 项目 → 目标菜单 → 签出 → 让 AI 修改 → 负责人采用候选 → 签入 |
+| 修改项目原型 | 项目 → 目标节点 → 让 AI 修改 → AI 接受任务/提交修订 → 负责人退回或采用 → 查看历史尝试 |
 | 查看版本 | 原型详情 → 版本历史 |
 | 查看设计文档 | 原型详情 → 设计文档 |
 | 生成分享 | 原型详情 → 免登录链接或协作入口 |
