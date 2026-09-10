@@ -13,6 +13,7 @@ const {
   previewPromptTemplate
 } = require('../services/db-prompt-templates');
 const { getQuickStartPromptVariables } = require('../services/help-prompt-snapshot');
+const { listOnboardingHosts, getOnboardingHost, renderSafeStopPrompt } = require('../services/onboarding-hosts');
 
 let tempRoot;
 
@@ -39,13 +40,28 @@ test('seeds all product prompt scenarios and renders built-in Mock data', () => 
 
   const template = getPromptTemplate('mcp.onboarding');
   const preview = previewPromptTemplate('mcp.onboarding');
+  assert.ok(template.mockData.canonicalOnboardingCommand);
   assert.ok(template.mockData.canonicalBootstrapCommand);
   assert.match(preview, /check_connection/);
-  assert.match(preview, /唯一标准命令/);
-  assert.match(preview, /Node.js >= 18/);
-  assert.doesNotMatch(preview, /mock-install-token|bootstrapManifestJson|--mcp-zip|--skill-zip/);
-  assert.match(preview, /quickStartGuide|帮助手册/);
+  assert.match(preview, /唯一入口/);
+  assert.match(preview, /立即.*原样执行/);
+  assert.match(preview, /不解码、不审查、不拆分、不修改/);
+  assert.match(preview, /用户已明确选择 WorkBuddy/);
+  assert.doesNotMatch(preview, /Node\.js >= 18|只读识别当前 AI 客户端|--client auto|mock-install-token|bootstrapManifestJson|--mcp-config|--skill-target|--mcp-zip|--skill-zip/);
+  assert.doesNotMatch(preview, /快速入门|帮助手册/);
   assert.doesNotMatch(preview, /{{\s*[A-Za-z]/);
+});
+
+test('onboarding Host registry separates deterministic install from safe-stop modes', () => {
+  const hosts = listOnboardingHosts();
+  assert.deepEqual(hosts.map(host => host.id), ['workbuddy', 'cursor', 'codex', 'other']);
+  assert.equal(hosts[0].recommended, true);
+  assert.equal(getOnboardingHost('workbuddy').client, 'workbuddy');
+  assert.equal(getOnboardingHost('cursor').client, 'cursor');
+  assert.equal(getOnboardingHost('codex').mode, 'unsupported');
+  assert.equal(getOnboardingHost('other').mode, 'discovery');
+  assert.match(renderSafeStopPrompt(getOnboardingHost('other')), /只收集事实，不执行安装/);
+  assert.doesNotMatch(renderSafeStopPrompt(getOnboardingHost('other')), /node -e|curl|--client/);
 });
 
 test('onboarding prompt reads the published quick-start snapshot and fails back safely', () => {

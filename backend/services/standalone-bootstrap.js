@@ -22,21 +22,46 @@ function sha256(value) {
 
 function quoteCommandArg(value) {
   const text = String(value);
-  if (/[\r\n"'`]/.test(text)) throw new Error('Bootstrap command contains an unsafe argument');
+  if (/[\r\n"`]/.test(text)) throw new Error('Onboarding command contains an unsafe argument');
   return `"${text}"`;
 }
 
-function renderCanonicalBootstrapCommand({ bootstrapUrl, sessionEndpoint, bootstrapSha256, session, client = 'auto' }) {
-  const loaderSource = `const fs = require('node:fs');
+function assertSha256(value, label) {
+  if (!/^[a-f0-9]{64}$/i.test(String(value || ''))) throw new Error(`${label} must be a SHA-256 digest`);
+  return String(value).toLowerCase();
+}
+
+function assertUrl(value, label) {
+  const parsed = new URL(String(value || ''));
+  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(`${label} must use HTTP(S)`);
+  return parsed.toString();
+}
+
+// Session-specific orchestration layer. It binds the selected Host and the
+// short-lived Bootstrap credential, then delegates installation to bootstrap.js.
+function buildOnboardingScript({ bootstrapUrl, bootstrapSha256, sessionEndpoint, session, client }) {
+  const config = {
+    bootstrapUrl: assertUrl(bootstrapUrl, 'bootstrapUrl'),
+    bootstrapSha256: assertSha256(bootstrapSha256, 'bootstrapSha256'),
+    sessionEndpoint: assertUrl(sessionEndpoint, 'sessionEndpoint'),
+    session: String(session || ''),
+    client: String(client || '').trim().toLowerCase()
+  };
+  if (!config.session || !config.client || config.client === 'auto') {
+    throw new Error('Onboarding script requires a bound session and deterministic client');
+  }
+  return `#!/usr/bin/env node
+'use strict';
+const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawn } = require('node:child_process');
+const config = ${JSON.stringify(config)};
 const MAX_ATTEMPTS = 3;
 const TIMEOUT_MS = 15000;
 const BACKOFF_MS = 250;
-const [bootstrapUrl, expectedSha, sessionEndpoint, command, sessionFlag, session, clientFlag, client] = process.argv.slice(1);
-function failure(code, retryable = false) { const error = new Error(code); error.code = code; error.retryable = retryable; return error; }
+function failure(code, message, retryable = false) { const error = new Error(message || code); error.code = code; error.retryable = retryable; return error; }
 function isRetryable(error) { return Boolean(error && (error.retryable || error.name === 'TypeError' || error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT')); }
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 async function downloadStandalone() {
@@ -45,16 +70,16 @@ async function downloadStandalone() {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
     try {
-      const response = await fetch(bootstrapUrl, { signal: controller.signal });
+      const response = await fetch(config.bootstrapUrl, { signal: controller.signal });
       if (!response.ok) {
         const status = response.status;
-        throw failure('BOOTSTRAP_DOWNLOAD_HTTP_' + status, status === 408 || status === 429 || status >= 500);
+        throw failure('BOOTSTRAP_DOWNLOAD_HTTP_' + status, 'Bootstrap download failed with HTTP ' + status, status === 408 || status === 429 || status >= 500);
       }
       const data = Buffer.from(await response.arrayBuffer());
-      if (data.length > 100 * 1024 * 1024) throw failure('BOOTSTRAP_ARTIFACT_TOO_LARGE');
+      if (data.length > 100 * 1024 * 1024) throw failure('BOOTSTRAP_ARTIFACT_TOO_LARGE', 'Bootstrap artifact exceeds 100 MiB');
       return data;
     } catch (error) {
-      lastError = error.name === 'AbortError' ? failure('BOOTSTRAP_DOWNLOAD_TIMEOUT', true) : error;
+      lastError = error.name === 'AbortError' ? failure('BOOTSTRAP_DOWNLOAD_TIMEOUT', 'Bootstrap download timed out', true) : error;
       if (!isRetryable(lastError) || attempt === MAX_ATTEMPTS) throw lastError;
       await sleep(BACKOFF_MS * attempt);
     } finally {
@@ -64,30 +89,46 @@ async function downloadStandalone() {
   throw lastError;
 }
 async function run() {
-  if (!bootstrapUrl || !/^[a-f0-9]{64}$/i.test(expectedSha || '') || !sessionEndpoint || command !== 'connect' || sessionFlag !== '--session' || !session || clientFlag !== '--client' || !client) throw failure('BOOTSTRAP_ARGUMENTS_INVALID');
+  if (Number(process.versions.node.split('.')[0]) < 18) throw failure('NODE_VERSION_UNSUPPORTED', 'Node.js >= 18 is required');
   const data = await downloadStandalone();
   const actualSha = crypto.createHash('sha256').update(data).digest('hex');
-  if (actualSha !== expectedSha.toLowerCase()) throw failure('BOOTSTRAP_DIGEST_MISMATCH');
+  if (actualSha !== config.bootstrapSha256) throw failure('BOOTSTRAP_DIGEST_MISMATCH', 'Bootstrap SHA-256 mismatch');
   const file = path.join(os.tmpdir(), 'fuxi-bootstrap-' + crypto.randomUUID() + '.cjs');
-  fs.writeFileSync(file, data, { mode: 0o700 });
+  try { fs.writeFileSync(file, data, { mode: 0o700 }); }
+  catch (error) { throw failure('BOOTSTRAP_WRITE_FAILED', error.message); }
   try {
-    const child = spawn(process.execPath, [file, command, sessionFlag, session, '--endpoint', sessionEndpoint, clientFlag, client], { stdio: 'inherit', env: process.env });
-    const exitCode = await new Promise((resolve, reject) => { child.once('error', reject); child.once('close', code => resolve(code === null ? 1 : code)); });
+    const child = spawn(process.execPath, [file, 'connect', '--session', config.session, '--endpoint', config.sessionEndpoint, '--client', config.client], { stdio: 'inherit', env: process.env });
+    const exitCode = await new Promise((resolve, reject) => {
+      child.once('error', error => reject(failure('BOOTSTRAP_SPAWN_FAILED', error.message)));
+      child.once('close', code => resolve(code === null ? 1 : code));
+    });
     process.exitCode = exitCode;
   } finally {
     try { fs.rmSync(file, { force: true }); } catch (error) {}
   }
 }
 run().catch(error => {
-  process.stdout.write(JSON.stringify({ ok: false, status: 'FAILED', step: 'LOAD', error: { code: error.code || 'BOOTSTRAP_LOADER_FAILED', message: 'Bootstrap loader failed' } }) + '\\n');
+  process.stdout.write(JSON.stringify({ ok: false, status: 'FAILED', step: 'LOAD', error: { code: error.code || 'ONBOARDING_FAILED', message: error.message || 'Onboarding failed' } }) + '\\n');
   process.exitCode = 1;
-});`;
-  const encodedSource = Buffer.from(loaderSource, 'utf8').toString('base64');
-  return `node -e "eval(Buffer.from('${encodedSource}','base64').toString())" -- ${[
-    bootstrapUrl,
-    bootstrapSha256,
-    sessionEndpoint
-  ].map(quoteCommandArg).join(' ')} connect --session ${quoteCommandArg(session)} --client ${quoteCommandArg(client)}`;
+});
+`;
 }
 
-module.exports = { buildStandaloneBootstrap, renderCanonicalBootstrapCommand, sha256 };
+// The only shell-visible layer: a short, readable Node loader that downloads,
+// verifies and executes the short-lived onboarding script. Keep this layer
+// deliberately boring so an Agent can trigger it without decoding or auditing
+// a second installer. Child output and exit status pass through unchanged.
+const ONBOARDING_LAUNCHER_SOURCE = [
+  "const p=process,[u,s]=p.argv.slice(1),fail=(c,m,r)=>Object.assign(Error(m||c),{code:c,retryable:r}),out=e=>{p.stdout.write(JSON.stringify({ok:false,status:'FAILED',step:'LOAD',error:{code:e.code||'ONBOARDING_LAUNCHER_FAILED',message:e.message||String(e)}})+'\\n');p.exitCode=1};",
+  "if(+p.versions.node.split('.')[0]<18)out(fail('NODE_VERSION_UNSUPPORTED','Node.js >= 18 is required'));else{const fs=require('fs'),os=require('os'),crypto=require('crypto'),spawn=require('child_process').spawn;",
+  "async function load(){for(let i=0;i<3;i++){try{const a=new AbortController();var t=setTimeout(()=>a.abort(),15000),r=await fetch(u,{signal:a.signal});if(!r.ok)throw fail('ONBOARDING_DOWNLOAD_HTTP_'+r.status,'Onboarding HTTP '+r.status,r.status===408||r.status===429||r.status>=500);const b=Buffer.from(await r.arrayBuffer());if(b.length>1048576)throw fail('ONBOARDING_SCRIPT_TOO_LARGE','Onboarding script exceeds 1 MiB');if(crypto.createHash('sha256').update(b).digest('hex')!==s.toLowerCase())throw fail('ONBOARDING_DIGEST_MISMATCH','Onboarding SHA-256 mismatch');return b}catch(e){if(e.name==='AbortError')e=fail('ONBOARDING_DOWNLOAD_TIMEOUT','Onboarding download timed out',true);if(i===2||!(e.retryable||e.name==='TypeError'||e.code==='ECONNRESET'||e.code==='ETIMEDOUT'))throw e;await new Promise(r=>setTimeout(r,250*(i+1)))}finally{clearTimeout(t)}}}",
+  "(async()=>{const b=await load(),f=os.tmpdir()+'/fuxi-onboard-'+crypto.randomUUID()+'.cjs';try{try{fs.writeFileSync(f,b)}catch(e){throw fail('ONBOARDING_WRITE_FAILED',e.message)}const c=spawn(p.execPath,[f],{stdio:'inherit'});p.exitCode=await new Promise((r,j)=>{c.once('error',e=>j(fail('ONBOARDING_SPAWN_FAILED',e.message)));c.once('close',n=>r(n??1))})}finally{try{fs.rmSync(f,{force:true})}catch{}}})().catch(out)}"
+].join('');
+
+function renderOnboardingLauncherCommand({ onboardingUrl, onboardingSha256 }) {
+  const url = assertUrl(onboardingUrl, 'onboardingUrl');
+  const digest = assertSha256(onboardingSha256, 'onboardingSha256');
+  return `node -e ${quoteCommandArg(ONBOARDING_LAUNCHER_SOURCE)} -- ${quoteCommandArg(url)} ${quoteCommandArg(digest)}`;
+}
+
+module.exports = { buildStandaloneBootstrap, buildOnboardingScript, renderOnboardingLauncherCommand, sha256 };

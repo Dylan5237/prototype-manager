@@ -89,6 +89,24 @@ test('clientTargets resolves the verified WorkBuddy native paths without broad d
   assert.equal(targets.skillTarget, path.join(os.homedir(), '.workbuddy', 'skills', 'fuxi-prototype'));
 });
 
+test('explicit WorkBuddy selection remains deterministic when Cursor is also installed', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-explicit-host-'));
+  const originalHomedir = os.homedir;
+  try {
+    fs.mkdirSync(path.join(root, '.workbuddy'), { recursive: true });
+    fs.mkdirSync(path.join(root, '.cursor'), { recursive: true });
+    os.homedir = () => root;
+    const manifest = { schema: 'fuxi-bootstrap/2', bootstrapId: 'workbuddy-explicit', apiUrl: 'http://127.0.0.1', client: { name: 'workbuddy' } };
+    const targets = clientTargets(manifest, { client: 'workbuddy' });
+    assert.equal(targets.name, 'workbuddy');
+    assert.equal(targets.mcpConfig, path.join(root, '.workbuddy', 'mcp.json'));
+    assert.equal(targets.skillTarget, path.join(root, '.workbuddy', 'skills', 'fuxi-prototype'));
+  } finally {
+    os.homedir = originalHomedir;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('mergeMcpConfig preserves existing MCP entries and replaces only Fuxi', () => {
   const existing = { settings: { keep: true }, mcpServers: { other: { command: 'node', args: ['other.js'] } } };
   const merged = mergeMcpConfig(existing, { command: 'node', args: ['launcher.js'] });
@@ -316,6 +334,22 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
     assert.equal(repeated.status, 'COMPLETE');
     assert.equal(repeated.reason, 'ALREADY_COMPLETE');
     assert.equal(requestCount, 2);
+
+    const staleArtifactState = JSON.parse(fs.readFileSync(path.join(installRoot, 'state.json'), 'utf8'));
+    staleArtifactState.artifacts.mcp.sha256 = '0'.repeat(64);
+    fs.writeFileSync(path.join(installRoot, 'state.json'), JSON.stringify(staleArtifactState, null, 2));
+    const artifactReinstalled = await install(manifest, {
+      'mcp-config': config,
+      'skill-target': skillTarget,
+      'install-root': installRoot,
+      state: path.join(installRoot, 'state.json'),
+      'mcp-zip': mcpZipPath,
+      'skill-zip': skillZipPath,
+      'timeout-ms': 5000
+    });
+    assert.equal(artifactReinstalled.status, 'COMPLETE');
+    assert.notEqual(artifactReinstalled.reason, 'ALREADY_COMPLETE');
+    assert.equal(artifactReinstalled.artifacts.mcp.sha256, manifest.artifacts.mcp.sha256);
 
     const launcherTampered = JSON.parse(fs.readFileSync(config, 'utf8'));
     launcherTampered.mcpServers['fuxi-platform'].args = [path.join(root, 'runtime', 'bootstrap-mcp', 'wrong-launcher.js')];

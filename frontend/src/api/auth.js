@@ -16,8 +16,12 @@ export function getMcpToken() {
   return api.get('/auth/mcp-token')
 }
 
-export function getAgentBootstrap() {
-  return api.get('/integrations/agent-bootstrap')
+export function getOnboardingHosts() {
+  return api.get('/integrations/onboarding-hosts')
+}
+
+export function getAgentBootstrap(host) {
+  return api.get('/integrations/agent-bootstrap', { params: { host } })
 }
 
 export function getMcpSessions() {

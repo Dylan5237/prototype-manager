@@ -652,6 +652,11 @@ function readCompletedInstall(stateFile, manifest) {
     const state = readJson(stateFile);
     if (state.status !== 'COMPLETE' || state.mcpConnected !== true) return null;
     if (state.apiUrl && normalizeApiUrl(state.apiUrl) !== normalizeApiUrl(manifest.apiUrl)) return null;
+    for (const kind of ['mcp', 'skill']) {
+      const installedSha = state.artifacts && state.artifacts[kind] && state.artifacts[kind].sha256;
+      const requestedSha = manifest.artifacts && manifest.artifacts[kind] && manifest.artifacts[kind].sha256;
+      if (!installedSha || !requestedSha || installedSha !== requestedSha) return null;
+    }
     const mcpReady = Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js')) && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js')));
     const skillReady = Boolean(state.skillTarget && skillTargetReady(state.skillTarget, state.client));
     const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
@@ -810,7 +815,15 @@ async function connect(options = {}) {
   if (manifest.schema !== 'fuxi-bootstrap/2' || !manifest.bootstrapId || !manifest.apiUrl) {
     throw new BootstrapError('MANIFEST_INVALID', 'Bootstrap session returned an invalid manifest');
   }
-  const client = String(options.client || manifest.client && manifest.client.name || 'auto').trim().toLowerCase();
+  const manifestClient = String(manifest.client && manifest.client.name || '').trim().toLowerCase();
+  const requestedClient = String(options.client || '').trim().toLowerCase();
+  if (manifestClient && requestedClient && manifestClient !== requestedClient) {
+    throw new BootstrapError('HOST_SELECTION_MISMATCH', 'Bootstrap client does not match the Host selected on the platform', {
+      selectedClient: manifestClient,
+      requestedClient
+    });
+  }
+  const client = manifestClient || requestedClient || 'auto';
   return install(manifest, {
     ...options,
     client,

@@ -11,7 +11,7 @@ function randomCredential() {
   return crypto.randomBytes(32).toString('base64url');
 }
 
-function createBootstrapSession({ userId, apiUrl }) {
+function createBootstrapSession({ userId, apiUrl, client }) {
   const credential = randomCredential();
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + BOOTSTRAP_SESSION_TTL_MS).toISOString();
@@ -22,11 +22,11 @@ function createBootstrapSession({ userId, apiUrl }) {
   );
   run(
     `INSERT INTO bootstrap_sessions
-      (credential_hash, user_id, bootstrap_id, api_url, created_at, expires_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [sha256(credential), userId, bootstrapId, String(apiUrl).replace(/\/+$/, ''), now, expiresAt]
+      (credential_hash, user_id, bootstrap_id, api_url, client_name, created_at, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [sha256(credential), userId, bootstrapId, String(apiUrl).replace(/\/+$/, ''), String(client || ''), now, expiresAt]
   );
-  return { credential, bootstrapId, apiUrl: String(apiUrl).replace(/\/+$/, ''), createdAt: now, expiresAt };
+  return { credential, bootstrapId, apiUrl: String(apiUrl).replace(/\/+$/, ''), client: String(client || ''), createdAt: now, expiresAt };
 }
 
 function readBootstrapSession(credential) {
@@ -34,7 +34,7 @@ function readBootstrapSession(credential) {
     return { ok: false, reason: 'MISSING_BOOTSTRAP_SESSION' };
   }
   const row = queryOne(
-    `SELECT credential_hash, user_id, bootstrap_id, api_url, created_at, expires_at
+    `SELECT credential_hash, user_id, bootstrap_id, api_url, client_name, created_at, expires_at
        FROM bootstrap_sessions WHERE credential_hash = ?`,
     [sha256(credential)]
   );
@@ -45,6 +45,7 @@ function readBootstrapSession(credential) {
     userId: Number(row.user_id),
     bootstrapId: row.bootstrap_id,
     apiUrl: row.api_url,
+    client: row.client_name || '',
     createdAt: row.created_at,
     expiresAt: row.expires_at
   };
