@@ -1,0 +1,1 @@
+evidence_id,case_id,date,task_type,scope_or_difficulty,baseline_method,traditional_minutes,fuxi_user_input_minutes,fuxi_review_minutes,fuxi_rework_minutes,fuxi_total_minutes,time_saving_rate,traditional_quality,fuxi_quality,quality_degraded,reviewer,source_location,notes
