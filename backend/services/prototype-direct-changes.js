@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { query, queryOne, runInTransaction } = require('../database/db');
+const { query, queryOne, run, runInTransaction } = require('../database/db');
 const {
   getPrototypeById,
   getLatestVersionNumber,
@@ -17,6 +17,15 @@ const { validateCandidateDirectory } = require('./candidate-validation');
 const { normalizeRoles } = require('./authorization');
 const { normalizeVersionStrategy, resolveVersionLabel } = require('./version-strategy');
 const { renderPromptTemplate } = require('./db-prompt-templates');
+const { recordUsageEvent } = require('./usage-events');
+const {
+  ensureUsageTask,
+  getUsageTaskByRef,
+  beginUsageTaskAttempt,
+  finishUsageTaskAttempt,
+  completeUsageTask,
+  cancelUsageTask
+} = require('./usage-tasks');
 
 const DIRECT_CANDIDATES_ROOT = path.join(UPLOADS_DIR, 'prototype-direct-candidates');
 const DIRECT_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -193,7 +202,7 @@ class PrototypeDirectChangeService {
     return change;
   }
 
-  createChange({ actor, prototypeId, requirement, versionStrategy = {} }) {
+  createChange({ actor, prototypeId, requirement, versionStrategy = {}, source = 'web', isTest = false, exclusionReason = null }) {
     const prototype = this.assertStandalone(actor, prototypeId);
     const cleanRequirement = String(requirement || '').trim();
     if (!cleanRequirement || cleanRequirement.length > MAX_REQUIREMENT_LENGTH) {
@@ -229,10 +238,29 @@ class PrototypeDirectChangeService {
         strategy.value, baseVersion, createdAt, createdAt]);
     });
     const change = getDirectChangeById(changeId);
+    const usageTask = ensureUsageTask({
+      taskKind: 'direct',
+      actorUserId: actor.id,
+      prototypeId,
+      sourceRef: changeId,
+      source,
+      isTest,
+      exclusionReason,
+      startedAt: createdAt
+    });
+    recordUsageEvent({
+      eventType: 'change_created',
+      userId: actor.id,
+      source,
+      resourceType: 'direct_change',
+      resourceId: changeId,
+      usageTaskId: usageTask.id,
+      eventKey: `direct-change-created:${changeId}`
+    });
     return { change, handoffCode, expiresAt, prompt: buildPrompt(change, handoffCode, expiresAt) };
   }
 
-  updateChange({ actor, changeId, requirement, versionStrategy = {} }) {
+  updateChange({ actor, changeId, requirement, versionStrategy = {}, source = 'web' }) {
     const change = this.getChangeForActor(actor, changeId);
     this.assertStandalone(actor, change.prototype_id);
     if (change.status !== 'editing' || change.handoff_status === 'redeemed') {
@@ -268,10 +296,19 @@ class PrototypeDirectChangeService {
       `, [cleanRequirement, strategy.type, strategy.value, baseVersion, updatedAt, changeId]);
     });
     const updated = getDirectChangeById(changeId);
+    const usageTask = getUsageTaskByRef('direct', changeId);
+    recordUsageEvent({
+      eventType: 'change_updated',
+      userId: actor.id,
+      source,
+      resourceType: 'direct_change',
+      resourceId: changeId,
+      usageTaskId: usageTask?.id
+    });
     return { change: updated, handoffCode, expiresAt, prompt: buildPrompt(updated, handoffCode, expiresAt) };
   }
 
-  cancelChange({ actor, changeId }) {
+  cancelChange({ actor, changeId, source = 'web' }) {
     const change = this.getChangeForActor(actor, changeId);
     if (change.status !== 'editing' || change.handoff_status === 'redeemed') {
       throw new PrototypeDirectChangeError('CHANGE_NOT_CANCELLABLE', '只有未领取的修改任务可以取消', 409);
@@ -281,10 +318,20 @@ class PrototypeDirectChangeService {
       db.run(`UPDATE prototype_direct_changes SET status = 'cancelled', updated_at = ? WHERE id = ?`, [timestamp, changeId]);
       db.run(`UPDATE prototype_direct_handoffs SET status = 'revoked', updated_at = ? WHERE id = ? AND status = 'created'`, [timestamp, change.handoff_id]);
     });
+    const usageTask = getUsageTaskByRef('direct', changeId);
+    if (usageTask) cancelUsageTask(usageTask.id, { completedAt: timestamp });
+    recordUsageEvent({
+      eventType: 'change_cancelled',
+      userId: actor.id,
+      source,
+      resourceType: 'direct_change',
+      resourceId: changeId,
+      usageTaskId: usageTask?.id
+    });
     return getDirectChangeById(changeId);
   }
 
-  redeemHandoff({ actor, handoffCode }) {
+  redeemHandoff({ actor, handoffCode, source = 'web' }) {
     const code = String(handoffCode || '').trim();
     if (!code) throw new PrototypeDirectChangeError('HANDOFF_CODE_REQUIRED', '任务码不能为空');
     const codeHash = hash(code);
@@ -309,13 +356,22 @@ class PrototypeDirectChangeService {
     const handoff = queryOne('SELECT * FROM prototype_direct_handoffs WHERE id = ?', [existing.id]);
     const changeRow = queryOne('SELECT id FROM prototype_direct_changes WHERE handoff_id = ?', [handoff.id]);
     const change = getDirectChangeById(changeRow.id);
+    const usageTask = getUsageTaskByRef('direct', change.id);
+    recordUsageEvent({
+      eventType: 'handoff_redeemed',
+      userId: actor.id,
+      source,
+      resourceType: 'direct_change',
+      resourceId: change.id,
+      usageTaskId: usageTask?.id
+    });
     return {
       change,
       sourceDownloadPath: `/api/prototypes/${encodeURIComponent(change.prototype_id)}/download`
     };
   }
 
-  submitCandidate({ actor, changeId, zipPath, versionType }) {
+  submitCandidate({ actor, changeId, zipPath, versionType, source = 'web' }) {
     const change = this.getChangeForActor(actor, changeId);
     if (!['editing', 'invalid'].includes(change.status)) {
       throw new PrototypeDirectChangeError('CHANGE_NOT_EDITABLE', '当前修改不能再上传候选', 409);
@@ -328,6 +384,15 @@ class PrototypeDirectChangeService {
       throw new PrototypeDirectChangeError('INVALID_VERSION_TYPE', '自定义版本策略不需要传入 versionType');
     }
     if (!zipPath || !fs.existsSync(zipPath)) throw new PrototypeDirectChangeError('CANDIDATE_FILE_MISSING', '候选 ZIP 不存在');
+    const usageTask = getUsageTaskByRef('direct', changeId);
+    const usageAttempt = usageTask ? beginUsageTaskAttempt({
+      taskId: usageTask.id,
+      operation: 'submit_candidate',
+      metadata: { changeId }
+    }) : null;
+    if (usageAttempt) {
+      run('UPDATE prototype_direct_changes SET usage_attempt_id = ?, updated_at = ? WHERE id = ?', [usageAttempt.id, now(), changeId]);
+    }
     fs.mkdirSync(this.candidatesRoot, { recursive: true });
     const staging = path.join(this.candidatesRoot, `.staging-${changeId}-${crypto.randomUUID()}`);
     const finalDir = path.join(this.candidatesRoot, changeId);
@@ -370,19 +435,48 @@ class PrototypeDirectChangeService {
           SET status = 'preview_pending', chosen_version_type = ?, candidate_path = ?, candidate_entry_file = ?,
               candidate_digest = ?, candidate_size_kb = ?, submitted_at = ?, validation_status = 'pending',
               validation_mode = 'static+browser', validation_errors_json = ?, validation_warnings_json = ?,
-              validated_at = ?, preview_validated_at = NULL, updated_at = ?
+              validated_at = ?, preview_validated_at = NULL, usage_attempt_id = ?, updated_at = ?
           WHERE id = ?
-        `, [versionType || null, changeId, entryFile, digest, sizeKb, now(), errorsJson, warningsJson, now(), now(), changeId]);
+        `, [versionType || null, changeId, entryFile, digest, sizeKb, now(), errorsJson, warningsJson, now(), usageAttempt?.id || null, now(), changeId]);
       });
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       const result = this.finalizeChange({
         actor,
         changeId,
         cleanWarnings: validation.warnings || [],
-        validationMode: 'static'
+        validationMode: 'static',
+        usageAttemptId: usageAttempt?.id,
+        source
+      });
+      recordUsageEvent({
+        eventType: 'candidate_uploaded',
+        userId: actor.id,
+        source,
+        resourceType: 'direct_change',
+        resourceId: changeId,
+        usageTaskId: usageTask?.id,
+        attemptId: usageAttempt?.id,
+        attemptNo: usageAttempt?.attempt_no
       });
       return result;
     } catch (error) {
+      if (usageAttempt) finishUsageTaskAttempt({
+        attemptId: usageAttempt.id,
+        status: 'failed',
+        failureCode: error.code || 'CANDIDATE_INVALID'
+      });
+      recordUsageEvent({
+        eventType: 'candidate_uploaded',
+        userId: actor.id,
+        source,
+        resourceType: 'direct_change',
+        resourceId: changeId,
+        usageTaskId: usageTask?.id,
+        attemptId: usageAttempt?.id,
+        attemptNo: usageAttempt?.attempt_no,
+        result: 'failure',
+        metadata: { code: error.code || 'CANDIDATE_INVALID' }
+      });
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       if (movedToFinal && fs.existsSync(finalDir)) fs.rmSync(finalDir, { recursive: true, force: true });
       if (error instanceof PrototypeDirectChangeError) throw error;
@@ -390,7 +484,7 @@ class PrototypeDirectChangeService {
     }
   }
 
-  recordPreviewValidation({ actor, changeId, status, errors = [], warnings = [], durationMs = null }) {
+  recordPreviewValidation({ actor, changeId, status, errors = [], warnings = [], durationMs = null, source = 'web' }) {
     const change = this.getChangeForActor(actor, changeId);
     if (!['passed', 'failed'].includes(status)) throw new PrototypeDirectChangeError('INVALID_PREVIEW_VALIDATION', '预览校验状态无效');
     if (change.status === 'completed' && status === 'passed') return { change, prototype: getPrototypeById(change.prototype_id) };
@@ -406,15 +500,24 @@ class PrototypeDirectChangeService {
       `, [JSON.stringify(cleanErrors), JSON.stringify(cleanWarnings), now(), now(), changeId]));
       return getDirectChangeById(changeId);
     }
-    return this.finalizeChange({ actor, changeId, cleanWarnings, durationMs });
+    return this.finalizeChange({ actor, changeId, cleanWarnings, durationMs, source });
   }
 
-  finalizeChange({ actor, changeId, cleanWarnings = [], durationMs = null, validationMode = 'browser' }) {
+  finalizeChange({ actor, changeId, cleanWarnings = [], durationMs = null, validationMode = 'browser', usageAttemptId = null, source = 'web' }) {
     const initial = this.getChangeForActor(actor, changeId);
     const candidatePath = String(initial.candidate_path || '');
     const candidateDir = path.isAbsolute(candidatePath) ? path.resolve(candidatePath) : path.resolve(this.candidatesRoot, candidatePath);
     if (!candidateDir.startsWith(`${this.candidatesRoot}${path.sep}`) || !fs.existsSync(candidateDir)) {
       throw new PrototypeDirectChangeError('CANDIDATE_FILE_MISSING', '候选文件不存在', 409);
+    }
+    const usageTask = getUsageTaskByRef('direct', changeId);
+    const usageAttempt = usageTask
+      ? (usageAttemptId
+        ? queryOne('SELECT * FROM usage_task_attempts WHERE id = ?', [usageAttemptId])
+        : beginUsageTaskAttempt({ taskId: usageTask.id, operation: 'finalize_version', metadata: { changeId } }))
+      : null;
+    if (usageAttempt && !initial.usage_attempt_id) {
+      run('UPDATE prototype_direct_changes SET usage_attempt_id = ?, updated_at = ? WHERE id = ?', [usageAttempt.id, now(), changeId]);
     }
     const repoDir = path.join(this.reposRoot, initial.prototype_id);
     fs.mkdirSync(this.reposRoot, { recursive: true });
@@ -476,8 +579,33 @@ class PrototypeDirectChangeService {
       });
       committed = true;
       if (hadCurrent && fs.existsSync(backup)) { try { fs.rmSync(backup, { recursive: true, force: true }); } catch (error) {} }
+      try {
+        if (usageAttempt) finishUsageTaskAttempt({ attemptId: usageAttempt.id, status: 'completed' });
+        if (usageTask) completeUsageTask(usageTask.id, {
+          prototypeId: initial.prototype_id,
+          outcome: 'version_created'
+        });
+        recordUsageEvent({
+          eventType: 'version_created',
+          userId: actor.id,
+          source,
+          resourceType: 'direct_change',
+          resourceId: changeId,
+          usageTaskId: usageTask?.id,
+          attemptId: usageAttempt?.id,
+          attemptNo: usageAttempt?.attempt_no,
+          metadata: { versionId: result.version.id }
+        });
+      } catch (analyticsError) {
+        // The formal version is already committed; analytics must not undo it.
+      }
       return { change: getDirectChangeById(changeId), prototype: getPrototypeById(initial.prototype_id), version: result.version, durationMs };
     } catch (error) {
+      if (usageAttempt) finishUsageTaskAttempt({
+        attemptId: usageAttempt.id,
+        status: 'failed',
+        failureCode: error.code || 'DELIVERY_FAILED'
+      });
       if (swapped && !committed) {
         if (fs.existsSync(repoDir)) fs.rmSync(repoDir, { recursive: true, force: true });
         if (hadCurrent && fs.existsSync(backup)) moveDirectory(backup, repoDir);

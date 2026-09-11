@@ -190,15 +190,72 @@ function createTables() {
       source TEXT NOT NULL DEFAULT 'web',
       resource_type TEXT,
       resource_id TEXT,
+      usage_task_id TEXT,
+      attempt_id TEXT,
+      attempt_no INTEGER,
       result TEXT NOT NULL DEFAULT 'success',
       occurred_at TEXT NOT NULL,
       metadata_json TEXT NOT NULL DEFAULT '{}',
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+  for (const [column, type] of [
+    ['usage_task_id', 'TEXT'],
+    ['attempt_id', 'TEXT'],
+    ['attempt_no', 'INTEGER']
+  ]) {
+    try { db.run(`ALTER TABLE usage_events ADD COLUMN ${column} ${type}`); } catch (e) { /* 字段已存在 */ }
+  }
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_time ON usage_events(occurred_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_type_time ON usage_events(event_type, occurred_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_user_time ON usage_events(user_id, occurred_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_events_task ON usage_events(usage_task_id, occurred_at)`); } catch (e) {}
+
+  // 评优真实业务任务观测账本：只保存 analytics/usage 事实，不替代业务域状态机。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usage_tasks (
+      id TEXT PRIMARY KEY,
+      task_kind TEXT NOT NULL CHECK(task_kind IN ('create', 'direct', 'project')),
+      actor_user_id INTEGER NOT NULL,
+      prototype_id TEXT,
+      project_id TEXT,
+      source_ref TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'web',
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'completed', 'failed', 'cancelled')),
+      outcome TEXT,
+      is_test INTEGER NOT NULL DEFAULT 0 CHECK(is_test IN (0, 1)),
+      exclusion_reason TEXT,
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (actor_user_id) REFERENCES users(id),
+      FOREIGN KEY (prototype_id) REFERENCES prototypes(id),
+      FOREIGN KEY (project_id) REFERENCES projects(id),
+      UNIQUE(task_kind, source_ref)
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usage_task_attempts (
+      id TEXT PRIMARY KEY,
+      usage_task_id TEXT NOT NULL,
+      attempt_no INTEGER NOT NULL,
+      operation TEXT NOT NULL,
+      idempotency_key TEXT,
+      status TEXT NOT NULL DEFAULT 'started' CHECK(status IN ('started', 'completed', 'failed')),
+      failure_code TEXT,
+      metadata_json TEXT NOT NULL DEFAULT '{}',
+      started_at TEXT NOT NULL,
+      completed_at TEXT,
+      FOREIGN KEY (usage_task_id) REFERENCES usage_tasks(id) ON DELETE CASCADE,
+      UNIQUE(usage_task_id, attempt_no),
+      UNIQUE(usage_task_id, idempotency_key)
+    )
+  `);
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_tasks_effective ON usage_tasks(status, is_test, exclusion_reason, completed_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_tasks_actor ON usage_tasks(actor_user_id, status, completed_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_tasks_source_ref ON usage_tasks(task_kind, source_ref)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_task_attempts_task ON usage_task_attempts(usage_task_id, attempt_no)`); } catch (e) {}
 
   // prototype_shares 表：记录原型分享给哪些用户
   db.run(`

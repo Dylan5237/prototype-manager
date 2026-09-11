@@ -4,6 +4,7 @@ const { query, queryOne, runInTransaction } = require('../database/db');
 const { ACTIONS, AuthorizationService, normalizeRoles } = require('./authorization');
 const { getProjectById, getProjectMember } = require('./db-projects');
 const { normalizeVersionStrategy } = require('./version-strategy');
+const { ensureUsageTask, getUsageTaskByRef, cancelUsageTask } = require('./usage-tasks');
 
 const HANDOFF_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -128,7 +129,7 @@ class ProjectTaskService {
     return attachCandidateSummaries(rows);
   }
 
-  createTask({ actor, projectId, nodeId, bindingId, title, requirement, responsibleUserId, participantUserIds = [], versionStrategy = {} }) {
+  createTask({ actor, projectId, nodeId, bindingId, title, requirement, responsibleUserId, participantUserIds = [], versionStrategy = {}, source = 'web', isTest = false, exclusionReason = null }) {
     this.authorization.assertCan(actor, ACTIONS.START_CHANGE, { type: 'project_task', projectId });
     const cleanTitle = String(title || '').trim();
     const cleanRequirement = String(requirement || '').trim();
@@ -157,6 +158,17 @@ class ProjectTaskService {
       db.run(`INSERT INTO task_assignments (task_id, user_id, assignment_role, acceptance_status, assigned_by, assigned_at, updated_at) VALUES (?, ?, 'responsible', 'assigned', ?, ?, ?)`, [id, responsibleId, actor.id, createdAt, createdAt]);
       participants.forEach(userId => db.run(`INSERT INTO task_assignments (task_id, user_id, assignment_role, acceptance_status, assigned_by, assigned_at, updated_at) VALUES (?, ?, 'participant', 'assigned', ?, ?, ?)`, [id, userId, actor.id, createdAt, createdAt]));
       db.run(`INSERT INTO audit_events (id, actor_user_id, action, resource_type, resource_id, result, metadata_json, created_at) VALUES (?, ?, 'project_task.created', 'project_task', ?, 'success', ?, ?)`, [crypto.randomUUID(), actor.id, id, JSON.stringify({ projectId, nodeId, bindingId: binding.id, responsibleUserId: responsibleId }), createdAt]);
+    });
+    ensureUsageTask({
+      taskKind: 'project',
+      actorUserId: actor.id,
+      prototypeId: binding.prototype_id,
+      projectId,
+      sourceRef: id,
+      source,
+      isTest,
+      exclusionReason,
+      startedAt: createdAt
     });
     return decorateTask(selectTask(id));
   }
@@ -208,7 +220,7 @@ class ProjectTaskService {
     return decorateTask(selectTask(id));
   }
 
-  cancelTask({ actor, projectId, taskId: id }) {
+  cancelTask({ actor, projectId, taskId: id, source = 'web' }) {
     const task = this.getTask({ actor, projectId, taskId: id });
     const project = getProjectById(projectId);
     if (!isPlatformAdmin(actor) && Number(project.created_by) !== Number(actor.id) && Number(task.requested_by) !== Number(actor.id)) throw new ProjectTaskError('TASK_CANCEL_FORBIDDEN', '仅项目负责人或任务发起人可以取消任务', 403);
@@ -226,6 +238,8 @@ class ProjectTaskService {
       db.run(`UPDATE task_assignments SET acceptance_status = 'revoked', ended_at = ?, updated_at = ? WHERE task_id = ? AND acceptance_status IN ('assigned','accepted')`, [changedAt, changedAt, id]);
       db.run(`UPDATE project_task_handoffs SET status = 'revoked', revoked_at = ? WHERE task_id = ? AND status = 'issued'`, [changedAt, id]);
     });
+    const usageTask = getUsageTaskByRef('project', id);
+    if (usageTask) cancelUsageTask(usageTask.id, { completedAt: changedAt, outcome: 'cancelled' });
     return decorateTask(selectTask(id));
   }
 }

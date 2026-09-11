@@ -3,6 +3,8 @@ const multer = require('multer');
 const fs = require('fs');
 const { requireAuth } = require('../middleware/auth');
 const { UPLOADS_DIR } = require('../services/storage');
+const { normalizeSource } = require('../services/usage-events');
+const { requestClassification } = require('../services/usage-tasks');
 const {
   PrototypeDirectChangeError,
   PrototypeDirectChangeService,
@@ -36,11 +38,12 @@ function sendError(res, error) {
 }
 
 const service = () => new PrototypeDirectChangeService();
+const requestSource = req => normalizeSource(req.get('x-fuxi-source'));
 
 // MCP 只拿任务码兑换，兑换后才可读取源码并上传候选。
 router.post('/direct-changes/handoffs/redeem', requireAuth, (req, res) => {
   try {
-    res.json({ success: true, data: service().redeemHandoff({ actor: req.user, handoffCode: req.body.handoffCode }) });
+    res.json({ success: true, data: service().redeemHandoff({ actor: req.user, handoffCode: req.body.handoffCode, source: requestSource(req) }) });
   } catch (error) { sendError(res, error); }
 });
 
@@ -54,7 +57,8 @@ router.get('/:prototypeId/direct-changes/current', requireAuth, (req, res) => {
         actor: req.user,
         changeId: current.id,
         cleanWarnings: current.validation_warnings || [],
-        validationMode: 'static'
+        validationMode: 'static',
+        source: requestSource(req)
       }).change;
     }
     res.json({ success: true, data: current });
@@ -67,7 +71,9 @@ router.post('/:prototypeId/direct-changes', requireAuth, (req, res) => {
       actor: req.user,
       prototypeId: req.params.prototypeId,
       requirement: req.body.requirement,
-      versionStrategy: req.body.versionStrategy || { type: req.body.versionStrategyType, value: req.body.versionStrategyValue }
+      versionStrategy: req.body.versionStrategy || { type: req.body.versionStrategyType, value: req.body.versionStrategyValue },
+      source: requestSource(req),
+      ...requestClassification(req)
     });
     res.status(201).json({ success: true, data: result });
   } catch (error) { sendError(res, error); }
@@ -87,7 +93,8 @@ router.patch('/:prototypeId/direct-changes/:changeId', requireAuth, (req, res) =
       actor: req.user,
       changeId: req.params.changeId,
       requirement: req.body.requirement,
-      versionStrategy: req.body.versionStrategy || { type: req.body.versionStrategyType, value: req.body.versionStrategyValue }
+      versionStrategy: req.body.versionStrategy || { type: req.body.versionStrategyType, value: req.body.versionStrategyValue },
+      source: requestSource(req)
     });
     if (result.change.prototype_id !== req.params.prototypeId) return res.status(404).json({ success: false, message: '修改任务不存在' });
     res.json({ success: true, data: result });
@@ -98,7 +105,7 @@ router.delete('/:prototypeId/direct-changes/:changeId', requireAuth, (req, res) 
   try {
     const change = service().getChangeForActor(req.user, req.params.changeId);
     if (change.prototype_id !== req.params.prototypeId) return res.status(404).json({ success: false, message: '修改任务不存在' });
-    res.json({ success: true, data: service().cancelChange({ actor: req.user, changeId: req.params.changeId }) });
+    res.json({ success: true, data: service().cancelChange({ actor: req.user, changeId: req.params.changeId, source: requestSource(req) }) });
   } catch (error) { sendError(res, error); }
 });
 
@@ -111,7 +118,8 @@ router.post('/:prototypeId/direct-changes/:changeId/candidate', requireAuth, can
       actor: req.user,
       changeId: req.params.changeId,
       zipPath: uploadedPath,
-      versionType: req.body.versionType
+      versionType: req.body.versionType,
+      source: requestSource(req)
     });
     res.json({ success: true, data: result });
   } catch (error) { sendError(res, error); }
@@ -128,7 +136,8 @@ router.post('/:prototypeId/direct-changes/:changeId/preview-validation', require
       status: req.body.status,
       errors: req.body.errors,
       warnings: req.body.warnings,
-      durationMs: req.body.durationMs
+      durationMs: req.body.durationMs,
+      source: requestSource(req)
     });
     res.json({ success: true, data: result });
   } catch (error) { sendError(res, error); }

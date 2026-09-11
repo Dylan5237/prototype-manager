@@ -999,6 +999,7 @@ async function uploadValidatedZip(prototypeId, args) {
   form.set('versionType', args.versionType || 'patch');
   const uploaded = await authed(`/api/prototypes/${encodeURIComponent(prototypeId)}/upload`, {
     method: 'POST',
+    headers: { 'X-Fuxi-Usage-Idempotency-Key': args.idempotencyKey },
     body: form
   });
   return { uploaded, validation };
@@ -1079,7 +1080,10 @@ async function deliverProject(args) {
       setStage('CREATE_TARGET');
       const created = await authed('/api/prototypes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Fuxi-Usage-Idempotency-Key': args.idempotencyKey
+        },
         body: JSON.stringify({ name: args.name.trim(), description: args.description, categoryId: args.categoryId, tags: args.tags })
       });
       prototypeId = created.data.id;

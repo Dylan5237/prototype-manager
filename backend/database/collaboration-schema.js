@@ -457,6 +457,7 @@ function applyCollaborationSchema(db) {
       artifact_entry_file TEXT,
       artifact_size_kb INTEGER,
       chosen_version_type TEXT,
+      usage_attempt_id TEXT,
       status TEXT NOT NULL DEFAULT 'submitted'
         CHECK(status IN ('submitted', 'validation_failed', 'ready', 'returned', 'adopted', 'stale')),
       created_at TEXT NOT NULL,
@@ -484,6 +485,8 @@ function applyCollaborationSchema(db) {
       UNIQUE(candidate_id, attempt_no)
     )
   `);
+
+  ensureColumn(db, 'candidate_submissions', 'usage_attempt_id', 'TEXT');
 
   db.run(`
     CREATE TABLE IF NOT EXISTS review_decisions (
@@ -573,6 +576,7 @@ function applyCollaborationSchema(db) {
       submitted_at TEXT,
       completed_at TEXT,
       version_id INTEGER,
+      usage_attempt_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (handoff_id) REFERENCES prototype_direct_handoffs(id),
@@ -581,6 +585,8 @@ function applyCollaborationSchema(db) {
       FOREIGN KEY (version_id) REFERENCES prototype_versions(id)
     )
   `);
+
+  ensureColumn(db, 'prototype_direct_changes', 'usage_attempt_id', 'TEXT');
 
   db.run(`
     CREATE TABLE IF NOT EXISTS project_draft_items (

@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const AdmZip = require('adm-zip');
-const { query, queryOne, runInTransaction } = require('../database/db');
+const { query, queryOne, run, runInTransaction } = require('../database/db');
 const { ACTIONS, AuthorizationError, AuthorizationService } = require('./authorization');
 const { getPrototypeById, createVersion, getLatestVersionNumber, getLatestVersionLabel, updatePrototype } = require('./db-prototypes');
 const { REPOS_DIR, findEntryFile, getDirSizeKb } = require('./storage');
@@ -15,6 +15,7 @@ const {
   resolveContentRoot
 } = require('./lightweight-collaboration');
 const { ProjectTaskError } = require('./project-tasks');
+const { getUsageTaskByRef, beginUsageTaskAttempt, finishUsageTaskAttempt, completeUsageTask } = require('./usage-tasks');
 
 const OPEN_TASK_STATUSES = ['assigned', 'in_progress', 'awaiting_review'];
 const PENDING_CANDIDATE_STATUSES = ['submitted', 'ready'];
@@ -187,7 +188,7 @@ class CandidateReviewService {
     return listCandidatesForTask(taskId);
   }
 
-  submitCandidate({ actor, projectId, taskId, zipPath, versionType }) {
+  submitCandidate({ actor, projectId, taskId, zipPath, versionType, source = 'web' }) {
     const task = selectTask(taskId);
     if (!task || String(task.project_id) !== String(projectId)) {
       throw new ProjectTaskError('TASK_NOT_FOUND', '任务不存在', 404);
@@ -210,6 +211,13 @@ class CandidateReviewService {
     if (!zipPath || !fs.existsSync(zipPath)) {
       throw new CandidateReviewError('CANDIDATE_FILE_MISSING', '候选 ZIP 不存在');
     }
+
+    const usageTask = getUsageTaskByRef('project', taskId);
+    const usageAttempt = usageTask ? beginUsageTaskAttempt({
+      taskId: usageTask.id,
+      operation: 'submit_candidate',
+      metadata: { taskId, projectId }
+    }) : null;
 
     const handoff = queryOne(`
       SELECT * FROM project_task_handoffs
@@ -263,11 +271,11 @@ class CandidateReviewService {
           INSERT INTO candidate_submissions
             (id, task_id, submission_no, submitted_by, handoff_id, base_version_id, base_version_number,
              artifact_path, artifact_digest, artifact_entry_file, artifact_size_kb, chosen_version_type,
-             status, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             usage_attempt_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           candidateId, taskId, nextNo, actor.id, handoff ? handoff.id : null, task.base_version_id, task.base_version_number,
-          relativePath, digest, entryFile || null, sizeKb, versionType || null, candidateStatus, createdAt, createdAt
+          relativePath, digest, entryFile || null, sizeKb, versionType || null, usageAttempt?.id || null, candidateStatus, createdAt, createdAt
         ]);
         db.run(`
           INSERT INTO candidate_validations
@@ -299,6 +307,7 @@ class CandidateReviewService {
 
       const candidate = getCandidateById(candidateId);
       if (!validation.ok) {
+        if (usageAttempt) finishUsageTaskAttempt({ attemptId: usageAttempt.id, status: 'failed', failureCode: 'CANDIDATE_INVALID' });
         throw new CandidateReviewError('CANDIDATE_INVALID', '候选静态预检失败', 400, {
           candidateId,
           validationMode: validation.mode,
@@ -309,8 +318,14 @@ class CandidateReviewService {
           candidate
         });
       }
+      if (usageAttempt) finishUsageTaskAttempt({ attemptId: usageAttempt.id, status: 'completed' });
       return candidate;
     } catch (error) {
+      if (usageAttempt) finishUsageTaskAttempt({
+        attemptId: usageAttempt.id,
+        status: 'failed',
+        failureCode: error.code || 'CANDIDATE_INVALID'
+      });
       if (fs.existsSync(staging)) fs.rmSync(staging, { recursive: true, force: true });
       if (!persisted && fs.existsSync(finalDir)) fs.rmSync(finalDir, { recursive: true, force: true });
       if (error instanceof CandidateReviewError || error instanceof AuthorizationError || error instanceof ProjectTaskError) throw error;
@@ -399,7 +414,7 @@ class CandidateReviewService {
     return getCandidateById(candidateId);
   }
 
-  adoptCandidate({ actor, projectId, candidateId }) {
+  adoptCandidate({ actor, projectId, candidateId, source = 'web' }) {
     const initial = this.getCandidate({ actor, projectId, candidateId });
     this.authorization.assertCan(actor, ACTIONS.REVIEW_CHANGE, {
       type: 'candidate', projectId, prototypeId: initial.prototype_id
@@ -518,6 +533,16 @@ class CandidateReviewService {
       committed = true;
       if (hadCurrent && fs.existsSync(backup)) {
         try { fs.rmSync(backup, { recursive: true, force: true }); } catch (cleanupError) { /* 保留已提交结果 */ }
+      }
+      const usageTask = getUsageTaskByRef('project', initial.task_id);
+      try {
+        if (usageTask) completeUsageTask(usageTask.id, {
+          prototypeId: initial.prototype_id,
+          projectId,
+          outcome: 'candidate_adopted'
+        });
+      } catch (analyticsError) {
+        // The formal version is already committed; analytics must not undo it.
       }
       return {
         candidate: getCandidateById(candidateId),

@@ -22,6 +22,7 @@ const {
 } = require('../services/repository-provisioning');
 const { UPLOADS_DIR } = require('../services/storage');
 const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
+const { getUsageTaskByRef, requestClassification } = require('../services/usage-tasks');
 const {
   LightweightCollaborationError,
   LightweightCollaborationService
@@ -197,9 +198,12 @@ router.post('/:id/tasks', requireAuth, requireProjectAccess, (req, res) => {
       requirement: req.body.requirement,
       responsibleUserId: req.body.responsibleUserId,
       participantUserIds: req.body.participantUserIds || [],
-      versionStrategy: req.body.versionStrategy || {}
+      versionStrategy: req.body.versionStrategy || {},
+      source: requestSource(req),
+      ...requestClassification(req)
     });
-    recordUsageEvent({ eventType: 'project_task_created', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: task.id, metadata: { projectId: req.params.id, nodeId: task.node_id } });
+    const usageTask = getUsageTaskByRef('project', task.id);
+    recordUsageEvent({ eventType: 'project_task_created', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: task.id, usageTaskId: usageTask?.id, metadata: { projectId: req.params.id, nodeId: task.node_id } });
     res.status(201).json({ success: true, data: task });
   } catch (error) {
     sendProjectTaskError(res, error);
@@ -215,7 +219,8 @@ router.get('/:id/tasks/:taskId', requireAuth, requireProjectAccess, (req, res) =
 router.post('/:id/tasks/:taskId/accept', requireAuth, requireProjectAccess, (req, res) => {
   try {
     const data = new ProjectTaskService().acceptTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
-    recordUsageEvent({ eventType: 'project_task_accepted', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: req.params.taskId });
+    const usageTask = getUsageTaskByRef('project', req.params.taskId);
+    recordUsageEvent({ eventType: 'project_task_accepted', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: req.params.taskId, usageTaskId: usageTask?.id });
     res.json({ success: true, data });
   } catch (error) { sendProjectTaskError(res, error); }
 });
@@ -236,7 +241,9 @@ router.post('/:id/tasks/:taskId/reassign', requireAuth, requireProjectAccess, (r
 
 router.post('/:id/tasks/:taskId/cancel', requireAuth, requireProjectAccess, (req, res) => {
   try {
-    const data = new ProjectTaskService().cancelTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId });
+    const data = new ProjectTaskService().cancelTask({ actor: req.user, projectId: req.params.id, taskId: req.params.taskId, source: requestSource(req) });
+    const usageTask = getUsageTaskByRef('project', req.params.taskId);
+    recordUsageEvent({ eventType: 'project_task_cancelled', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: req.params.taskId, usageTaskId: usageTask?.id });
     res.json({ success: true, data });
   } catch (error) { sendProjectTaskError(res, error); }
 });
@@ -267,14 +274,18 @@ router.post(
         projectId: req.params.id,
         taskId: req.params.taskId,
         zipPath: req.file.path,
-        versionType: req.body.versionType
+        versionType: req.body.versionType,
+        source: requestSource(req)
       });
+      const usageTask = getUsageTaskByRef('project', req.params.taskId);
       recordUsageEvent({
         eventType: 'candidate_uploaded',
         userId: req.user.id,
         source: requestSource(req),
         resourceType: 'project_task',
         resourceId: req.params.taskId,
+        usageTaskId: usageTask?.id,
+        attemptId: candidate.usage_attempt_id,
         metadata: { candidateId: candidate.id, versionType: req.body.versionType }
       });
       res.status(201).json({ success: true, data: candidate });
@@ -315,14 +326,17 @@ router.post('/:id/candidates/:candidateId/preview-validation', requireAuth, requ
 router.post('/:id/candidates/:candidateId/adopt', requireAuth, requireProjectRole('owner', 'admin'), (req, res) => {
   try {
     const result = new CandidateReviewService().adoptCandidate({
-      actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId
+      actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId,
+      source: requestSource(req)
     });
+    const usageTask = getUsageTaskByRef('project', result.candidate?.task_id);
     recordUsageEvent({
       eventType: 'candidate_adopted',
       userId: req.user.id,
       source: requestSource(req),
       resourceType: 'candidate_submission',
       resourceId: req.params.candidateId,
+      usageTaskId: usageTask?.id,
       metadata: { projectId: req.params.id, versionId: result.version && result.version.id }
     });
     res.json({ success: true, data: result });
@@ -334,12 +348,14 @@ router.post('/:id/candidates/:candidateId/return', requireAuth, requireProjectRo
     const candidate = new CandidateReviewService().returnCandidate({
       actor: req.user, projectId: req.params.id, candidateId: req.params.candidateId, note: req.body.note
     });
+    const usageTask = getUsageTaskByRef('project', candidate.task_id);
     recordUsageEvent({
       eventType: 'candidate_returned',
       userId: req.user.id,
       source: requestSource(req),
       resourceType: 'candidate_submission',
-      resourceId: req.params.candidateId
+      resourceId: req.params.candidateId,
+      usageTaskId: usageTask?.id
     });
     res.json({ success: true, data: candidate });
   } catch (error) { sendProjectTaskError(res, error); }

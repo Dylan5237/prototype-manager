@@ -26,6 +26,15 @@ const { marked } = require('marked');
 const { createComment, getComments, deleteComment, COMMENT_IMAGES_DIR } = require('../services/db-comments');
 const { recordVisit, getVisitStats, getVisitCount } = require('../services/db-stats');
 const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
+const {
+  ensureUsageTask,
+  findActiveUsageTaskForPrototype,
+  beginUsageTaskAttempt,
+  finishUsageTaskAttempt,
+  completeUsageTask,
+  requestClassification,
+  getUsageTaskByRef
+} = require('../services/usage-tasks');
 
 // 辅助函数：判断当前用户是否为管理员
 function isAdmin(req) {
@@ -235,6 +244,20 @@ router.post('/', requireAuth, (req, res) => {
   if (!name) {
     return res.status(400).json({ success: false, message: '名称不能为空' });
   }
+
+  const usageIdempotencyKey = String(req.get('x-fuxi-usage-idempotency-key') || '').trim();
+  const usageSourceRef = usageIdempotencyKey ? `deliver:${usageIdempotencyKey}` : null;
+  if (usageSourceRef) {
+    const existingTask = getUsageTaskByRef('create', usageSourceRef);
+    if (existingTask) {
+      if (Number(existingTask.actor_user_id) !== Number(req.user.id)) {
+        return res.status(409).json({ success: false, message: '创建幂等键已被其他用户使用' });
+      }
+      if (existingTask.prototype_id) {
+        return res.json({ success: true, idempotentReplay: true, data: getPrototypeById(existingTask.prototype_id) });
+      }
+    }
+  }
   
   const id = generateId();
   const prototype = createPrototype({
@@ -246,13 +269,24 @@ router.post('/', requireAuth, (req, res) => {
     setPrototypeTags(id, tags);
   }
 
+  const classification = requestClassification(req);
+  const usageTask = ensureUsageTask({
+    taskKind: 'create',
+    actorUserId: req.user.id,
+    prototypeId: id,
+    sourceRef: usageSourceRef || `prototype:${id}`,
+    source: requestSource(req),
+    ...classification
+  });
+
   recordUsageEvent({
     eventType: 'prototype_created',
     userId: req.user.id,
     source: requestSource(req),
     resourceType: 'prototype',
     resourceId: id,
-    eventKey: `prototype-created:${id}`
+    eventKey: `prototype-created:${id}`,
+    usageTaskId: usageTask.id
   });
   
   res.json({ success: true, data: getPrototypeById(id) });
@@ -278,6 +312,31 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
     return res.status(400).json({ success: false, message: '版本描述不能为空' });
   }
 
+  const usageIdempotencyKey = String(req.get('x-fuxi-usage-idempotency-key') || '').trim();
+  let usageTask = findActiveUsageTaskForPrototype({
+    prototypeId: prototype.id,
+    taskKind: 'create'
+  });
+  if (usageIdempotencyKey) {
+    const keyedTask = getUsageTaskByRef('create', `deliver:${usageIdempotencyKey}`);
+    if (keyedTask) {
+      if (Number(keyedTask.actor_user_id) !== Number(req.user.id) || String(keyedTask.prototype_id) !== String(prototype.id)) {
+        return res.status(409).json({ success: false, message: '上传幂等键与原型不匹配' });
+      }
+      if (keyedTask.status === 'completed') {
+        try { fs.unlinkSync(req.file.path); } catch (cleanupError) { /* 临时文件会由后续清理处理 */ }
+        return res.json({ success: true, idempotentReplay: true, data: getPrototypeById(prototype.id) });
+      }
+      usageTask = keyedTask;
+    }
+  }
+  let usageAttempt = usageTask ? beginUsageTaskAttempt({
+    taskId: usageTask.id,
+    operation: 'upload_version',
+    idempotencyKey: req.get('x-fuxi-usage-idempotency-key'),
+    metadata: { prototypeId: prototype.id }
+  }) : null;
+
   // 先确认请求体确实是可读取的 ZIP。否则旧流程会先保存当前版本，
   // 再在解压时失败，留下没有对应新内容的正式版本记录。
   try {
@@ -285,6 +344,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
     uploadedZip.getEntries();
   } catch (error) {
     try { fs.unlinkSync(req.file.path); } catch (cleanupError) { /* 临时文件会由后续清理处理 */ }
+    if (usageAttempt) finishUsageTaskAttempt({ attemptId: usageAttempt.id, status: 'failed', failureCode: 'INVALID_ZIP' });
     return res.status(400).json({ success: false, message: `ZIP 文件无效: ${error.message}` });
   }
   
@@ -388,11 +448,24 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
       source: requestSource(req),
       resourceType: 'prototype',
       resourceId: prototype.id,
+      usageTaskId: usageTask?.id,
+      attemptId: usageAttempt?.id,
+      attemptNo: usageAttempt?.attempt_no,
       metadata: { version: getLatestVersionNumber(prototype.id) }
+    });
+    if (usageAttempt) finishUsageTaskAttempt({ attemptId: usageAttempt.id, status: 'completed' });
+    if (usageTask) completeUsageTask(usageTask.id, {
+      prototypeId: prototype.id,
+      outcome: 'version_created'
     });
     
     res.json({ success: true, data: getPrototypeById(prototype.id) });
   } catch (error) {
+    if (usageAttempt) finishUsageTaskAttempt({
+      attemptId: usageAttempt.id,
+      status: 'failed',
+      failureCode: error.code || 'UPLOAD_FAILED'
+    });
     res.status(500).json({ success: false, message: error.message });
   }
 });
