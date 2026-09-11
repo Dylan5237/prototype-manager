@@ -31,6 +31,9 @@ function recordUsageEvent({
   source = 'web',
   resourceType = null,
   resourceId = null,
+  usageTaskId = null,
+  attemptId = null,
+  attemptNo = null,
   result = 'success',
   eventKey = null,
   occurredAt = new Date().toISOString(),
@@ -44,8 +47,8 @@ function recordUsageEvent({
     run(`
       INSERT OR IGNORE INTO usage_events
         (id, event_key, event_type, user_id, source, resource_type, resource_id,
-         result, occurred_at, metadata_json)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         usage_task_id, attempt_id, attempt_no, result, occurred_at, metadata_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       id,
       eventKey || null,
@@ -54,6 +57,9 @@ function recordUsageEvent({
       normalizeSource(source),
       resourceType ? String(resourceType).slice(0, 80) : null,
       resourceId === null || resourceId === undefined ? null : String(resourceId).slice(0, 160),
+      usageTaskId || null,
+      attemptId || null,
+      attemptNo === null || attemptNo === undefined ? null : Number(attemptNo),
       safeResult,
       occurredAt,
       JSON.stringify(safeMetadata)
