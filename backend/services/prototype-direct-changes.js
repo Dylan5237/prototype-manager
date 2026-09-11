@@ -221,6 +221,7 @@ class PrototypeDirectChangeService {
     const changeId = id('direct_chg');
     const handoffId = id('direct_handoff');
     const handoffCode = `FX-${crypto.randomBytes(18).toString('base64url')}`;
+    let usageTask;
     runInTransaction(db => {
       db.run(`
         INSERT INTO prototype_direct_handoffs
@@ -236,18 +237,18 @@ class PrototypeDirectChangeService {
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'editing', ?, ?)
       `, [changeId, handoffId, prototypeId, actor.id, cleanRequirement, strategy.type,
         strategy.value, baseVersion, createdAt, createdAt]);
+      usageTask = ensureUsageTask({
+        taskKind: 'direct',
+        actorUserId: actor.id,
+        prototypeId,
+        sourceRef: changeId,
+        source,
+        isTest,
+        exclusionReason,
+        startedAt: createdAt
+      });
     });
     const change = getDirectChangeById(changeId);
-    const usageTask = ensureUsageTask({
-      taskKind: 'direct',
-      actorUserId: actor.id,
-      prototypeId,
-      sourceRef: changeId,
-      source,
-      isTest,
-      exclusionReason,
-      startedAt: createdAt
-    });
     recordUsageEvent({
       eventType: 'change_created',
       userId: actor.id,

@@ -26,13 +26,13 @@ const { marked } = require('marked');
 const { createComment, getComments, deleteComment, COMMENT_IMAGES_DIR } = require('../services/db-comments');
 const { recordVisit, getVisitStats, getVisitCount } = require('../services/db-stats');
 const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
+const { runInTransaction } = require('../database/db');
 const {
   ensureUsageTask,
   findActiveUsageTaskForPrototype,
   beginUsageTaskAttempt,
   finishUsageTaskAttempt,
   completeUsageTask,
-  requestClassification,
   getUsageTaskByRef
 } = require('../services/usage-tasks');
 
@@ -260,23 +260,24 @@ router.post('/', requireAuth, (req, res) => {
   }
   
   const id = generateId();
-  const prototype = createPrototype({
-    id, name, description, categoryId,
-    createdBy: req.user.id
-  });
-  
-  if (tags && tags.length > 0) {
-    setPrototypeTags(id, tags);
-  }
+  let usageTask;
+  runInTransaction(() => {
+    createPrototype({
+      id, name, description, categoryId,
+      createdBy: req.user.id
+    });
 
-  const classification = requestClassification(req);
-  const usageTask = ensureUsageTask({
-    taskKind: 'create',
-    actorUserId: req.user.id,
-    prototypeId: id,
-    sourceRef: usageSourceRef || `prototype:${id}`,
-    source: requestSource(req),
-    ...classification
+    if (tags && tags.length > 0) {
+      setPrototypeTags(id, tags);
+    }
+
+    usageTask = ensureUsageTask({
+      taskKind: 'create',
+      actorUserId: req.user.id,
+      prototypeId: id,
+      sourceRef: usageSourceRef || `prototype:${id}`,
+      source: requestSource(req)
+    });
   });
 
   recordUsageEvent({
@@ -315,6 +316,7 @@ router.post('/:id/upload', requireAuth, upload.single('file'), (req, res) => {
   const usageIdempotencyKey = String(req.get('x-fuxi-usage-idempotency-key') || '').trim();
   let usageTask = findActiveUsageTaskForPrototype({
     prototypeId: prototype.id,
+    actorUserId: req.user.id,
     taskKind: 'create'
   });
   if (usageIdempotencyKey) {

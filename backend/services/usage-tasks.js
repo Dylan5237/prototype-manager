@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { query, queryOne, run, runInTransaction } = require('../database/db');
-const { normalizeSource } = require('./usage-events');
+const { normalizeSource, recordUsageEvent } = require('./usage-events');
+const { normalizeRoles } = require('./authorization');
 
 const TASK_KINDS = new Set(['create', 'direct', 'project']);
 const TASK_STATUSES = new Set(['active', 'completed', 'failed', 'cancelled']);
@@ -180,16 +181,31 @@ function cancelUsageTask(taskId, fields = {}) {
   return updateUsageTask(taskId, { ...fields, status: 'cancelled', outcome: fields.outcome || 'cancelled', completedAt: fields.completedAt || now() });
 }
 
-function setUsageTaskExclusion(taskId, { isTest = false, exclusionReason = null } = {}) {
+function setUsageTaskExclusion(taskId, { actorUserId, isTest = false, exclusionReason = null } = {}) {
+  if (actorUserId == null) throw new Error('usage task exclusion requires a trusted actor');
+  const actor = queryOne('SELECT role FROM users WHERE id = ?', [actorUserId]);
+  if (!actor || !normalizeRoles(actor.role).some(role => ['admin', 'platform_admin'].includes(role))) {
+    const error = new Error('只有受控管理员动作可以排除 usage task');
+    error.code = 'USAGE_TASK_EXCLUSION_FORBIDDEN';
+    throw error;
+  }
   const reason = cleanReason(exclusionReason);
   run('UPDATE usage_tasks SET is_test = ?, exclusion_reason = ?, updated_at = ? WHERE id = ?', [isTest ? 1 : 0, reason, now(), taskId]);
+  recordUsageEvent({
+    eventType: 'usage_task_excluded',
+    userId: actorUserId,
+    source: 'system',
+    resourceType: 'usage_task',
+    resourceId: taskId,
+    metadata: { isTest: Boolean(isTest), exclusionReason: reason }
+  });
   return getUsageTaskById(taskId);
 }
 
-function requestClassification(req) {
-  const isTest = String(req?.get?.('x-fuxi-usage-is-test') || '').toLowerCase() === 'true';
-  const exclusionReason = cleanReason(req?.get?.('x-fuxi-usage-exclusion-reason'));
-  return { isTest, exclusionReason };
+function requestClassification() {
+  // Client headers are intentionally ignored. Classification is only accepted
+  // from trusted server code or setUsageTaskExclusion's audited admin action.
+  return { isTest: false, exclusionReason: null };
 }
 
 function getEffectiveUsageTaskStats({ from, to } = {}) {

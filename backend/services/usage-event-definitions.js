@@ -42,6 +42,7 @@ const EVENT_DEFINITIONS = Object.freeze({
   project_task_created: { label: '创建项目任务', category: '协作', effective: true },
   project_task_accepted: { label: '接收项目任务', category: '协作', effective: true },
   project_task_cancelled: { label: '取消项目任务', category: '协作', effective: true },
+  usage_task_excluded: { label: '排除观测任务', category: '管理', effective: false },
   preview_validated: { label: '完成预览校验', category: '协作', effective: true },
   candidate_uploaded: { label: '上传候选版本', category: '协作', effective: true },
   candidate_previewed: { label: '预览候选版本', category: '协作', effective: true },

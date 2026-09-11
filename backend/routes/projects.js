@@ -22,7 +22,7 @@ const {
 } = require('../services/repository-provisioning');
 const { UPLOADS_DIR } = require('../services/storage');
 const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
-const { getUsageTaskByRef, requestClassification } = require('../services/usage-tasks');
+const { getUsageTaskByRef } = require('../services/usage-tasks');
 const {
   LightweightCollaborationError,
   LightweightCollaborationService
@@ -199,8 +199,7 @@ router.post('/:id/tasks', requireAuth, requireProjectAccess, (req, res) => {
       responsibleUserId: req.body.responsibleUserId,
       participantUserIds: req.body.participantUserIds || [],
       versionStrategy: req.body.versionStrategy || {},
-      source: requestSource(req),
-      ...requestClassification(req)
+      source: requestSource(req)
     });
     const usageTask = getUsageTaskByRef('project', task.id);
     recordUsageEvent({ eventType: 'project_task_created', userId: req.user.id, source: requestSource(req), resourceType: 'project_task', resourceId: task.id, usageTaskId: usageTask?.id, metadata: { projectId: req.params.id, nodeId: task.node_id } });
@@ -331,7 +330,7 @@ router.post('/:id/candidates/:candidateId/adopt', requireAuth, requireProjectRol
     });
     const usageTask = getUsageTaskByRef('project', result.candidate?.task_id);
     recordUsageEvent({
-      eventType: 'candidate_adopted',
+      eventType: 'change_adopted',
       userId: req.user.id,
       source: requestSource(req),
       resourceType: 'candidate_submission',
@@ -350,7 +349,7 @@ router.post('/:id/candidates/:candidateId/return', requireAuth, requireProjectRo
     });
     const usageTask = getUsageTaskByRef('project', candidate.task_id);
     recordUsageEvent({
-      eventType: 'candidate_returned',
+      eventType: 'change_rejected',
       userId: req.user.id,
       source: requestSource(req),
       resourceType: 'candidate_submission',

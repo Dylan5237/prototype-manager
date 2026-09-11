@@ -158,17 +158,17 @@ class ProjectTaskService {
       db.run(`INSERT INTO task_assignments (task_id, user_id, assignment_role, acceptance_status, assigned_by, assigned_at, updated_at) VALUES (?, ?, 'responsible', 'assigned', ?, ?, ?)`, [id, responsibleId, actor.id, createdAt, createdAt]);
       participants.forEach(userId => db.run(`INSERT INTO task_assignments (task_id, user_id, assignment_role, acceptance_status, assigned_by, assigned_at, updated_at) VALUES (?, ?, 'participant', 'assigned', ?, ?, ?)`, [id, userId, actor.id, createdAt, createdAt]));
       db.run(`INSERT INTO audit_events (id, actor_user_id, action, resource_type, resource_id, result, metadata_json, created_at) VALUES (?, ?, 'project_task.created', 'project_task', ?, 'success', ?, ?)`, [crypto.randomUUID(), actor.id, id, JSON.stringify({ projectId, nodeId, bindingId: binding.id, responsibleUserId: responsibleId }), createdAt]);
-    });
-    ensureUsageTask({
-      taskKind: 'project',
-      actorUserId: actor.id,
-      prototypeId: binding.prototype_id,
-      projectId,
-      sourceRef: id,
-      source,
-      isTest,
-      exclusionReason,
-      startedAt: createdAt
+      ensureUsageTask({
+        taskKind: 'project',
+        actorUserId: actor.id,
+        prototypeId: binding.prototype_id,
+        projectId,
+        sourceRef: id,
+        source,
+        isTest,
+        exclusionReason,
+        startedAt: createdAt
+      });
     });
     return decorateTask(selectTask(id));
   }

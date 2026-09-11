@@ -11,9 +11,13 @@ const {
   beginUsageTaskAttempt,
   finishUsageTaskAttempt,
   completeUsageTask,
-  getEffectiveUsageTaskStats
+  getEffectiveUsageTaskStats,
+  findActiveUsageTaskForPrototype,
+  setUsageTaskExclusion,
+  requestClassification
 } = require('../services/usage-tasks');
-const { recordUsageEvent } = require('../services/usage-events');
+const { recordUsageEvent, getUsageEvents } = require('../services/usage-events');
+const { getEventDefinition } = require('../services/usage-event-definitions');
 
 let tempRoot;
 
@@ -91,17 +95,54 @@ test('direct and project kinds are effective, explicit tests are excluded, and a
     taskKind: 'create',
     actorUserId: 1,
     sourceRef: 'acceptance-fixture-1',
-    source: 'system',
+    source: 'system'
+  });
+  completeUsageTask(excludedTask.id, { outcome: 'version_created' });
+  assert.throws(
+    () => setUsageTaskExclusion(excludedTask.id, { actorUserId: 1, isTest: true, exclusionReason: 'acceptance_fixture' }),
+    error => error.code === 'USAGE_TASK_EXCLUSION_FORBIDDEN'
+  );
+  setUsageTaskExclusion(excludedTask.id, {
+    actorUserId: 2,
     isTest: true,
     exclusionReason: 'acceptance_fixture'
   });
-  completeUsageTask(excludedTask.id, { outcome: 'version_created' });
+  assert.equal(getUsageEvents({ eventTypes: ['usage_task_excluded'] }).length, 1);
 
   const stats = getEffectiveUsageTaskStats();
   assert.equal(stats.completedTaskCount, 3);
   assert.equal(stats.distinctActorCount, 2);
   assert.equal(stats.repeatUserCount, 1);
   assert.deepEqual(stats.tasks.map(task => task.task_kind).sort(), ['direct', 'project', 'project']);
+});
+
+test('client classification headers are ignored and create completion stays actor-scoped', () => {
+  assert.deepEqual(requestClassification({ get: () => 'true' }), { isTest: false, exclusionReason: null });
+  const prototype = createPrototype({ id: 'proto_actor_scope', name: 'Actor scope', createdBy: 1 });
+  const task = ensureUsageTask({
+    taskKind: 'create',
+    actorUserId: 1,
+    prototypeId: prototype.id,
+    sourceRef: `prototype:${prototype.id}`
+  });
+  assert.equal(findActiveUsageTaskForPrototype({ prototypeId: prototype.id, actorUserId: 1 }).id, task.id);
+  assert.equal(findActiveUsageTaskForPrototype({ prototypeId: prototype.id, actorUserId: 2 }), null);
+});
+
+test('domain and usage ledger writes roll back together when usage creation rejects', () => {
+  assert.throws(() => database.runInTransaction(() => {
+    createPrototype({ id: 'atomic_proto', name: 'Atomic prototype', createdBy: 1 });
+    ensureUsageTask({ taskKind: 'create', actorUserId: 1, prototypeId: 'atomic_proto', sourceRef: '' });
+  }), /sourceRef 不能为空/);
+  assert.equal(database.queryOne('SELECT id FROM prototypes WHERE id = ?', ['atomic_proto']), null);
+  assert.equal(database.queryOne('SELECT id FROM usage_tasks WHERE source_ref = ?', ['']), null);
+});
+
+test('project adoption event names use the canonical event catalog', () => {
+  assert.equal(getEventDefinition('change_adopted').effective, true);
+  assert.equal(getEventDefinition('change_rejected').effective, true);
+  assert.equal(getEventDefinition('candidate_adopted').effective, false);
+  assert.equal(getEventDefinition('candidate_returned').effective, false);
 });
 
 test('a legacy upload without a usage task is not counted as an effective task', () => {

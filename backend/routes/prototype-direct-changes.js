@@ -4,7 +4,6 @@ const fs = require('fs');
 const { requireAuth } = require('../middleware/auth');
 const { UPLOADS_DIR } = require('../services/storage');
 const { normalizeSource } = require('../services/usage-events');
-const { requestClassification } = require('../services/usage-tasks');
 const {
   PrototypeDirectChangeError,
   PrototypeDirectChangeService,
@@ -72,8 +71,7 @@ router.post('/:prototypeId/direct-changes', requireAuth, (req, res) => {
       prototypeId: req.params.prototypeId,
       requirement: req.body.requirement,
       versionStrategy: req.body.versionStrategy || { type: req.body.versionStrategyType, value: req.body.versionStrategyValue },
-      source: requestSource(req),
-      ...requestClassification(req)
+      source: requestSource(req)
     });
     res.status(201).json({ success: true, data: result });
   } catch (error) { sendError(res, error); }
