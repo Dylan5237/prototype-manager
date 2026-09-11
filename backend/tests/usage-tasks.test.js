@@ -108,6 +108,12 @@ test('direct and project kinds are effective, explicit tests are excluded, and a
     exclusionReason: 'acceptance_fixture'
   });
   assert.equal(getUsageEvents({ eventTypes: ['usage_task_excluded'] }).length, 1);
+  const audit = database.queryOne(
+    `SELECT action, resource_type, resource_id, metadata_json FROM audit_events WHERE action = 'usage_task.exclusion_changed'`
+  );
+  assert.equal(audit.resource_type, 'usage_task');
+  assert.equal(audit.resource_id, excludedTask.id);
+  assert.match(audit.metadata_json, /acceptance_fixture/);
 
   const stats = getEffectiveUsageTaskStats();
   assert.equal(stats.completedTaskCount, 3);
@@ -136,6 +142,27 @@ test('domain and usage ledger writes roll back together when usage creation reje
   }), /sourceRef 不能为空/);
   assert.equal(database.queryOne('SELECT id FROM prototypes WHERE id = ?', ['atomic_proto']), null);
   assert.equal(database.queryOne('SELECT id FROM usage_tasks WHERE source_ref = ?', ['']), null);
+});
+
+test('exclusion mutation rolls back when authoritative audit insertion fails', () => {
+  const task = ensureUsageTask({ taskKind: 'create', actorUserId: 1, sourceRef: 'audit-failure-task' });
+  database.run(`
+    CREATE TRIGGER fail_usage_task_exclusion_audit
+    BEFORE INSERT ON audit_events
+    WHEN NEW.action = 'usage_task.exclusion_changed'
+    BEGIN
+      SELECT RAISE(ABORT, 'injected audit failure');
+    END;
+  `);
+
+  assert.throws(
+    () => setUsageTaskExclusion(task.id, { actorUserId: 2, isTest: true, exclusionReason: 'injected_failure' }),
+    /injected audit failure/
+  );
+  const unchanged = database.queryOne('SELECT is_test, exclusion_reason FROM usage_tasks WHERE id = ?', [task.id]);
+  assert.equal(Number(unchanged.is_test), 0);
+  assert.equal(unchanged.exclusion_reason, null);
+  assert.equal(database.query(`SELECT id FROM audit_events WHERE resource_id = ?`, [task.id]).length, 0);
 });
 
 test('project adoption event names use the canonical event catalog', () => {

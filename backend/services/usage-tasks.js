@@ -189,8 +189,34 @@ function setUsageTaskExclusion(taskId, { actorUserId, isTest = false, exclusionR
     error.code = 'USAGE_TASK_EXCLUSION_FORBIDDEN';
     throw error;
   }
+  const current = getUsageTaskById(taskId);
+  if (!current) {
+    const error = new Error('usage task 不存在');
+    error.code = 'USAGE_TASK_NOT_FOUND';
+    throw error;
+  }
   const reason = cleanReason(exclusionReason);
-  run('UPDATE usage_tasks SET is_test = ?, exclusion_reason = ?, updated_at = ? WHERE id = ?', [isTest ? 1 : 0, reason, now(), taskId]);
+  const changedAt = now();
+  runInTransaction(db => {
+    db.run(
+      'UPDATE usage_tasks SET is_test = ?, exclusion_reason = ?, updated_at = ? WHERE id = ?',
+      [isTest ? 1 : 0, reason, changedAt, taskId]
+    );
+    db.run(`
+      INSERT INTO audit_events
+        (id, actor_user_id, action, resource_type, resource_id, result, metadata_json, created_at)
+      VALUES (?, ?, 'usage_task.exclusion_changed', 'usage_task', ?, 'success', ?, ?)
+    `, [
+      id('audit'),
+      actorUserId,
+      taskId,
+      JSON.stringify({
+        before: { isTest: Boolean(current.is_test), exclusionReason: current.exclusion_reason || null },
+        after: { isTest: Boolean(isTest), exclusionReason: reason }
+      }),
+      changedAt
+    ]);
+  });
   recordUsageEvent({
     eventType: 'usage_task_excluded',
     userId: actorUserId,
