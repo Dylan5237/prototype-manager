@@ -265,6 +265,114 @@ function getEffectiveUsageTaskStats({ from, to } = {}) {
   };
 }
 
+function getUsageEffectivenessAnalysis({ from, to, taskKind, source, recentLimit = 20 } = {}) {
+  const clauses = [
+    "t.status = 'completed'",
+    't.is_test = 0',
+    "COALESCE(t.exclusion_reason, '') = ''"
+  ];
+  const params = [];
+  if (from) { clauses.push('t.completed_at >= ?'); params.push(from); }
+  if (to) { clauses.push('t.completed_at < ?'); params.push(to); }
+  if (taskKind) {
+    if (!TASK_KINDS.has(taskKind)) throw new TypeError(`不支持的 usage task kind: ${taskKind}`);
+    clauses.push('t.task_kind = ?');
+    params.push(taskKind);
+  }
+  if (source) {
+    clauses.push('t.source = ?');
+    params.push(normalizeSource(source));
+  }
+
+  const tasks = query(`
+    SELECT t.*, u.username AS actor_username, u.nickname AS actor_nickname
+    FROM usage_tasks t
+    LEFT JOIN users u ON u.id = t.actor_user_id
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY t.completed_at DESC, t.id DESC
+  `, params);
+  const taskIds = tasks.map(task => task.id);
+  const attempts = taskIds.length
+    ? query(`
+        SELECT id, usage_task_id, attempt_no, operation, status, failure_code, started_at, completed_at
+        FROM usage_task_attempts
+        WHERE usage_task_id IN (${taskIds.map(() => '?').join(',')})
+        ORDER BY usage_task_id, attempt_no
+      `, taskIds)
+    : [];
+  const attemptsByTask = new Map();
+  attempts.forEach(attempt => {
+    const rows = attemptsByTask.get(attempt.usage_task_id) || [];
+    rows.push(attempt);
+    attemptsByTask.set(attempt.usage_task_id, rows);
+  });
+
+  const actorCounts = new Map();
+  const kindCounts = new Map([...TASK_KINDS].map(kind => [kind, 0]));
+  const trendCounts = new Map();
+  let attemptCount = 0;
+  tasks.forEach(task => {
+    const actorId = Number(task.actor_user_id);
+    actorCounts.set(actorId, (actorCounts.get(actorId) || 0) + 1);
+    kindCounts.set(task.task_kind, (kindCounts.get(task.task_kind) || 0) + 1);
+    const date = String(task.completed_at || '').slice(0, 10);
+    if (date) {
+      const point = trendCounts.get(date) || { date, total: 0, create: 0, direct: 0, project: 0 };
+      point.total += 1;
+      point[task.task_kind] += 1;
+      trendCounts.set(date, point);
+    }
+    attemptCount += (attemptsByTask.get(task.id) || []).length;
+  });
+  const distinctActorCount = actorCounts.size;
+  const repeatUserCount = [...actorCounts.values()].filter(count => count >= 2).length;
+  const limit = Math.min(100, Math.max(1, Number(recentLimit) || 20));
+
+  return {
+    generatedAt: now(),
+    period: { from: from || null, to: to || null },
+    filters: { taskKind: taskKind || null, source: source ? normalizeSource(source) : null },
+    exclusionRules: ["status = 'completed'", 'is_test = 0', "COALESCE(exclusion_reason, '') = ''"],
+    summary: {
+      completedTaskCount: tasks.length,
+      distinctActorCount,
+      repeatUserCount,
+      repeatUserRate: distinctActorCount ? Number(((repeatUserCount / distinctActorCount) * 100).toFixed(1)) : null,
+      attemptCount,
+      averageAttemptsPerTask: tasks.length ? Number((attemptCount / tasks.length).toFixed(2)) : null
+    },
+    kindDistribution: [...TASK_KINDS].map(kind => ({ kind, count: kindCounts.get(kind) || 0 })),
+    trend: [...trendCounts.values()].sort((a, b) => a.date.localeCompare(b.date)),
+    recentTasks: tasks.slice(0, limit).map(task => ({
+      id: task.id,
+      taskKind: task.task_kind,
+      actor: {
+        userId: Number(task.actor_user_id),
+        username: task.actor_username || null,
+        nickname: task.actor_nickname || null
+      },
+      prototypeId: task.prototype_id || null,
+      projectId: task.project_id || null,
+      sourceRef: task.source_ref,
+      source: task.source,
+      status: task.status,
+      outcome: task.outcome || null,
+      startedAt: task.started_at,
+      completedAt: task.completed_at,
+      attemptCount: (attemptsByTask.get(task.id) || []).length,
+      attempts: (attemptsByTask.get(task.id) || []).map(attempt => ({
+        id: attempt.id,
+        attemptNo: Number(attempt.attempt_no),
+        operation: attempt.operation,
+        status: attempt.status,
+        failureCode: attempt.failure_code || null,
+        startedAt: attempt.started_at,
+        completedAt: attempt.completed_at || null
+      }))
+    }))
+  };
+}
+
 module.exports = {
   TASK_KINDS,
   TASK_STATUSES,
@@ -279,5 +387,6 @@ module.exports = {
   cancelUsageTask,
   setUsageTaskExclusion,
   requestClassification,
-  getEffectiveUsageTaskStats
+  getEffectiveUsageTaskStats,
+  getUsageEffectivenessAnalysis
 };

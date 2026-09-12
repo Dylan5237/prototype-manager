@@ -12,6 +12,7 @@ const {
   finishUsageTaskAttempt,
   completeUsageTask,
   getEffectiveUsageTaskStats,
+  getUsageEffectivenessAnalysis,
   findActiveUsageTaskForPrototype,
   setUsageTaskExclusion,
   requestClassification
@@ -182,4 +183,52 @@ test('a legacy upload without a usage task is not counted as an effective task',
   const stats = getEffectiveUsageTaskStats();
   assert.equal(stats.completedTaskCount, 0);
   assert.equal(stats.attemptCount, 0);
+});
+
+test('effectiveness analysis maps completed real tasks to summary, trend, kinds and evidence details', () => {
+  const createTask = ensureUsageTask({ taskKind: 'create', actorUserId: 1, sourceRef: 'analysis-create', source: 'mcp', startedAt: '2026-09-10T08:00:00.000Z' });
+  const retry1 = beginUsageTaskAttempt({ taskId: createTask.id, operation: 'upload', startedAt: '2026-09-10T08:01:00.000Z' });
+  finishUsageTaskAttempt({ attemptId: retry1.id, status: 'failed', failureCode: 'INVALID_ZIP', completedAt: '2026-09-10T08:02:00.000Z' });
+  const retry2 = beginUsageTaskAttempt({ taskId: createTask.id, operation: 'upload', startedAt: '2026-09-10T08:03:00.000Z' });
+  finishUsageTaskAttempt({ attemptId: retry2.id, status: 'completed', completedAt: '2026-09-10T08:04:00.000Z' });
+  completeUsageTask(createTask.id, { outcome: 'version_created', completedAt: '2026-09-10T08:05:00.000Z' });
+
+  const directTask = ensureUsageTask({ taskKind: 'direct', actorUserId: 1, sourceRef: 'analysis-direct', source: 'web', startedAt: '2026-09-11T08:00:00.000Z' });
+  completeUsageTask(directTask.id, { outcome: 'version_created', completedAt: '2026-09-11T08:05:00.000Z' });
+
+  const excluded = ensureUsageTask({ taskKind: 'project', actorUserId: 1, sourceRef: 'analysis-excluded', source: 'system' });
+  completeUsageTask(excluded.id, { completedAt: '2026-09-11T09:00:00.000Z' });
+  setUsageTaskExclusion(excluded.id, { actorUserId: 2, isTest: true, exclusionReason: 'analysis_fixture' });
+
+  const active = ensureUsageTask({ taskKind: 'project', actorUserId: 1, sourceRef: 'analysis-active', source: 'web' });
+  assert.equal(active.status, 'active');
+
+  const result = getUsageEffectivenessAnalysis({ from: '2026-09-10T00:00:00.000Z', to: '2026-09-12T00:00:00.000Z' });
+  assert.deepEqual(result.summary, {
+    completedTaskCount: 2,
+    distinctActorCount: 1,
+    repeatUserCount: 1,
+    repeatUserRate: 100,
+    attemptCount: 2,
+    averageAttemptsPerTask: 1
+  });
+  assert.deepEqual(result.kindDistribution, [
+    { kind: 'create', count: 1 },
+    { kind: 'direct', count: 1 },
+    { kind: 'project', count: 0 }
+  ]);
+  assert.deepEqual(result.trend.map(point => [point.date, point.total, point.create, point.direct]), [
+    ['2026-09-10', 1, 1, 0],
+    ['2026-09-11', 1, 0, 1]
+  ]);
+  assert.equal(result.recentTasks[1].attemptCount, 2);
+  assert.deepEqual(result.recentTasks[1].attempts.map(item => [item.attemptNo, item.status]), [[1, 'failed'], [2, 'completed']]);
+  assert.deepEqual(result.exclusionRules, ["status = 'completed'", 'is_test = 0', "COALESCE(exclusion_reason, '') = ''"]);
+});
+
+test('effectiveness analysis exposes a null repeat rate without an effective-user denominator', () => {
+  const result = getUsageEffectivenessAnalysis();
+  assert.equal(result.summary.completedTaskCount, 0);
+  assert.equal(result.summary.repeatUserRate, null);
+  assert.equal(result.summary.averageAttemptsPerTask, null);
 });

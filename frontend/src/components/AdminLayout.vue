@@ -14,7 +14,10 @@ import { Setting, User, UserFilled, Promotion, Collection, Bell, DataAnalysis, M
 const sections = [
   {
     label: '数据分析',
-    items: [{ index: '/admin/usage', label: '使用总览', icon: DataAnalysis }]
+    items: [
+      { index: '/admin/usage', label: '使用总览', icon: DataAnalysis },
+      { index: '/admin/usage-effectiveness', label: '使用与成效分析', icon: DataAnalysis }
+    ]
   },
   {
     label: '用户与组织',
