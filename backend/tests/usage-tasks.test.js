@@ -232,3 +232,46 @@ test('effectiveness analysis exposes a null repeat rate without an effective-use
   assert.equal(result.summary.repeatUserRate, null);
   assert.equal(result.summary.averageAttemptsPerTask, null);
 });
+
+test('effectiveness trend and period use the same Asia/Shanghai reporting day across the UTC boundary', () => {
+  const previousDay = ensureUsageTask({ taskKind: 'create', actorUserId: 1, sourceRef: 'timezone-previous' });
+  completeUsageTask(previousDay.id, { completedAt: '2026-09-15T15:30:00.000Z' });
+  const reportingDay = ensureUsageTask({ taskKind: 'project', actorUserId: 1, sourceRef: 'timezone-reporting' });
+  completeUsageTask(reportingDay.id, { completedAt: '2026-09-15T16:30:00.000Z' });
+
+  const result = getUsageEffectivenessAnalysis({
+    from: '2026-09-15T16:00:00.000Z',
+    to: '2026-09-16T16:00:00.000Z'
+  });
+  assert.equal(result.reportingTimezone, 'Asia/Shanghai');
+  assert.equal(result.reportingOffsetMinutes, 480);
+  assert.equal(result.summary.completedTaskCount, 1);
+  assert.deepEqual(result.trend, [{ date: '2026-09-16', total: 1, create: 0, direct: 0, project: 1 }]);
+});
+
+test('effectiveness attempt readback scales beyond SQLite parameter limits', () => {
+  const timestamp = '2026-09-10T08:00:00.000Z';
+  for (let index = 0; index < 1100; index += 1) {
+    const taskId = `bulk_task_${index}`;
+    database.run(`
+      INSERT INTO usage_tasks
+        (id, task_kind, actor_user_id, source_ref, source, status, outcome, is_test,
+         exclusion_reason, started_at, completed_at, created_at, updated_at)
+      VALUES (?, 'create', 1, ?, 'web', 'completed', 'version_created', 0, NULL, ?, ?, ?, ?)
+    `, [taskId, `bulk:${index}`, timestamp, timestamp, timestamp, timestamp]);
+    database.run(`
+      INSERT INTO usage_task_attempts
+        (id, usage_task_id, attempt_no, operation, status, metadata_json, started_at, completed_at)
+      VALUES (?, ?, 1, 'upload', 'completed', '{}', ?, ?)
+    `, [`bulk_attempt_${index}`, taskId, timestamp, timestamp]);
+  }
+
+  const result = getUsageEffectivenessAnalysis({ from: '2026-09-10T00:00:00.000Z', to: '2026-09-11T00:00:00.000Z' });
+  const sharedStats = getEffectiveUsageTaskStats({ from: '2026-09-10T00:00:00.000Z', to: '2026-09-11T00:00:00.000Z' });
+  assert.equal(result.summary.completedTaskCount, 1100);
+  assert.equal(result.summary.attemptCount, 1100);
+  assert.equal(result.recentTasks.length, 20);
+  assert.equal(result.recentTasks.every(task => task.attemptCount === 1), true);
+  assert.equal(sharedStats.completedTaskCount, 1100);
+  assert.equal(sharedStats.attemptCount, 1100);
+});

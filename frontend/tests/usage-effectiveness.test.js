@@ -33,3 +33,12 @@ test('repeat-rate UI keeps denominator-zero as an empty value instead of a fake 
   assert.match(page, /repeatUserRate == null \? '—'/)
   assert.match(page, /暂无有效用户分母/)
 })
+
+test('reporting dates, evidence fields and trend fallback preserve the frozen review contract', () => {
+  assert.match(page, /Asia\/Shanghai/)
+  assert.match(page, /timeZone: 'Asia\/Shanghai'/)
+  assert.match(page, /reportingBoundaryIso/)
+  for (const field of ['startedAt', 'completedAt', 'prototypeId', 'projectId']) assert.match(page, new RegExp(field))
+  for (const series of ['total', 'create', 'direct', 'project']) assert.match(page, new RegExp(`point\\.${series}`))
+  assert.doesNotMatch(page, /color:#94a3b8|fill:#94a3b8/)
+})

@@ -6,6 +6,8 @@ const { normalizeRoles } = require('./authorization');
 const TASK_KINDS = new Set(['create', 'direct', 'project']);
 const TASK_STATUSES = new Set(['active', 'completed', 'failed', 'cancelled']);
 const ATTEMPT_STATUSES = new Set(['started', 'completed', 'failed']);
+const REPORTING_TIMEZONE = 'Asia/Shanghai';
+const REPORTING_OFFSET_MINUTES = 8 * 60;
 
 function now() {
   return new Date().toISOString();
@@ -248,9 +250,18 @@ function getEffectiveUsageTaskStats({ from, to } = {}) {
     WHERE ${clauses.join(' AND ')}
     ORDER BY completed_at ASC, id ASC
   `, params);
-  const taskIds = tasks.map(task => task.id);
-  const attempts = taskIds.length
-    ? query(`SELECT usage_task_id, COUNT(*) AS count FROM usage_task_attempts WHERE usage_task_id IN (${taskIds.map(() => '?').join(',')}) GROUP BY usage_task_id`, taskIds)
+  const attempts = tasks.length
+    ? query(`
+        SELECT a.usage_task_id, COUNT(*) AS count
+        FROM usage_task_attempts a
+        INNER JOIN usage_tasks t ON t.id = a.usage_task_id
+        WHERE t.status = 'completed'
+          AND t.is_test = 0
+          AND COALESCE(t.exclusion_reason, '') = ''
+          ${from ? 'AND t.completed_at >= ?' : ''}
+          ${to ? 'AND t.completed_at < ?' : ''}
+        GROUP BY a.usage_task_id
+      `, params)
     : [];
   const attemptsByTask = new Map(attempts.map(row => [row.usage_task_id, Number(row.count)]));
   const users = new Map();
@@ -294,11 +305,13 @@ function getUsageEffectivenessAnalysis({ from, to, taskKind, source, recentLimit
   const taskIds = tasks.map(task => task.id);
   const attempts = taskIds.length
     ? query(`
-        SELECT id, usage_task_id, attempt_no, operation, status, failure_code, started_at, completed_at
-        FROM usage_task_attempts
-        WHERE usage_task_id IN (${taskIds.map(() => '?').join(',')})
-        ORDER BY usage_task_id, attempt_no
-      `, taskIds)
+        SELECT a.id, a.usage_task_id, a.attempt_no, a.operation, a.status,
+               a.failure_code, a.started_at, a.completed_at
+        FROM usage_task_attempts a
+        INNER JOIN usage_tasks t ON t.id = a.usage_task_id
+        WHERE ${clauses.join(' AND ')}
+        ORDER BY a.usage_task_id, a.attempt_no
+      `, params)
     : [];
   const attemptsByTask = new Map();
   attempts.forEach(attempt => {
@@ -315,7 +328,10 @@ function getUsageEffectivenessAnalysis({ from, to, taskKind, source, recentLimit
     const actorId = Number(task.actor_user_id);
     actorCounts.set(actorId, (actorCounts.get(actorId) || 0) + 1);
     kindCounts.set(task.task_kind, (kindCounts.get(task.task_kind) || 0) + 1);
-    const date = String(task.completed_at || '').slice(0, 10);
+    const completedAt = new Date(task.completed_at);
+    const date = Number.isNaN(completedAt.getTime())
+      ? ''
+      : new Date(completedAt.getTime() + REPORTING_OFFSET_MINUTES * 60 * 1000).toISOString().slice(0, 10);
     if (date) {
       const point = trendCounts.get(date) || { date, total: 0, create: 0, direct: 0, project: 0 };
       point.total += 1;
@@ -330,6 +346,8 @@ function getUsageEffectivenessAnalysis({ from, to, taskKind, source, recentLimit
 
   return {
     generatedAt: now(),
+    reportingTimezone: REPORTING_TIMEZONE,
+    reportingOffsetMinutes: REPORTING_OFFSET_MINUTES,
     period: { from: from || null, to: to || null },
     filters: { taskKind: taskKind || null, source: source ? normalizeSource(source) : null },
     exclusionRules: ["status = 'completed'", 'is_test = 0', "COALESCE(exclusion_reason, '') = ''"],
