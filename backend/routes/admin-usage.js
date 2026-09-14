@@ -2,6 +2,7 @@ const express = require('express');
 const { requireAuth, requireRole } = require('../middleware/auth');
 const { getUsageStats } = require('../services/db-usage-stats');
 const { recordUsageEvent, normalizeSource } = require('../services/usage-events');
+const { getUsageEffectivenessAnalysis } = require('../services/usage-tasks');
 
 const router = express.Router();
 
@@ -25,6 +26,21 @@ router.get('/usage-stats', requireAuth, requireRole(['admin']), (req, res) => {
     res.json({ success: true, data });
   } catch (error) {
     res.status(400).json({ success: false, code: 'USAGE_STATS_INVALID', message: error.message });
+  }
+});
+
+router.get('/usage-effectiveness', requireAuth, requireRole(['admin']), (req, res) => {
+  try {
+    const data = getUsageEffectivenessAnalysis({
+      from: req.query.from,
+      to: req.query.to,
+      taskKind: req.query.taskKind,
+      source: req.query.source,
+      recentLimit: req.query.recentLimit
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(400).json({ success: false, code: 'USAGE_EFFECTIVENESS_INVALID', message: error.message });
   }
 });
 
