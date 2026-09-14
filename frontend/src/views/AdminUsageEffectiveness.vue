@@ -5,6 +5,7 @@
         <p class="eyebrow">数据分析</p>
         <h1>使用与成效分析</h1>
         <p class="subtitle">从用户覆盖、业务任务、质量表现和效率表现等维度，观察伏羲平台的实际使用成效。</p>
+        <p class="trust-copy"><el-icon><InfoFilled /></el-icon>指标来自平台业务数据与行为日志 · 最近更新 {{ formatDate(data.generatedAt) }}</p>
       </div>
       <div class="toolbar">
         <el-radio-group v-model="period" size="small" @change="handlePeriodChange">
@@ -15,11 +16,10 @@
         <el-date-picker v-if="period === 'custom'" v-model="customRange" type="daterange" size="small" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" :clearable="false" @change="loadData" />
         <el-button size="small" :icon="Filter" @click="filterDrawer = true">筛选<span v-if="activeFilterCount">（{{ activeFilterCount }}）</span></el-button>
         <el-button size="small" text @click="methodDrawer = true">数据口径说明</el-button>
-        <el-button size="small" type="primary" disabled>导出分析报告</el-button>
+        <el-tooltip content="报告导出将在数据口径稳定后开放" placement="bottom"><span class="disabled-action"><el-button size="small" type="primary" disabled>导出分析报告</el-button></span></el-tooltip>
       </div>
     </header>
 
-    <div class="trust-note"><el-icon><CircleCheck /></el-icon><span>所有指标均基于平台业务数据和行为日志计算，支持查看计算口径、数据来源及明细记录。</span><small>最近更新 {{ formatDate(data.generatedAt) }}</small></div>
     <el-alert v-if="errorMessage" :title="errorMessage" type="error" :closable="false" show-icon />
 
     <section class="conclusion-panel management-panel">
@@ -33,8 +33,8 @@
       </article>
     </section>
 
-    <section class="trend-panel management-panel">
-      <div class="panel-head"><div><p class="section-kicker">业务使用</p><h2>有效业务任务趋势</h2><small>按完成日期与 task kind 统计；动作事件不会混入任务类型。</small></div><div class="legend"><span class="all">总计</span><span class="create">创建</span><span class="direct">直接变更</span><span class="project">项目任务</span></div></div>
+    <section :class="['trend-panel', 'management-panel', { 'is-empty': !data.trend.length }]">
+      <div class="panel-head"><div><p class="section-kicker">业务使用</p><h2>有效业务任务趋势</h2><small>按完成日期与任务类型统计，清晰区分创建、直接变更和项目任务。</small></div><div class="legend"><span class="all">总计</span><span class="create">创建</span><span class="direct">直接变更</span><span class="project">项目任务</span></div></div>
       <div v-if="data.trend.length" class="chart-wrap">
         <svg viewBox="0 0 960 260" role="img" aria-label="有效业务任务趋势图">
           <line v-for="line in chartGrid" :key="line.y" x1="54" :y1="line.y" x2="940" :y2="line.y" class="grid-line" />
@@ -52,7 +52,7 @@
 
     <section class="group-grid">
       <article class="group-card management-panel">
-        <div class="panel-head"><div><p class="section-kicker">用户覆盖</p><h2>真实使用人群</h2></div><el-tag effect="plain">已具备</el-tag></div>
+        <div class="panel-head"><div><p class="section-kicker">用户覆盖</p><h2>真实使用人群</h2></div><el-tag effect="plain">任务数据已接入</el-tag></div>
         <div class="repeat-summary"><strong>{{ formatNumber(summary.repeatUserCount) }}</strong><span>重复使用用户数</span></div>
         <el-progress :percentage="summary.repeatUserRate || 0" :format="repeatRateLabel" :stroke-width="10" />
         <p class="card-note">重复使用率 = 完成至少 2 个有效任务的用户 / 有效使用用户。</p>
@@ -60,22 +60,22 @@
       </article>
 
       <article class="group-card management-panel">
-        <div class="panel-head"><div><p class="section-kicker">业务使用</p><h2>任务类型分布</h2></div><el-tag effect="plain">{{ formatNumber(summary.attemptCount) }} attempts</el-tag></div>
+        <div class="panel-head"><div><p class="section-kicker">业务使用</p><h2>任务类型分布</h2></div><el-tag effect="plain">{{ formatNumber(summary.attemptCount) }} 次尝试</el-tag></div>
         <div class="kind-list">
           <div v-for="item in data.kindDistribution" :key="item.kind"><span>{{ kindLabel(item.kind) }}</span><el-progress :percentage="kindPercent(item.count)" :show-text="false" :stroke-width="8" /><b>{{ item.count }}</b></div>
         </div>
-        <p class="card-note">平均每任务 {{ summary.averageAttemptsPerTask ?? '—' }} 次 attempt；retry 不增加业务任务数。</p>
+        <p class="card-note">平均每个任务 {{ summary.averageAttemptsPerTask ?? '—' }} 次尝试；重试不会重复计为业务任务。</p>
       </article>
 
       <article class="group-card management-panel">
-        <div class="panel-head"><div><p class="section-kicker">质量与效率</p><h2>证据尚未完备</h2></div><el-tag type="info" effect="plain">明确空态</el-tag></div>
+        <div class="panel-head"><div><p class="section-kicker">质量与效率</p><h2>质量与效率指标</h2></div><el-tag type="info" effect="plain">待积累数据</el-tag></div>
         <div class="empty-metric-list"><div><b>业务复核通过率 / 准确率</b><span>暂无复核样本</span></div><div><b>平均效率提升 / 人工审核时间</b><span>暂无效率对比样本</span></div><div><b>返工率</b><span>当前日志无法可靠推出</span></div></div>
       </article>
     </section>
 
-    <section class="tasks-panel management-panel">
-      <div class="panel-head"><div><p class="section-kicker">证据入口</p><h2>最近业务任务</h2><small>展开任务可查看真实 attempt 明细。</small></div><el-button size="small" :icon="Refresh" @click="loadData">刷新</el-button></div>
-      <el-table :data="data.recentTasks" empty-text="当前范围暂无有效业务任务">
+    <section :class="['tasks-panel', 'management-panel', { 'is-empty': !data.recentTasks.length }]">
+      <div class="panel-head"><div><p class="section-kicker">明细记录</p><h2>最近业务任务</h2><small>展开任务可查看每次尝试的详细记录。</small></div><el-button size="small" :icon="Refresh" @click="loadData">刷新</el-button></div>
+      <el-table :data="data.recentTasks" empty-text="当前范围暂无业务任务记录">
         <el-table-column type="expand">
           <template #default="scope">
             <div class="attempt-detail">
@@ -90,14 +90,14 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column prop="id" label="Task ID" min-width="210" show-overflow-tooltip />
+        <el-table-column prop="id" label="任务 ID" min-width="210" show-overflow-tooltip />
         <el-table-column label="类型" width="105"><template #default="scope">{{ kindLabel(scope.row.taskKind) }}</template></el-table-column>
-        <el-table-column label="Actor" min-width="130"><template #default="scope">{{ scope.row.actor.nickname || scope.row.actor.username || `用户 ${scope.row.actor.userId}` }}</template></el-table-column>
+        <el-table-column label="使用用户" min-width="130"><template #default="scope">{{ scope.row.actor.nickname || scope.row.actor.username || `用户 ${scope.row.actor.userId}` }}</template></el-table-column>
         <el-table-column prop="prototypeId" label="Prototype ID" min-width="150" show-overflow-tooltip />
         <el-table-column prop="projectId" label="Project ID" min-width="150" show-overflow-tooltip />
         <el-table-column prop="status" label="状态" width="100" />
         <el-table-column prop="outcome" label="结果" min-width="130" />
-        <el-table-column prop="attemptCount" label="Attempts" width="92" />
+        <el-table-column prop="attemptCount" label="尝试次数" width="92" />
         <el-table-column prop="source" label="来源" width="90" />
         <el-table-column label="完成时间" min-width="158"><template #default="scope">{{ formatDate(scope.row.completedAt) }}</template></el-table-column>
       </el-table>
@@ -127,7 +127,7 @@
 
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
-import { CircleCheck, Filter, Refresh } from '@element-plus/icons-vue'
+import { Filter, InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
 import { getUsageEffectiveness } from '../api/admin-usage'
 
@@ -147,8 +147,8 @@ const conclusion = computed(() => {
   return `本期完成 ${formatNumber(summary.value.completedTaskCount)} 个有效业务任务，覆盖 ${formatNumber(summary.value.distinctActorCount)} 名真实使用用户；${formatNumber(summary.value.repeatUserCount)} 人形成重复使用。`
 })
 const heroMetrics = computed(() => [
-  { label: '有效业务任务数', value: formatNumber(summary.value.completedTaskCount), note: '仅 completed 且未被排除的任务' },
-  { label: '有效使用用户数', value: formatNumber(summary.value.distinctActorCount), note: '按 actor_user_id 去重' },
+  { label: '有效业务任务数', value: formatNumber(summary.value.completedTaskCount), note: '仅统计已完成且符合口径的真实业务任务' },
+  { label: '有效使用用户数', value: formatNumber(summary.value.distinctActorCount), note: '按实际使用用户去重' },
   { label: '重复使用用户数', value: formatNumber(summary.value.repeatUserCount), note: '范围内完成至少 2 个有效任务' },
   { label: '重复使用率', value: summary.value.repeatUserRate == null ? '—' : `${summary.value.repeatUserRate}%`, note: summary.value.distinctActorCount ? `${summary.value.repeatUserCount}/${summary.value.distinctActorCount} 人` : '暂无有效用户分母' }
 ])
@@ -188,4 +188,5 @@ onMounted(loadData)
 
 <style scoped>
 .effectiveness-page{color:#172033}.effectiveness-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:18px}.eyebrow,.section-kicker{margin:0 0 6px;color:#2563eb;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.effectiveness-head h1{margin:0;font-size:28px;line-height:1.25}.subtitle{max-width:700px;margin:8px 0 0;color:#475569;font-size:13px;line-height:1.7}.toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.trust-note{display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;color:#1d4ed8;font-size:12px}.trust-note small{margin-left:auto;color:#475569}.conclusion-panel{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:16px 0;padding:20px 22px;border-left:4px solid #2563eb}.conclusion-panel h2{margin:0;max-width:900px;font-size:17px;line-height:1.6}.period-caption{flex:0 0 auto;color:#475569;font-size:12px}.hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.metric-card{display:flex;flex-direction:column;min-height:142px;padding:20px}.metric-card span{color:#475569;font-size:12px}.metric-card strong{margin-top:15px;font-size:34px;line-height:1}.metric-card small{margin-top:auto;padding-top:16px;color:#64748b;font-size:12px}.trend-panel,.tasks-panel{margin-bottom:16px;padding:22px}.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}.panel-head h2{margin:0;font-size:17px}.panel-head small{display:block;margin-top:5px;color:#64748b;font-size:12px}.legend{display:flex;gap:12px;color:#475569;font-size:12px}.legend span::before{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:#334155;content:''}.legend .create::before{background:#2563eb}.legend .direct::before{background:#14b8a6}.legend .project::before{background:#f59e0b}.chart-wrap{min-height:280px}.chart-wrap svg{width:100%;height:260px;overflow:visible}.grid-line{stroke:#e8edf4;stroke-width:1}.axis-label{fill:#475569;font-size:11px}.x-label{text-anchor:middle}.chart-line{fill:none;stroke:#334155;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.chart-line.is-create{stroke:#2563eb;stroke-width:2}.chart-line.is-direct{stroke:#14b8a6;stroke-width:2}.chart-line.is-project{stroke:#f59e0b;stroke-width:2}.trend-table{overflow:auto;border:1px solid #e2e8f0;border-radius:8px;color:#475569;font-size:11px}.trend-row{display:grid;grid-template-columns:minmax(100px,1.4fr) repeat(4,minmax(72px,1fr));min-width:450px}.trend-row span{padding:7px 10px;border-bottom:1px solid #e2e8f0}.trend-row--head{background:#f8fafc;font-weight:700}.trend-row:last-child span{border-bottom:0}.group-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}.group-card{min-height:310px;padding:20px}.repeat-summary{display:flex;align-items:baseline;gap:10px;margin:24px 0 16px}.repeat-summary strong{font-size:32px}.repeat-summary span,.card-note{color:#475569;font-size:12px}.card-note{margin:14px 0;line-height:1.6}.empty-evidence{display:flex;flex-direction:column;gap:5px;margin-top:20px;padding:13px;border-radius:9px;background:#f8fafc}.empty-evidence b,.empty-metric-list b{color:#334155;font-size:12px}.empty-evidence span,.empty-metric-list span{color:#64748b;font-size:12px}.kind-list{display:flex;flex-direction:column;gap:18px}.kind-list>div{display:grid;grid-template-columns:72px 1fr 30px;align-items:center;gap:10px;font-size:12px}.kind-list b{text-align:right}.empty-metric-list{display:flex;flex-direction:column;gap:10px}.empty-metric-list>div{display:flex;flex-direction:column;gap:5px;padding:14px;border:1px dashed #cbd5e1;border-radius:9px;background:#f8fafc}.attempt-detail{padding:14px 48px}.task-readback{display:grid;grid-template-columns:90px 1fr 90px 1fr;gap:8px;margin-bottom:14px}.attempt-detail code{overflow:hidden;color:#334155;font-size:12px;text-overflow:ellipsis}.method-list{display:flex;flex-direction:column;gap:18px}.method-list h3{margin:0 0 6px;font-size:14px}.method-list p{margin:0;color:#475569;font-size:12px;line-height:1.7}@media(max-width:1180px){.effectiveness-head{display:block}.toolbar{justify-content:flex-start;margin-top:16px}.hero-grid{grid-template-columns:repeat(2,1fr)}.group-grid{grid-template-columns:1fr}.trust-note{align-items:flex-start;flex-wrap:wrap}.trust-note small{width:100%;margin-left:24px}}@media(max-width:680px){.hero-grid{grid-template-columns:1fr}.toolbar{align-items:stretch;flex-direction:column}.conclusion-panel{align-items:flex-start;flex-direction:column}.attempt-detail{padding:10px}.task-readback{grid-template-columns:1fr}.legend{flex-wrap:wrap}}
+.trust-copy{display:flex;align-items:center;gap:5px;margin:8px 0 0;color:#64748b;font-size:12px}.trust-copy .el-icon{color:#64748b}.disabled-action{display:inline-flex}.group-card{min-height:0}.trend-panel.is-empty{padding-bottom:14px}.trend-panel.is-empty .panel-head{margin-bottom:6px}.trend-panel.is-empty :deep(.el-empty){padding:6px 0}.trend-panel.is-empty :deep(.el-empty__image){width:44px}.trend-panel.is-empty :deep(.el-empty__description){margin-top:4px}.tasks-panel.is-empty{padding-bottom:14px}.tasks-panel.is-empty :deep(.el-table__empty-block){min-height:72px}.tasks-panel.is-empty :deep(.el-table__empty-text){line-height:72px}@media(max-width:680px){.disabled-action,.disabled-action .el-button{width:100%}}
 </style>

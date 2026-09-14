@@ -9,6 +9,7 @@ const page = fs.readFileSync(path.join(root, 'src/views/AdminUsageEffectiveness.
 const layout = fs.readFileSync(path.join(root, 'src/components/AdminLayout.vue'), 'utf8')
 const router = fs.readFileSync(path.join(root, 'src/router/index.js'), 'utf8')
 const api = fs.readFileSync(path.join(root, 'src/api/admin-usage.js'), 'utf8')
+const template = page.split('<script setup>')[0]
 
 test('usage effectiveness page is a separate admin destination backed by its dedicated API', () => {
   assert.match(layout, /使用总览/)
@@ -41,4 +42,24 @@ test('reporting dates, evidence fields and trend fallback preserve the frozen re
   for (const field of ['startedAt', 'completedAt', 'prototypeId', 'projectId']) assert.match(page, new RegExp(field))
   for (const series of ['total', 'create', 'direct', 'project']) assert.match(page, new RegExp(`point\\.${series}`))
   assert.doesNotMatch(page, /color:#94a3b8|fill:#94a3b8/)
+})
+
+test('visual return keeps trust copy secondary and makes empty sections compact', () => {
+  assert.match(template, /class="trust-copy"/)
+  assert.doesNotMatch(template, /class="trust-note"/)
+  assert.match(template, /'is-empty': !data\.trend\.length/)
+  assert.match(template, /'is-empty': !data\.recentTasks\.length/)
+  assert.match(page, /\.group-card\{min-height:0\}/)
+  assert.match(page, /\.trend-panel\.is-empty/)
+  assert.match(page, /报告导出将在数据口径稳定后开放/)
+})
+
+test('main page uses product language while technical terms remain in methodology and evidence details', () => {
+  for (const text of ['仅统计已完成且符合口径的真实业务任务', '按实际使用用户去重']) {
+    assert.match(page, new RegExp(text))
+  }
+  for (const text of ['按完成日期与任务类型统计', '次尝试', '重试不会重复计为业务任务', '使用用户', '任务 ID', '尝试次数', '质量与效率指标', '待积累数据']) {
+    assert.match(template, new RegExp(text))
+  }
+  for (const text of ['已具备', '明确空态', '证据尚未完备']) assert.doesNotMatch(template, new RegExp(text))
 })
