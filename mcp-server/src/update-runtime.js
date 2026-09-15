@@ -5,6 +5,18 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { parseZipBuffer } = require('./fuxi-zip');
 const { acquireFileLock, acquireFileLockSync } = require('./local-lock');
+const { writeFileAtomic, writeJsonAtomic: writeJsonFileAtomic } = require('./atomic-write');
+const {
+  accessTokenStillValid,
+  isDeadSessionCode,
+  normalizeApiUrl,
+  parseAccessExpiresAt,
+  readCredentialFile,
+  refreshLockFile,
+  sessionCredentialPayload,
+  tombstonePayload,
+  writeCredentialFile
+} = require('./credentials');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const FORBIDDEN_SEGMENTS = new Set([
@@ -27,10 +39,7 @@ function readJson(file) {
 }
 
 function writeJsonAtomic(file, value) {
-  ensureDir(path.dirname(file));
-  const temp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  fs.renameSync(temp, file);
+  writeJsonFileAtomic(file, value, { mode: 0o600 });
 }
 
 function paths(root = process.env.FUXI_INSTALL_ROOT || path.join(os.homedir(), '.fuxi', 'agent-runtime')) {
@@ -158,9 +167,7 @@ async function downloadArtifact({ apiUrl, token, artifact, targetFile }) {
     throw error;
   }
   ensureDir(path.dirname(targetFile));
-  const temp = `${targetFile}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(temp, buffer);
-  fs.renameSync(temp, targetFile);
+  writeFileAtomic(targetFile, buffer);
   return { path: targetFile, size: buffer.length, sha256: actual };
 }
 
@@ -185,7 +192,8 @@ function smokeCheck(mcpRoot, skillRoot) {
     input,
     encoding: 'utf8',
     timeout: 2500,
-    killSignal: 'SIGTERM'
+    killSignal: 'SIGTERM',
+    env: { ...process.env, FUXI_MCP_ALLOW_MULTI: '1' }
   });
   const replies = (probe.stdout || '').split(/\r?\n/).filter(Boolean).flatMap(line => {
     try { return [JSON.parse(line)]; } catch (error) { return []; }
@@ -215,29 +223,64 @@ function replaceTree(source, target) {
 }
 
 function readCredentials(credentialsFile) {
-  try {
-    const credentials = readJson(credentialsFile);
-    if (!credentials || !credentials.refreshToken || !credentials.sessionId) return null;
-    return credentials;
-  } catch (error) {
-    return null;
-  }
+  const credentials = readCredentialFile(credentialsFile);
+  if (!credentials || !credentials.refreshToken || !credentials.sessionId) return null;
+  return credentials;
 }
 
 function writeCredentials(credentialsFile, credentials) {
-  const temp = `${credentialsFile}.tmp-${process.pid}-${Date.now()}`;
-  ensureDir(path.dirname(credentialsFile));
-  fs.writeFileSync(temp, `${JSON.stringify(credentials, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temp, credentialsFile);
+  writeCredentialFile(credentialsFile, credentials);
+}
+
+function resolveAccessExpiresAt(data) {
+  if (data && data.expiresAt) {
+    const parsed = Date.parse(data.expiresAt);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return Date.now() + Number((data && data.expiresIn) || 0) * 1000;
+}
+
+function authFromCredentials(credentials) {
+  return {
+    token: credentials.accessToken,
+    sessionId: credentials.sessionId,
+    accessExpiresAt: parseAccessExpiresAt(credentials.accessExpiresAt),
+    credentials
+  };
+}
+
+async function postRefresh({ apiUrl, refreshToken, deviceLabel }) {
+  const response = await fetch(`${normalizeApiUrl(apiUrl)}/api/auth/mcp/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken, deviceLabel })
+  });
+  const body = await response.json().catch(() => null);
+  return { response, body };
+}
+
+function refreshFailureCode(response, body) {
+  if (body && typeof body.code === 'string' && body.code) return body.code;
+  return response.status === 401 ? 'AUTHENTICATION_FAILED' : 'SESSION_REFRESH_FAILED';
 }
 
 async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
-  const unlock = await acquireFileLock(`${credentialsFile}.refresh.lock`, {
-    errorCode: 'AUTHENTICATION_BUSY',
-    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
-  });
+  const lockFile = refreshLockFile(credentialsFile);
+  let unlock;
   try {
-    const credentials = readCredentials(credentialsFile);
+    unlock = await acquireFileLock(lockFile, {
+      errorCode: 'AUTHENTICATION_BUSY',
+      message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
+    });
+  } catch (error) {
+    if (error.code === 'AUTHENTICATION_BUSY') {
+      const latest = readCredentials(credentialsFile);
+      if (latest && accessTokenStillValid(latest)) return authFromCredentials(latest);
+    }
+    throw error;
+  }
+  try {
+    let credentials = readCredentials(credentialsFile);
     const token = process.env.FUXI_TOKEN || '';
     if (token && credentials) {
       return {
@@ -248,36 +291,52 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
       };
     }
     if (!credentials) return null;
-    const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: credentials.refreshToken, deviceLabel })
-    });
-    const body = await response.json().catch(() => null);
+    if (accessTokenStillValid(credentials)) return authFromCredentials(credentials);
+
+    const presented = credentials.refreshToken;
+    let { response, body } = await postRefresh({ apiUrl, refreshToken: presented, deviceLabel });
     if (!response.ok || !body || body.success === false) {
+      const latest = readCredentials(credentialsFile);
+      if (latest && accessTokenStillValid(latest)) return authFromCredentials(latest);
+      if (latest && latest.refreshToken && latest.refreshToken !== presented) {
+        credentials = latest;
+        ({ response, body } = await postRefresh({ apiUrl, refreshToken: latest.refreshToken, deviceLabel }));
+      }
+    }
+    if (!response.ok || !body || body.success === false) {
+      const code = refreshFailureCode(response, body);
+      if (isDeadSessionCode(code)) {
+        writeCredentialFile(credentialsFile, tombstonePayload({
+          apiUrl,
+          sessionId: credentials && credentials.sessionId,
+          reason: code
+        }));
+      }
       const error = new Error('设备会话刷新失败');
-      error.code = response.status === 401 ? 'AUTHENTICATION_FAILED' : 'SESSION_REFRESH_FAILED';
+      error.code = code;
       throw error;
     }
     const data = body.data || {};
-    const next = {
-      ...credentials,
+    const accessExpiresAt = resolveAccessExpiresAt(data);
+    const next = sessionCredentialPayload({
       apiUrl,
       refreshToken: data.refreshToken,
       sessionId: data.sessionId || credentials.sessionId,
       sessionExpiresAt: data.sessionExpiresAt || credentials.sessionExpiresAt || null,
+      accessToken: data.accessToken,
+      accessExpiresAt,
       deviceLabel,
-      updatedAt: nowIso()
-    };
+      extra: { ...credentials }
+    });
     writeCredentials(credentialsFile, next);
     return {
       token: data.accessToken,
       sessionId: next.sessionId,
-      accessExpiresAt: data.expiresAt ? Date.parse(data.expiresAt) : Date.now() + Number(data.expiresIn || 0) * 1000,
+      accessExpiresAt,
       credentials: next
     };
   } finally {
-    unlock();
+    if (unlock) unlock();
   }
 }
 
@@ -478,7 +537,7 @@ function resolveCurrentTarget(p) {
   return null;
 }
 
-function startMcp(p, current, auth = null) {
+function startMcp(p, current, auth = null, extraEnv = {}) {
   if (!current || !current.mcpPath) {
     const error = new Error('没有可启动的 MCP 版本');
     error.code = 'MCP_CURRENT_MISSING';
@@ -492,6 +551,7 @@ function startMcp(p, current, auth = null) {
   }
   const env = {
     ...process.env,
+    ...extraEnv,
     FUXI_SKILL_VERSION: current.skillVersion || 'unknown',
     FUXI_SKILL_TARGET: current.skillTarget || skillTarget(),
     FUXI_MCP_VERSION: current.mcpVersion || 'unknown',

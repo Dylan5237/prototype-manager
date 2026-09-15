@@ -6,6 +6,19 @@ const path = require('path');
 const { performance } = require('node:perf_hooks');
 const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
 const { acquireFileLock } = require('./local-lock');
+const {
+  ACCESS_REFRESH_SKEW_MS,
+  RECONNECT_HINT,
+  isDeadSessionCode,
+  normalizeApiUrl,
+  parseAccessExpiresAt,
+  readCredentialFile,
+  refreshLockFile,
+  sessionCredentialPayload,
+  tombstonePayload,
+  writeCredentialFile
+} = require('./credentials');
+const { acquireMcpInstanceSync } = require('./instance-lock');
 
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 const MCP_VERSION = (() => {
@@ -14,8 +27,9 @@ const MCP_VERSION = (() => {
 const SKILL_VERSION = process.env.FUXI_SKILL_VERSION || 'unknown';
 let cachedToken = process.env.FUXI_TOKEN || '';
 const CREDENTIALS_FILE = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
+const INSTALL_ROOT = process.env.FUXI_INSTALL_ROOT || path.join(os.homedir(), '.fuxi', 'agent-runtime');
 const DEVICE_LABEL = `${os.hostname()} (${process.platform})`;
-const REFRESH_LOCK_FILE = `${CREDENTIALS_FILE}.refresh.lock`;
+const REFRESH_LOCK_FILE = refreshLockFile(CREDENTIALS_FILE);
 let refreshToken = '';
 let sessionId = null;
 let sessionExpiresAt = null;
@@ -625,21 +639,36 @@ let connectCodeConsumed = false;
 let tokenPromise = null;
 let refreshPromise = null;
 
+function hasValidAccessToken() {
+  return Boolean(cachedToken && accessExpiresAt > Date.now() + ACCESS_REFRESH_SKEW_MS);
+}
+
 function readCredentialData() {
-  try {
-    const raw = fs.readFileSync(CREDENTIALS_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch (e) {
-    return null;
-  }
+  return readCredentialFile(CREDENTIALS_FILE);
 }
 
 function applyCredentialData(data) {
-  if (!data || data.apiUrl !== API_URL || typeof data.refreshToken !== 'string' || !data.refreshToken) return false;
-  refreshToken = data.refreshToken;
-  sessionId = data.sessionId || null;
-  sessionExpiresAt = data.sessionExpiresAt || null;
-  return true;
+  if (!data || normalizeApiUrl(data.apiUrl) !== API_URL) return false;
+  if (typeof data.refreshToken === 'string' && data.refreshToken) {
+    refreshToken = data.refreshToken;
+    sessionId = data.sessionId || null;
+    sessionExpiresAt = data.sessionExpiresAt || null;
+    if (typeof data.accessToken === 'string' && data.accessToken) {
+      const fileAccessExpiresAt = parseAccessExpiresAt(data.accessExpiresAt);
+      if (fileAccessExpiresAt > Date.now() + ACCESS_REFRESH_SKEW_MS) {
+        cachedToken = data.accessToken;
+        accessExpiresAt = fileAccessExpiresAt;
+      }
+    }
+    return true;
+  }
+  if (data.reconnectRequired) {
+    refreshToken = '';
+    sessionId = data.sessionId || null;
+    sessionExpiresAt = null;
+    return false;
+  }
+  return false;
 }
 
 function readCredentials() {
@@ -652,23 +681,53 @@ function loadCredentialsIfNeeded() {
   readCredentials();
 }
 
-function writeCredentials() {
-  const temp = `${CREDENTIALS_FILE}.tmp-${process.pid}-${Date.now()}`;
+function persistCredentialFile(payload) {
   try {
-    fs.mkdirSync(path.dirname(CREDENTIALS_FILE), { recursive: true });
-    fs.writeFileSync(temp, JSON.stringify({
+    writeCredentialFile(CREDENTIALS_FILE, payload);
+  } catch (e) {
+    process.stderr.write(`[fuxi-mcp] failed to persist credentials: ${e.code || e.message}\n`);
+    throw e;
+  }
+}
+
+function writeCredentials() {
+  try {
+    persistCredentialFile(sessionCredentialPayload({
       apiUrl: API_URL,
       refreshToken,
       sessionId,
       sessionExpiresAt,
-      deviceLabel: DEVICE_LABEL,
-      updatedAt: new Date().toISOString()
-    }, null, 2), { mode: 0o600 });
-    fs.renameSync(temp, CREDENTIALS_FILE);
+      accessToken: cachedToken,
+      accessExpiresAt,
+      deviceLabel: DEVICE_LABEL
+    }));
   } catch (e) {
     // 持久化失败不阻断当前进程：凭据仍留在内存中可用到进程退出。
-    try { fs.rmSync(temp, { force: true }); } catch (cleanupError) {}
   }
+}
+
+function clearDeadCredentials(reason) {
+  const deadSessionId = sessionId;
+  refreshToken = '';
+  cachedToken = '';
+  accessExpiresAt = 0;
+  sessionExpiresAt = null;
+  sessionId = null;
+  try {
+    persistCredentialFile(tombstonePayload({
+      apiUrl: API_URL,
+      sessionId: deadSessionId,
+      reason
+    }));
+  } catch (e) {}
+}
+
+function deadSessionError(code) {
+  return new ToolError(
+    code,
+    RECONNECT_HINT,
+    { reconnectRequired: true }
+  );
 }
 
 async function connectWithCode(code) {
@@ -679,7 +738,11 @@ async function connectWithCode(code) {
   });
   const data = body.data;
   cachedToken = data.accessToken;
-  accessExpiresAt = Date.now() + data.expiresIn * 1000;
+  accessExpiresAt = Date.now() + Number(data.expiresIn || 0) * 1000;
+  if (data.expiresAt) {
+    const parsed = Date.parse(data.expiresAt);
+    if (Number.isFinite(parsed)) accessExpiresAt = parsed;
+  }
   refreshToken = data.refreshToken;
   sessionId = data.sessionId;
   sessionExpiresAt = data.sessionExpiresAt || null;
@@ -689,29 +752,65 @@ async function connectWithCode(code) {
 }
 
 async function refreshAccessTokenInternal() {
-  const unlock = await acquireFileLock(REFRESH_LOCK_FILE, {
-    errorCode: 'AUTHENTICATION_BUSY',
-    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
-  });
+  let unlock;
+  try {
+    unlock = await acquireFileLock(REFRESH_LOCK_FILE, {
+      errorCode: 'AUTHENTICATION_BUSY',
+      message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
+    });
+  } catch (error) {
+    if (error.code === 'AUTHENTICATION_BUSY') {
+      applyCredentialData(readCredentialData());
+      if (hasValidAccessToken()) return cachedToken;
+    }
+    throw error;
+  }
   try {
     // 另一个 MCP 进程可能刚刚轮换过 token；锁内重新读取，避免使用旧 token。
     applyCredentialData(readCredentialData());
+    if (hasValidAccessToken()) return cachedToken;
     if (!refreshToken) throw new ToolError('AUTHENTICATION_REQUIRED', 'No refresh token is available');
-    const body = await request('/api/auth/mcp/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
-      body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
-  });
-  const data = body.data;
-  cachedToken = data.accessToken;
-  accessExpiresAt = Date.now() + data.expiresIn * 1000;
-  refreshToken = data.refreshToken;
+    const presented = refreshToken;
+    let body;
+    try {
+      body = await request('/api/auth/mcp/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
+        body: JSON.stringify({ refreshToken: presented, deviceLabel: DEVICE_LABEL })
+      });
+    } catch (error) {
+      applyCredentialData(readCredentialData());
+      if (hasValidAccessToken()) return cachedToken;
+      if (refreshToken && refreshToken !== presented) {
+        body = await request('/api/auth/mcp/refresh', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
+          body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
+        });
+      } else if (isDeadSessionCode(error.code)) {
+        clearDeadCredentials(error.code);
+        if (process.env.FUXI_CONNECT_CODE && !connectCodeConsumed) {
+          return connectWithCode(process.env.FUXI_CONNECT_CODE);
+        }
+        throw deadSessionError(error.code);
+      } else {
+        throw error;
+      }
+    }
+    const data = body.data;
+    cachedToken = data.accessToken;
+    accessExpiresAt = Date.now() + Number(data.expiresIn || 0) * 1000;
+    if (data.expiresAt) {
+      const parsed = Date.parse(data.expiresAt);
+      if (Number.isFinite(parsed)) accessExpiresAt = parsed;
+    }
+    refreshToken = data.refreshToken;
     sessionId = data.sessionId;
     sessionExpiresAt = data.sessionExpiresAt || null;
     writeCredentials();
     return cachedToken;
   } finally {
-    unlock();
+    if (unlock) unlock();
   }
 }
 
@@ -727,9 +826,11 @@ async function refreshAccessToken() {
 }
 
 async function getTokenInternal() {
-  if (cachedToken && accessExpiresAt > Date.now() + 5000) return cachedToken;
+  if (hasValidAccessToken()) return cachedToken;
 
   loadCredentialsIfNeeded();
+  applyCredentialData(readCredentialData());
+  if (hasValidAccessToken()) return cachedToken;
 
   if (refreshToken) return refreshAccessToken();
 
@@ -759,7 +860,7 @@ async function getTokenInternal() {
 }
 
 async function getToken() {
-  if (cachedToken && accessExpiresAt > Date.now() + 5000) return cachedToken;
+  if (hasValidAccessToken()) return cachedToken;
   if (tokenPromise) return tokenPromise;
   const pending = getTokenInternal();
   tokenPromise = pending;
@@ -1198,10 +1299,24 @@ async function deliverProject(args) {
 async function callTool(name, args) {
   if (name === 'check_connection') {
     const data = await request('/api/health');
+    const stored = readCredentialData();
     loadCredentialsIfNeeded();
     let authentication = 'unconfigured';
     let runtime = { mcpVersion: MCP_VERSION, skillVersion: SKILL_VERSION };
     let update = null;
+    let reconnectRequired = false;
+    if (stored && stored.reconnectRequired && !refreshToken && !process.env.FUXI_CONNECT_CODE) {
+      return contentJson({
+        ok: true,
+        apiUrl: API_URL,
+        health: data,
+        authentication: stored.authentication || 'INVALID_REFRESH_TOKEN',
+        runtime,
+        update: null,
+        reconnectRequired: true,
+        reconnectHint: RECONNECT_HINT
+      });
+    }
     if (process.env.FUXI_CONNECT_CODE || refreshToken || cachedToken || process.env.FUXI_USERNAME) {
       try {
         await getToken();
@@ -1219,9 +1334,21 @@ async function callTool(name, args) {
         }
       } catch (e) {
         authentication = e.code || 'unverified';
+        if (isDeadSessionCode(authentication)) reconnectRequired = true;
       }
     }
-    return contentJson({ ok: true, apiUrl: API_URL, health: data, authentication, runtime, update });
+    return contentJson({
+      ok: true,
+      apiUrl: API_URL,
+      health: data,
+      authentication,
+      runtime,
+      update,
+      ...(reconnectRequired ? {
+        reconnectRequired: true,
+        reconnectHint: RECONNECT_HINT
+      } : {})
+    });
   }
 
   if (name === 'list_prototypes') {
@@ -1787,6 +1914,29 @@ async function handle(message) {
     error(message.id, -32601, `Method not found: ${message.method}`);
   }
 }
+
+const mcpInstance = acquireMcpInstanceSync({
+  credentialsFile: CREDENTIALS_FILE,
+  installRoot: INSTALL_ROOT,
+  apiUrl: API_URL,
+  role: 'server'
+});
+if (mcpInstance.status === 'already_running') {
+  const ownerPid = mcpInstance.owner && mcpInstance.owner.pid;
+  process.stderr.write(`[fuxi-mcp] MCP_ALREADY_RUNNING pid=${ownerPid || 'unknown'} lock=${mcpInstance.paths.lockFile}\n`);
+  process.exit(0);
+}
+process.once('exit', () => {
+  try { mcpInstance.unlock(); } catch (error) {}
+});
+process.once('SIGINT', () => {
+  try { mcpInstance.unlock(); } catch (error) {}
+  process.exit(130);
+});
+process.once('SIGTERM', () => {
+  try { mcpInstance.unlock(); } catch (error) {}
+  process.exit(143);
+});
 
 let buffer = '';
 process.stdin.setEncoding('utf8');

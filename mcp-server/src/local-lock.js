@@ -47,9 +47,34 @@ function openLock(lockFile) {
   fs.mkdirSync(path.dirname(lockFile), { recursive: true });
   const handle = fs.openSync(lockFile, 'wx');
   fs.writeSync(handle, `${process.pid}\n`);
+  let released = false;
   return () => {
+    if (released) return;
+    released = true;
     try { fs.closeSync(handle); } finally { fs.rmSync(lockFile, { force: true }); }
   };
+}
+
+function tryAcquireFileLockSync(lockFile, options = {}) {
+  const { staleMs = DEFAULT_STALE_MS } = options;
+  try {
+    return { status: 'acquired', unlock: openLock(lockFile), owner: process.pid };
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    let owner = null;
+    try { owner = readLockOwner(lockFile); } catch (readError) { owner = null; }
+    if (owner && processIsAlive(owner)) {
+      return { status: 'busy', owner };
+    }
+    removeStaleLock(lockFile, staleMs);
+    try {
+      return { status: 'acquired', unlock: openLock(lockFile), owner: process.pid };
+    } catch (retryError) {
+      if (retryError.code !== 'EEXIST') throw retryError;
+      try { owner = readLockOwner(lockFile); } catch (readError) { owner = null; }
+      return { status: 'busy', owner };
+    }
+  }
 }
 
 function acquireFileLockSync(lockFile, options = {}) {
@@ -101,5 +126,8 @@ async function acquireFileLock(lockFile, options = {}) {
 module.exports = {
   acquireFileLock,
   acquireFileLockSync,
-  removeStaleLock
+  tryAcquireFileLockSync,
+  removeStaleLock,
+  processIsAlive,
+  readLockOwner
 };

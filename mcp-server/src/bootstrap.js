@@ -319,7 +319,7 @@ function extractPackage(buffer, targetDir, packageType) {
   const rootFiles = extracted.filter(entry => entry.startsWith(rootPrefix));
   const packageRoot = rootFiles.length ? path.join(targetDir, expectedRoot) : targetDir;
   const required = packageType === 'mcp'
-    ? ['src/server.js', 'src/launcher.js', 'src/bootstrap.js', 'src/local-lock.js', 'package.json']
+    ? ['src/server.js', 'src/launcher.js', 'src/bootstrap.js', 'src/local-lock.js', 'src/atomic-write.js', 'src/credentials.js', 'src/instance-lock.js', 'package.json']
     : ['SKILL.md'];
   for (const requiredFile of required) {
     if (!fs.existsSync(path.join(packageRoot, requiredFile))) {
