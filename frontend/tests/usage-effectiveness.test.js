@@ -22,12 +22,25 @@ test('page preserves frozen IA, trusted metrics and explicit unsupported-metric 
   for (const text of ['结论摘要', '核心指标', '有效业务任务趋势', '用户覆盖', '业务使用', '质量与效率', '最近业务任务', '数据口径说明']) {
     assert.match(page, new RegExp(text))
   }
-  for (const text of ['待配置用户范围', '暂无复核样本', '暂无人工确认的可比样本', '当前日志无法可靠推出']) {
+  for (const text of ['待配置用户范围', '暂无人工复核案例', '暂无人工确认的可比样本', '当前日志无法可靠推出']) {
     assert.match(page, new RegExp(text))
   }
   assert.match(page, /is_test=1/)
   assert.match(page, /exclusion_reason/)
   assert.doesNotMatch(page, /92分|4分|mock/i)
+})
+
+test('accuracy evidence UI keeps human review, severe errors and formal inclusion explicit', () => {
+  for (const text of ['准确性证据', '人工业务结果复核', '录入复核案例', '只看严重错误', '暂无人工复核案例，不从日志推断准确率', '严重错误为人工独立事实']) {
+    assert.match(page, new RegExp(text))
+  }
+  assert.match(api, /\/admin\/usage-accuracy/)
+  assert.match(api, /\/admin\/usage-accuracy\/reviews\/\$\{id\}\/audits/)
+  assert.match(page, /accuracy\.summary\.accuracyRate == null/)
+  assert.match(page, /scope\.row\.includedInFormalAggregate \? '正式计入' : '不计入'/)
+  assert.match(page, /showSevereOnly\.value \? accuracy\.value\.severeErrorReviews/)
+  assert.match(page, /审计历史/)
+  assert.doesNotMatch(page, /Math\.max\([^\n]*accuracyRate/)
 })
 
 test('efficiency evidence UI exposes controlled entry, audit reason and transparent non-clamped formula', () => {

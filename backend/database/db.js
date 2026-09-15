@@ -425,6 +425,47 @@ function createTables() {
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_efficiency_comparisons_period ON efficiency_comparisons(comparable, measured_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_efficiency_audits_comparison ON efficiency_comparison_audits(comparison_id, created_at)`); } catch (e) {}
 
+  // 准确性复核证据：人工判定业务结果，不从任务日志或效率样本推断质量。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS accuracy_review_cases (
+      id TEXT PRIMARY KEY,
+      usage_task_id TEXT NOT NULL,
+      measurement_scope TEXT NOT NULL DEFAULT 'default',
+      reviewer_user_id INTEGER NOT NULL,
+      reviewer_snapshot_json TEXT NOT NULL,
+      outcome TEXT NOT NULL CHECK(outcome IN ('pass', 'partial', 'fail')),
+      severe_error INTEGER NOT NULL DEFAULT 0 CHECK(severe_error IN (0, 1)),
+      artifact_type TEXT,
+      artifact_ref TEXT,
+      included INTEGER NOT NULL DEFAULT 1 CHECK(included IN (0, 1)),
+      exclusion_reason TEXT,
+      review_note TEXT NOT NULL,
+      reviewed_at TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (usage_task_id) REFERENCES usage_tasks(id),
+      FOREIGN KEY (reviewer_user_id) REFERENCES users(id),
+      UNIQUE(usage_task_id, measurement_scope)
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS accuracy_review_case_audits (
+      id TEXT PRIMARY KEY,
+      review_case_id TEXT NOT NULL,
+      actor_user_id INTEGER NOT NULL,
+      action TEXT NOT NULL CHECK(action IN ('created', 'updated')),
+      change_reason TEXT NOT NULL,
+      before_json TEXT,
+      after_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (review_case_id) REFERENCES accuracy_review_cases(id),
+      FOREIGN KEY (actor_user_id) REFERENCES users(id)
+    )
+  `);
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_accuracy_reviews_scope ON accuracy_review_cases(measurement_scope, outcome, severe_error)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_accuracy_audits_case ON accuracy_review_case_audits(review_case_id, created_at)`); } catch (e) {}
+
   // prototype_shares 表：记录原型分享给哪些用户
   db.run(`
     CREATE TABLE IF NOT EXISTS prototype_shares (
