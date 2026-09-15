@@ -237,7 +237,7 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
     message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
   });
   try {
-    const credentials = readCredentials(credentialsFile);
+    let credentials = readCredentials(credentialsFile);
     const token = process.env.FUXI_TOKEN || '';
     if (token && credentials) {
       return {
@@ -248,15 +248,28 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
       };
     }
     if (!credentials) return null;
-    const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: credentials.refreshToken, deviceLabel })
-    });
-    const body = await response.json().catch(() => null);
+    const postRefresh = async refreshToken => {
+      const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken, deviceLabel })
+      });
+      const body = await response.json().catch(() => null);
+      return { response, body };
+    };
+    let presented = credentials.refreshToken;
+    let { response, body } = await postRefresh(presented);
+    if ((!response.ok || !body || body.success === false) && response.status === 401) {
+      const latest = readCredentials(credentialsFile);
+      if (latest && latest.refreshToken && latest.refreshToken !== presented) {
+        presented = latest.refreshToken;
+        ({ response, body } = await postRefresh(presented));
+        credentials = latest;
+      }
+    }
     if (!response.ok || !body || body.success === false) {
       const error = new Error('设备会话刷新失败');
-      error.code = response.status === 401 ? 'AUTHENTICATION_FAILED' : 'SESSION_REFRESH_FAILED';
+      error.code = (body && body.code) || (response.status === 401 ? 'AUTHENTICATION_FAILED' : 'SESSION_REFRESH_FAILED');
       throw error;
     }
     const data = body.data || {};

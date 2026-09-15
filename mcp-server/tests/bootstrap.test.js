@@ -19,6 +19,7 @@ const {
   install,
   mergeMcpConfig,
   preflight,
+  restoreCredentialsPreservingLiveSession,
   verify
 } = require('../src/bootstrap');
 
@@ -506,6 +507,41 @@ test('install rejects a non-package skill basename before touching the existing 
     const failed = JSON.parse(fs.readFileSync(statePath, 'utf8'));
     assert.equal(failed.status, 'FAILED');
     assert.notEqual(failed.skillReady, true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('CONNECT failure keeps rotated credentials for the same device session', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-cred-restore-'));
+  try {
+    const backup = path.join(root, 'backup.json');
+    const current = path.join(root, 'mcp-credentials.json');
+    const sibling = path.join(root, 'other.json');
+    fs.writeFileSync(backup, JSON.stringify({
+      sessionId: 'session-live',
+      refreshToken: 'old-token'
+    }));
+    fs.writeFileSync(current, JSON.stringify({
+      sessionId: 'session-live',
+      refreshToken: 'rotated-token'
+    }));
+    fs.writeFileSync(sibling, JSON.stringify({
+      sessionId: 'session-sibling',
+      refreshToken: 'sibling-old'
+    }));
+
+    assert.equal(restoreCredentialsPreservingLiveSession(backup, current), 'kept-rotated');
+    assert.equal(JSON.parse(fs.readFileSync(current, 'utf8')).refreshToken, 'rotated-token');
+
+    const overwritten = path.join(root, 'overwritten.json');
+    fs.writeFileSync(overwritten, JSON.stringify({
+      sessionId: 'session-new',
+      refreshToken: 'new-connect-token'
+    }));
+    assert.equal(restoreCredentialsPreservingLiveSession(sibling, overwritten), 'restored-backup');
+    assert.equal(JSON.parse(fs.readFileSync(overwritten, 'utf8')).sessionId, 'session-sibling');
+    assert.equal(JSON.parse(fs.readFileSync(overwritten, 'utf8')).refreshToken, 'sibling-old');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

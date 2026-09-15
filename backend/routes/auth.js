@@ -218,6 +218,7 @@ router.post('/mcp/refresh', (req, res) => {
       code: rotated.reason,
       message: rotated.reason === 'SESSION_REVOKED' ? '会话已撤销' :
         rotated.reason === 'SESSION_EXPIRED' ? '会话已过期，请重新接入' :
+        rotated.reason === 'INVALID_REFRESH_TOKEN' ? 'refresh token 无效，请在平台重新生成连接码后重新接入' :
         'refresh token 无效'
     });
   }

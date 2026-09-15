@@ -480,6 +480,31 @@ function restoreBackup(source, target) {
   }
 }
 
+function readCredentialSessionId(file) {
+  try {
+    const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+    return data && typeof data.sessionId === 'string' && data.sessionId ? data.sessionId : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// CONNECT 失败时不得把同一 session 已轮换的新 refresh token 回滚成旧值，
+// 否则会让仍在运行的兄弟 MCP 进程持有服务端已作废的 token。
+function restoreCredentialsPreservingLiveSession(backup, target) {
+  const hasBackup = Boolean(backup && fs.existsSync(backup));
+  const backupSessionId = hasBackup ? readCredentialSessionId(backup) : null;
+  const currentSessionId = fs.existsSync(target) ? readCredentialSessionId(target) : null;
+  if (currentSessionId && backupSessionId && currentSessionId === backupSessionId) {
+    return 'kept-rotated';
+  }
+  if (!hasBackup) {
+    return 'kept-current';
+  }
+  restoreBackup(backup, target);
+  return 'restored-backup';
+}
+
 function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot, connectCode) {
   const launcher = path.join(mcpRoot, 'src', 'launcher.js');
   const server = path.join(mcpRoot, 'src', 'server.js');
@@ -793,7 +818,9 @@ async function install(manifest, options = {}) {
     if (plan && (configWritten || fs.existsSync(mcpConfigBackup))) restoreBackup(mcpConfigBackup, plan.mcpConfig);
     if (plan && (skillInstalled || fs.existsSync(skillBackup))) restoreBackup(skillBackup, plan.skillTarget);
     if (mcpInstalled || fs.existsSync(mcpBackup)) restoreBackup(mcpBackup, mcpInstallRoot);
-    if (selfTestStarted || selfTestResult || fs.existsSync(credentialsBackup)) restoreBackup(credentialsBackup, credentialsFile);
+    if (selfTestStarted || selfTestResult || fs.existsSync(credentialsBackup)) {
+      restoreCredentialsPreservingLiveSession(credentialsBackup, credentialsFile);
+    }
     timings.totalMs = Date.now() - startedAt;
     const failed = plan
       ? buildState({ manifest, plan, state, mcp: mcpInfo, skill: skillInfo, mcpRoot: mcpInstallRoot, credentialsFile, installRoot, selfTestResult, timings, error: wrapped })
@@ -928,5 +955,6 @@ module.exports = {
   install,
   connect,
   verify,
+  restoreCredentialsPreservingLiveSession,
   main
 };

@@ -653,21 +653,29 @@ function loadCredentialsIfNeeded() {
 }
 
 function writeCredentials() {
-  const temp = `${CREDENTIALS_FILE}.tmp-${process.pid}-${Date.now()}`;
-  try {
-    fs.mkdirSync(path.dirname(CREDENTIALS_FILE), { recursive: true });
-    fs.writeFileSync(temp, JSON.stringify({
-      apiUrl: API_URL,
-      refreshToken,
-      sessionId,
-      sessionExpiresAt,
-      deviceLabel: DEVICE_LABEL,
-      updatedAt: new Date().toISOString()
-    }, null, 2), { mode: 0o600 });
-    fs.renameSync(temp, CREDENTIALS_FILE);
-  } catch (e) {
-    // 持久化失败不阻断当前进程：凭据仍留在内存中可用到进程退出。
-    try { fs.rmSync(temp, { force: true }); } catch (cleanupError) {}
+  const payload = JSON.stringify({
+    apiUrl: API_URL,
+    refreshToken,
+    sessionId,
+    sessionExpiresAt,
+    deviceLabel: DEVICE_LABEL,
+    updatedAt: new Date().toISOString()
+  }, null, 2);
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const temp = `${CREDENTIALS_FILE}.tmp-${process.pid}-${Date.now()}-${attempt}`;
+    try {
+      fs.mkdirSync(path.dirname(CREDENTIALS_FILE), { recursive: true });
+      fs.writeFileSync(temp, payload, { mode: 0o600 });
+      fs.renameSync(temp, CREDENTIALS_FILE);
+      return;
+    } catch (e) {
+      lastError = e;
+      try { fs.rmSync(temp, { force: true }); } catch (cleanupError) {}
+    }
+  }
+  if (lastError) {
+    process.stderr.write(`[fuxi-mcp] failed to persist rotated credentials: ${lastError.message}\n`);
   }
 }
 
@@ -688,6 +696,36 @@ async function connectWithCode(code) {
   return cachedToken;
 }
 
+function isInvalidRefreshError(error) {
+  return error instanceof ToolError && error.code === 'INVALID_REFRESH_TOKEN';
+}
+
+function isDeadRefreshError(error) {
+  return error instanceof ToolError && (
+    error.code === 'INVALID_REFRESH_TOKEN' ||
+    error.code === 'SESSION_REVOKED' ||
+    error.code === 'SESSION_EXPIRED'
+  );
+}
+
+async function postRefresh(currentRefreshToken) {
+  return request('/api/auth/mcp/refresh', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
+    body: JSON.stringify({ refreshToken: currentRefreshToken, deviceLabel: DEVICE_LABEL })
+  });
+}
+
+function applyRotatedSession(data) {
+  cachedToken = data.accessToken;
+  accessExpiresAt = Date.now() + data.expiresIn * 1000;
+  refreshToken = data.refreshToken;
+  sessionId = data.sessionId;
+  sessionExpiresAt = data.sessionExpiresAt || null;
+  writeCredentials();
+  return cachedToken;
+}
+
 async function refreshAccessTokenInternal() {
   const unlock = await acquireFileLock(REFRESH_LOCK_FILE, {
     errorCode: 'AUTHENTICATION_BUSY',
@@ -697,19 +735,17 @@ async function refreshAccessTokenInternal() {
     // 另一个 MCP 进程可能刚刚轮换过 token；锁内重新读取，避免使用旧 token。
     applyCredentialData(readCredentialData());
     if (!refreshToken) throw new ToolError('AUTHENTICATION_REQUIRED', 'No refresh token is available');
-    const body = await request('/api/auth/mcp/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Fuxi-Source': 'mcp' },
-      body: JSON.stringify({ refreshToken, deviceLabel: DEVICE_LABEL })
-  });
-  const data = body.data;
-  cachedToken = data.accessToken;
-  accessExpiresAt = Date.now() + data.expiresIn * 1000;
-  refreshToken = data.refreshToken;
-    sessionId = data.sessionId;
-    sessionExpiresAt = data.sessionExpiresAt || null;
-    writeCredentials();
-    return cachedToken;
+    const presented = refreshToken;
+    let body;
+    try {
+      body = await postRefresh(presented);
+    } catch (error) {
+      if (!isInvalidRefreshError(error)) throw error;
+      const latest = readCredentialData();
+      if (!applyCredentialData(latest) || refreshToken === presented) throw error;
+      body = await postRefresh(refreshToken);
+    }
+    return applyRotatedSession(body.data);
   } finally {
     unlock();
   }
@@ -731,7 +767,16 @@ async function getTokenInternal() {
 
   loadCredentialsIfNeeded();
 
-  if (refreshToken) return refreshAccessToken();
+  if (refreshToken) {
+    try {
+      return await refreshAccessToken();
+    } catch (error) {
+      if (!isDeadRefreshError(error) || !process.env.FUXI_CONNECT_CODE || connectCodeConsumed) throw error;
+      refreshToken = '';
+      sessionId = null;
+      return connectWithCode(process.env.FUXI_CONNECT_CODE);
+    }
+  }
 
   if (process.env.FUXI_CONNECT_CODE && !connectCodeConsumed) {
     return connectWithCode(process.env.FUXI_CONNECT_CODE);
@@ -1225,7 +1270,12 @@ async function callTool(name, args) {
         authentication = e.code || 'unverified';
       }
     }
-    return contentJson({ ok: true, apiUrl: API_URL, health: data, authentication, runtime, update });
+    const ok = authentication === 'verified' || authentication === 'unconfigured';
+    const result = { ok, apiUrl: API_URL, health: data, authentication, runtime, update };
+    if (!ok) {
+      result.nextAction = '在平台重新生成连接码并重新接入；不要继续使用当前 refresh token';
+    }
+    return contentJson(result, !ok);
   }
 
   if (name === 'list_prototypes') {
