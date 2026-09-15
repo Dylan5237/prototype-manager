@@ -9,6 +9,12 @@ const {
   updateEfficiencyComparison,
   getComparisonAudits
 } = require('../services/efficiency-comparisons');
+const {
+  getAccuracyAnalysis,
+  createAccuracyReview,
+  updateAccuracyReview,
+  getAccuracyReviewAudits
+} = require('../services/accuracy-reviews');
 
 const router = express.Router();
 
@@ -86,6 +92,40 @@ router.put('/usage-efficiency/comparisons/:id', requireAuth, requireRole(['admin
 
 router.get('/usage-efficiency/comparisons/:id/audits', requireAuth, requireRole(['admin']), (req, res) => {
   res.json({ success: true, data: getComparisonAudits(req.params.id) });
+});
+
+router.get('/usage-accuracy', requireAuth, requireRole(['admin']), (req, res) => {
+  try {
+    const data = getAccuracyAnalysis({
+      from: req.query.from, to: req.query.to,
+      measurementScope: req.query.measurementScope, recentLimit: req.query.recentLimit
+    });
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(400).json({ success: false, code: error.code || 'ACCURACY_ANALYSIS_INVALID', message: error.message });
+  }
+});
+
+router.post('/usage-accuracy/reviews', requireAuth, requireRole(['admin']), (req, res) => {
+  try {
+    res.status(201).json({ success: true, data: createAccuracyReview(req.body, { actorUserId: req.user.id }) });
+  } catch (error) {
+    const status = error.code === 'USAGE_TASK_NOT_FOUND' ? 404 : error.code === 'USAGE_TASK_NOT_EFFECTIVE' || error.code === 'ACCURACY_REVIEW_DUPLICATE' ? 409 : 400;
+    res.status(status).json({ success: false, code: error.code || 'ACCURACY_REVIEW_INVALID', message: error.message });
+  }
+});
+
+router.put('/usage-accuracy/reviews/:id', requireAuth, requireRole(['admin']), (req, res) => {
+  try {
+    res.json({ success: true, data: updateAccuracyReview(req.params.id, req.body, { actorUserId: req.user.id }) });
+  } catch (error) {
+    const status = error.code === 'ACCURACY_REVIEW_NOT_FOUND' ? 404 : error.code === 'USAGE_TASK_NOT_EFFECTIVE' ? 409 : 400;
+    res.status(status).json({ success: false, code: error.code || 'ACCURACY_REVIEW_INVALID', message: error.message });
+  }
+});
+
+router.get('/usage-accuracy/reviews/:id/audits', requireAuth, requireRole(['admin']), (req, res) => {
+  res.json({ success: true, data: getAccuracyReviewAudits(req.params.id) });
 });
 
 module.exports = router;

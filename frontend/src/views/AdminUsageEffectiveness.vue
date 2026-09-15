@@ -69,7 +69,7 @@
 
       <article class="group-card management-panel">
         <div class="panel-head"><div><p class="section-kicker">质量与效率</p><h2>质量与效率指标</h2></div><el-tag type="info" effect="plain">待积累数据</el-tag></div>
-        <div class="empty-metric-list"><div><b>业务复核通过率 / 准确率</b><span>暂无复核样本</span></div><div><b>总量节时率</b><span>{{ efficiency.summary.aggregateTimeSavingRate == null ? '暂无人工确认的可比样本' : `${efficiency.summary.aggregateTimeSavingRate}%（${efficiency.summary.comparableSampleCount} 个样本）` }}</span></div><div><b>返工率</b><span>当前日志无法可靠推出</span></div></div>
+        <div class="empty-metric-list"><div><b>业务复核准确率</b><span>{{ accuracy.summary.accuracyRate == null ? '暂无人工复核案例' : `${accuracy.summary.accuracyRate}%（${accuracy.summary.reviewedCount} 个案例）` }}</span></div><div><b>总量节时率</b><span>{{ efficiency.summary.aggregateTimeSavingRate == null ? '暂无人工确认的可比样本' : `${efficiency.summary.aggregateTimeSavingRate}%（${efficiency.summary.comparableSampleCount} 个样本）` }}</span></div><div><b>返工率</b><span>当前日志无法可靠推出</span></div></div>
       </article>
     </section>
 
@@ -96,6 +96,31 @@
         <el-table-column label="操作" width="82"><template #default="scope"><el-button link type="primary" @click="openComparison(scope.row)">修订</el-button></template></el-table-column>
       </el-table>
       <p class="formula-note">总量公式：{{ efficiency.formula }}。负值表示实际变慢，原样保留。</p>
+    </section>
+
+    <section class="accuracy-panel management-panel">
+      <div class="panel-head">
+        <div><p class="section-kicker">准确性证据</p><h2>人工业务结果复核</h2><small>准确率只使用人工复核结论；partial/fail 不折算通过，严重错误由复核人独立标记。</small></div>
+        <div class="accuracy-actions"><el-switch v-model="showSevereOnly" active-text="只看严重错误" /><el-button type="primary" size="small" :disabled="!accuracy.candidates.length" @click="openAccuracyReview()">录入复核案例</el-button></div>
+      </div>
+      <div v-if="accuracy.summary.reviewedCount" class="accuracy-metrics">
+        <div><span>正式复核案例</span><strong>{{ accuracy.summary.reviewedCount }}</strong></div>
+        <div><span>通过 / 部分 / 未通过</span><strong>{{ accuracy.summary.passCount }} / {{ accuracy.summary.partialCount }} / {{ accuracy.summary.failCount }}</strong></div>
+        <div><span>准确率</span><strong>{{ accuracy.summary.accuracyRate }}%</strong></div>
+        <div><span>严重错误</span><strong>{{ accuracy.summary.severeErrorCount }}</strong></div>
+      </div>
+      <el-empty v-else description="暂无人工复核案例，不从日志推断准确率" :image-size="54" />
+      <el-table v-if="displayedAccuracyReviews.length" :data="displayedAccuracyReviews" size="small">
+        <el-table-column label="任务" min-width="180"><template #default="scope">{{ scope.row.task?.sourceRef || scope.row.usageTaskId }}</template></el-table-column>
+        <el-table-column label="结论" width="90"><template #default="scope">{{ accuracyOutcomeLabel(scope.row.outcome) }}</template></el-table-column>
+        <el-table-column label="严重错误" width="90"><template #default="scope">{{ scope.row.severeError ? '是' : '否' }}</template></el-table-column>
+        <el-table-column label="当前口径" width="92"><template #default="scope">{{ scope.row.includedInFormalAggregate ? '正式计入' : '不计入' }}</template></el-table-column>
+        <el-table-column label="证据" prop="reviewNote" min-width="210" show-overflow-tooltip />
+        <el-table-column label="复核人" min-width="110"><template #default="scope">{{ scope.row.reviewerSnapshot?.nickname || scope.row.reviewerSnapshot?.username || scope.row.reviewerUserId }}</template></el-table-column>
+        <el-table-column label="复核时间" min-width="158"><template #default="scope">{{ formatDate(scope.row.reviewedAt) }}</template></el-table-column>
+        <el-table-column label="操作" width="82"><template #default="scope"><el-button link type="primary" @click="openAccuracyReview(scope.row)">修订</el-button></template></el-table-column>
+      </el-table>
+      <p class="formula-note">准确率公式：{{ accuracy.formula }}；报告周期按关联任务完成时间归属，复核时间仅作为证据元数据。</p>
     </section>
 
     <section :class="['tasks-panel', 'management-panel', { 'is-empty': !data.recentTasks.length }]">
@@ -143,7 +168,8 @@
         <section><h3>有效与重复使用用户</h3><p>有效用户为有效任务的 distinct `actor_user_id`；重复用户为范围内有效任务数 ≥ 2 的 actor；重复使用率以前者为分母。</p></section>
         <section><h3>Attempts</h3><p>对有效任务关联的 `usage_task_attempts` 计数；平均值 = attempts / 有效任务，分母为 0 时显示空态。</p></section>
         <section><h3>数据来源</h3><p>`usage_tasks`、`usage_task_attempts`；最近任务保留 task/source/prototype/project/actor/outcome 与 attempt readback。</p></section>
-        <section><h3>尚不可计算</h3><p>目标用户与组织分母、质量复核 evidence、效率对照样本尚未冻结，因此覆盖率、部门、准确率、效率、审核时长和返工率不展示数值。</p></section>
+        <section><h3>准确性复核</h3><p>准确率 = 正式计入且关联任务当前有效的 pass 案例 / 正式复核案例；partial/fail 不折算通过，严重错误为人工独立事实。报告期按任务 completed_at 归属。</p></section>
+        <section><h3>尚不可计算</h3><p>目标用户与组织分母、审核时长和返工率仍无可靠口径，不展示推断数值。</p></section>
         <section><h3>最近更新时间</h3><p>{{ formatDate(data.generatedAt) }}</p></section>
       </div>
     </el-drawer>
@@ -168,6 +194,21 @@
       </el-form>
       <template #footer><el-button @click="comparisonDialog=false">取消</el-button><el-button type="primary" :loading="savingComparison" @click="saveComparison">保存证据</el-button></template>
     </el-dialog>
+
+    <el-dialog v-model="accuracyDialog" :title="accuracyForm.id ? '修订复核案例' : '录入复核案例'" width="620px">
+      <el-form label-position="top">
+        <el-form-item label="已完成的有效业务任务" required><el-select v-model="accuracyForm.usageTaskId" filterable :disabled="Boolean(accuracyForm.id)" placeholder="选择任务"><el-option v-for="task in accuracy.candidates" :key="task.id" :disabled="Boolean(task.reviewId) && task.reviewId !== accuracyForm.id" :label="`${kindLabel(task.taskKind)} · ${task.sourceRef} · ${task.actorName || task.actorUserId}`" :value="task.id" /></el-select></el-form-item>
+        <div class="form-grid"><el-form-item label="人工复核结论" required><el-select v-model="accuracyForm.outcome"><el-option label="通过" value="pass" /><el-option label="部分符合" value="partial" /><el-option label="未通过" value="fail" /></el-select></el-form-item><el-form-item label="严重错误"><el-switch v-model="accuracyForm.severeError" active-text="是" inactive-text="否" /></el-form-item></div>
+        <div class="form-grid"><el-form-item label="结果类型"><el-input v-model="accuracyForm.artifactType" placeholder="如 prototype_version" /></el-form-item><el-form-item label="结果标识"><el-input v-model="accuracyForm.artifactRef" placeholder="可复核的版本或结果 ID" /></el-form-item></div>
+        <el-form-item label="复核证据" required><el-input v-model="accuracyForm.reviewNote" type="textarea" :rows="3" placeholder="记录人工判断依据，不从日志自动推断" /></el-form-item>
+        <el-form-item label="是否进入正式统计"><el-switch v-model="accuracyForm.included" active-text="计入" inactive-text="不计入" /></el-form-item>
+        <el-form-item v-if="!accuracyForm.included" label="不计入原因" required><el-input v-model="accuracyForm.exclusionReason" /></el-form-item>
+        <el-form-item label="复核时间" required><el-date-picker v-model="accuracyForm.reviewedAt" type="datetime" /></el-form-item>
+        <el-form-item v-if="accuracyForm.id" label="修订原因" required><el-input v-model="accuracyForm.changeReason" placeholder="审计记录将保留修改前后事实" /></el-form-item>
+        <div v-if="accuracyForm.id" class="accuracy-audits"><b>审计历史</b><span v-for="audit in accuracyAudits" :key="audit.id">{{ audit.action === 'created' ? '创建' : '修订' }} · {{ audit.change_reason }} · {{ formatDate(audit.created_at) }}</span></div>
+      </el-form>
+      <template #footer><el-button @click="accuracyDialog=false">取消</el-button><el-button type="primary" :loading="savingAccuracy" @click="saveAccuracyReview">保存复核</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -175,7 +216,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { Filter, InfoFilled, Refresh } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus/es/components/message/index.mjs'
-import { createEfficiencyComparison, getUsageEffectiveness, getUsageEfficiency, updateEfficiencyComparison } from '../api/admin-usage'
+import { createAccuracyReview, createEfficiencyComparison, getAccuracyReviewAudits, getUsageAccuracy, getUsageEffectiveness, getUsageEfficiency, updateAccuracyReview, updateEfficiencyComparison } from '../api/admin-usage'
 
 const loading = ref(false)
 const errorMessage = ref('')
@@ -185,12 +226,19 @@ const filterDrawer = ref(false)
 const methodDrawer = ref(false)
 const comparisonDialog = ref(false)
 const savingComparison = ref(false)
+const accuracyDialog = ref(false)
+const savingAccuracy = ref(false)
+const showSevereOnly = ref(false)
+const accuracyAudits = ref([])
 const filters = reactive({ taskKind: '', source: '' })
 const data = ref({ generatedAt: null, reportingTimezone: 'Asia/Shanghai', reportingOffsetMinutes: 480, period: { from: null, to: null }, summary: {}, kindDistribution: [], trend: [], recentTasks: [] })
 const efficiency = ref({ formula: '', summary: {}, recentSamples: [], candidates: [] })
+const accuracy = ref({ formula: '', summary: {}, recentReviews: [], severeErrorReviews: [], candidates: [] })
 const comparisonForm = reactive({ id: '', usageTaskId: '', traditionalMinutes: null, traditionalBaselineType: '', baselineSourceNote: '', fuxiTotalMinutes: 0, aiOrPlatformMinutes: null, manualReviewMinutes: null, reworkMinutes: null, comparable: true, exclusionReason: '', evidenceNote: '', measuredAt: new Date(), changeReason: '' })
+const accuracyForm = reactive({ id: '', usageTaskId: '', outcome: 'pass', severeError: false, artifactType: '', artifactRef: '', included: true, exclusionReason: '', reviewNote: '', reviewedAt: new Date(), changeReason: '' })
 const summary = computed(() => data.value.summary || {})
 const activeFilterCount = computed(() => [filters.taskKind, filters.source].filter(Boolean).length)
+const displayedAccuracyReviews = computed(() => showSevereOnly.value ? accuracy.value.severeErrorReviews : accuracy.value.recentReviews)
 const periodCaption = computed(() => `${formatDateOnly(data.value.period.from)} 至 ${formatDateOnly(data.value.period.to)}`)
 const conclusion = computed(() => {
   if (!summary.value.completedTaskCount) return '当前范围暂无可计入的有效业务任务，未使用测试或排除数据补齐指标。'
@@ -213,6 +261,7 @@ function formatNumber(value) { return Number(value || 0).toLocaleString('zh-CN')
 function formatDateOnly(value) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date) }
 function formatDate(value) { if (!value) return '—'; const date = new Date(value); return Number.isNaN(date.getTime()) ? '—' : new Intl.DateTimeFormat('zh-CN', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date) }
 function kindLabel(kind) { return { create: '创建', direct: '直接变更', project: '项目任务' }[kind] || kind }
+function accuracyOutcomeLabel(outcome) { return { pass: '通过', partial: '部分符合', fail: '未通过' }[outcome] || outcome }
 function kindPercent(count) { return summary.value.completedTaskCount ? Math.round((Number(count) / summary.value.completedTaskCount) * 100) : 0 }
 function repeatRateLabel() { return summary.value.repeatUserRate == null ? '暂无分母' : `${summary.value.repeatUserRate}%` }
 function reportingBoundaryIso(year, month, day) { return new Date(Date.UTC(year, month, day) - 480 * 60 * 1000).toISOString() }
@@ -229,9 +278,11 @@ function dateParams() {
   const days = period.value === '7d' ? 7 : 30
   return { from: new Date(endDayUtc - days * 86400000 - 480 * 60 * 1000).toISOString(), to: new Date(endDayUtc - 480 * 60 * 1000).toISOString() }
 }
-async function loadData() { if (period.value === 'custom' && customRange.value.length !== 2) return; loading.value = true; errorMessage.value = ''; try { const params = { ...dateParams(), taskKind: filters.taskKind || undefined, source: filters.source || undefined, recentLimit: 20 }; const [usageResponse, efficiencyResponse] = await Promise.all([getUsageEffectiveness(params), getUsageEfficiency({ from: params.from, to: params.to, measurementScope: 'award-2026', recentLimit: 20 })]); data.value = usageResponse.data.data; efficiency.value = efficiencyResponse.data.data } catch (error) { errorMessage.value = error.response?.data?.message || error.message || '使用与成效数据加载失败'; ElMessage.error(errorMessage.value) } finally { loading.value = false } }
+async function loadData() { if (period.value === 'custom' && customRange.value.length !== 2) return; loading.value = true; errorMessage.value = ''; try { const params = { ...dateParams(), taskKind: filters.taskKind || undefined, source: filters.source || undefined, recentLimit: 20 }; const evidenceParams = { from: params.from, to: params.to, measurementScope: 'award-2026', recentLimit: 20 }; const [usageResponse, efficiencyResponse, accuracyResponse] = await Promise.all([getUsageEffectiveness(params), getUsageEfficiency(evidenceParams), getUsageAccuracy(evidenceParams)]); data.value = usageResponse.data.data; efficiency.value = efficiencyResponse.data.data; accuracy.value = accuracyResponse.data.data } catch (error) { errorMessage.value = error.response?.data?.message || error.message || '使用与成效数据加载失败'; ElMessage.error(errorMessage.value) } finally { loading.value = false } }
 function openComparison(row = null) { Object.assign(comparisonForm, { id: row?.id || '', usageTaskId: row?.usageTaskId || '', traditionalMinutes: row?.traditionalMinutes ?? null, traditionalBaselineType: row?.traditionalBaselineType || '', baselineSourceNote: row?.baselineSourceNote || '', fuxiTotalMinutes: row?.fuxiTotalMinutes ?? 0, aiOrPlatformMinutes: row?.aiOrPlatformMinutes ?? null, manualReviewMinutes: row?.manualReviewMinutes ?? null, reworkMinutes: row?.reworkMinutes ?? null, comparable: row?.comparable ?? true, exclusionReason: row?.exclusionReason || '', evidenceNote: row?.evidenceNote || '', measuredAt: row?.measuredAt ? new Date(row.measuredAt) : new Date(), changeReason: '' }); comparisonDialog.value = true }
 async function saveComparison() { savingComparison.value = true; try { const payload = { ...comparisonForm, measurementScope: 'award-2026', measuredAt: comparisonForm.measuredAt?.toISOString?.() || comparisonForm.measuredAt }; if (comparisonForm.id) await updateEfficiencyComparison(comparisonForm.id, payload); else await createEfficiencyComparison(payload); ElMessage.success('效率证据已保存并记录审计'); comparisonDialog.value = false; await loadData() } catch (error) { ElMessage.error(error.response?.data?.message || error.message || '效率证据保存失败') } finally { savingComparison.value = false } }
+async function openAccuracyReview(row = null) { Object.assign(accuracyForm, { id: row?.id || '', usageTaskId: row?.usageTaskId || '', outcome: row?.outcome || 'pass', severeError: row?.severeError ?? false, artifactType: row?.artifactType || '', artifactRef: row?.artifactRef || '', included: row?.included ?? true, exclusionReason: row?.exclusionReason || '', reviewNote: row?.reviewNote || '', reviewedAt: row?.reviewedAt ? new Date(row.reviewedAt) : new Date(), changeReason: '' }); accuracyAudits.value = []; accuracyDialog.value = true; if (row?.id) { try { accuracyAudits.value = (await getAccuracyReviewAudits(row.id)).data.data } catch (error) { ElMessage.error('审计历史加载失败') } } }
+async function saveAccuracyReview() { savingAccuracy.value = true; try { const payload = { ...accuracyForm, measurementScope: 'award-2026', reviewedAt: accuracyForm.reviewedAt?.toISOString?.() || accuracyForm.reviewedAt }; if (accuracyForm.id) await updateAccuracyReview(accuracyForm.id, payload); else await createAccuracyReview(payload); ElMessage.success('准确性复核已保存并记录审计'); accuracyDialog.value = false; await loadData() } catch (error) { ElMessage.error(error.response?.data?.message || error.message || '准确性复核保存失败') } finally { savingAccuracy.value = false } }
 function handlePeriodChange(value) { if (value !== 'custom') loadData() }
 function applyFilters() { filterDrawer.value = false; loadData() }
 function resetFilters() { filters.taskKind = ''; filters.source = ''; filterDrawer.value = false; loadData() }
@@ -241,4 +292,6 @@ onMounted(loadData)
 <style scoped>
 .effectiveness-page{color:#172033}.effectiveness-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;margin-bottom:18px}.eyebrow,.section-kicker{margin:0 0 6px;color:#2563eb;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.effectiveness-head h1{margin:0;font-size:28px;line-height:1.25}.subtitle{max-width:700px;margin:8px 0 0;color:#475569;font-size:13px;line-height:1.7}.toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}.trust-note{display:flex;align-items:center;gap:8px;margin-bottom:16px;padding:10px 14px;border:1px solid #bfdbfe;border-radius:10px;background:#eff6ff;color:#1d4ed8;font-size:12px}.trust-note small{margin-left:auto;color:#475569}.conclusion-panel{display:flex;align-items:center;justify-content:space-between;gap:20px;margin:16px 0;padding:20px 22px;border-left:4px solid #2563eb}.conclusion-panel h2{margin:0;max-width:900px;font-size:17px;line-height:1.6}.period-caption{flex:0 0 auto;color:#475569;font-size:12px}.hero-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:16px}.metric-card{display:flex;flex-direction:column;min-height:142px;padding:20px}.metric-card span{color:#475569;font-size:12px}.metric-card strong{margin-top:15px;font-size:34px;line-height:1}.metric-card small{margin-top:auto;padding-top:16px;color:#64748b;font-size:12px}.trend-panel,.tasks-panel,.efficiency-panel{margin-bottom:16px;padding:22px}.panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:18px}.panel-head h2{margin:0;font-size:17px}.panel-head small{display:block;margin-top:5px;color:#64748b;font-size:12px}.efficiency-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.efficiency-metrics>div{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;background:#f8fafc}.efficiency-metrics span,.formula-note,.form-hint{color:#64748b;font-size:12px}.efficiency-metrics strong{font-size:20px}.negative{color:#dc2626}.formula-note{margin:14px 0 0}.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.form-grid--three{grid-template-columns:repeat(3,1fr)}.form-hint{margin:-4px 0 12px}.legend{display:flex;gap:12px;color:#475569;font-size:12px}.legend span::before{display:inline-block;width:8px;height:8px;margin-right:5px;border-radius:50%;background:#334155;content:''}.legend .create::before{background:#2563eb}.legend .direct::before{background:#14b8a6}.legend .project::before{background:#f59e0b}.chart-wrap{min-height:280px}.chart-wrap svg{width:100%;height:260px;overflow:visible}.grid-line{stroke:#e8edf4;stroke-width:1}.axis-label{fill:#475569;font-size:11px}.x-label{text-anchor:middle}.chart-line{fill:none;stroke:#334155;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}.chart-line.is-create{stroke:#2563eb;stroke-width:2}.chart-line.is-direct{stroke:#14b8a6;stroke-width:2}.chart-line.is-project{stroke:#f59e0b;stroke-width:2}.trend-table{overflow:auto;border:1px solid #e2e8f0;border-radius:8px;color:#475569;font-size:11px}.trend-row{display:grid;grid-template-columns:minmax(100px,1.4fr) repeat(4,minmax(72px,1fr));min-width:450px}.trend-row span{padding:7px 10px;border-bottom:1px solid #e2e8f0}.trend-row--head{background:#f8fafc;font-weight:700}.trend-row:last-child span{border-bottom:0}.group-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:16px}.group-card{min-height:310px;padding:20px}.repeat-summary{display:flex;align-items:baseline;gap:10px;margin:24px 0 16px}.repeat-summary strong{font-size:32px}.repeat-summary span,.card-note{color:#475569;font-size:12px}.card-note{margin:14px 0;line-height:1.6}.empty-evidence{display:flex;flex-direction:column;gap:5px;margin-top:20px;padding:13px;border-radius:9px;background:#f8fafc}.empty-evidence b,.empty-metric-list b{color:#334155;font-size:12px}.empty-evidence span,.empty-metric-list span{color:#64748b;font-size:12px}.kind-list{display:flex;flex-direction:column;gap:18px}.kind-list>div{display:grid;grid-template-columns:72px 1fr 30px;align-items:center;gap:10px;font-size:12px}.kind-list b{text-align:right}.empty-metric-list{display:flex;flex-direction:column;gap:10px}.empty-metric-list>div{display:flex;flex-direction:column;gap:5px;padding:14px;border:1px dashed #cbd5e1;border-radius:9px;background:#f8fafc}.attempt-detail{padding:14px 48px}.task-readback{display:grid;grid-template-columns:90px 1fr 90px 1fr;gap:8px;margin-bottom:14px}.attempt-detail code{overflow:hidden;color:#334155;font-size:12px;text-overflow:ellipsis}.method-list{display:flex;flex-direction:column;gap:18px}.method-list h3{margin:0 0 6px;font-size:14px}.method-list p{margin:0;color:#475569;font-size:12px;line-height:1.7}@media(max-width:1180px){.effectiveness-head{display:block}.toolbar{justify-content:flex-start;margin-top:16px}.hero-grid{grid-template-columns:repeat(2,1fr)}.group-grid{grid-template-columns:1fr}.efficiency-metrics{grid-template-columns:repeat(2,1fr)}.trust-note{align-items:flex-start;flex-wrap:wrap}.trust-note small{width:100%;margin-left:24px}}@media(max-width:680px){.hero-grid,.efficiency-metrics,.form-grid,.form-grid--three{grid-template-columns:1fr}.toolbar{align-items:stretch;flex-direction:column}.conclusion-panel{align-items:flex-start;flex-direction:column}.attempt-detail{padding:10px}.task-readback{grid-template-columns:1fr}.legend{flex-wrap:wrap}}
 .trust-copy{display:flex;align-items:center;gap:5px;margin:8px 0 0;color:#64748b;font-size:12px}.trust-copy .el-icon{color:#64748b}.disabled-action{display:inline-flex}.group-card{min-height:0}.trend-panel.is-empty{padding-bottom:14px}.trend-panel.is-empty .panel-head{margin-bottom:6px}.trend-panel.is-empty :deep(.el-empty){padding:6px 0}.trend-panel.is-empty :deep(.el-empty__image){width:44px}.trend-panel.is-empty :deep(.el-empty__description){margin-top:4px}.tasks-panel.is-empty{padding-bottom:14px}.tasks-panel.is-empty :deep(.el-table__empty-block){min-height:72px}.tasks-panel.is-empty :deep(.el-table__empty-text){line-height:72px}@media(max-width:680px){.disabled-action,.disabled-action .el-button{width:100%}}
+.accuracy-panel{margin-bottom:16px;padding:22px}.accuracy-metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px}.accuracy-metrics>div{display:flex;flex-direction:column;gap:8px;padding:14px;border-radius:8px;background:#f8fafc}.accuracy-metrics span{color:#64748b;font-size:12px}.accuracy-metrics strong{font-size:20px}.accuracy-actions{display:flex;align-items:center;gap:14px}@media(max-width:1180px){.accuracy-metrics{grid-template-columns:repeat(2,1fr)}}@media(max-width:680px){.accuracy-metrics{grid-template-columns:1fr}.accuracy-actions{align-items:flex-start;flex-direction:column}}
+.accuracy-audits{display:flex;flex-direction:column;gap:7px;padding:12px;border-radius:8px;background:#f8fafc;color:#64748b;font-size:12px}.accuracy-audits b{color:#334155}
 </style>
