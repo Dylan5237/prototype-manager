@@ -527,17 +527,23 @@ function createTables() {
       runtime_version TEXT,
       platform TEXT,
       last_reported_at TEXT,
+      previous_refresh_token_hash TEXT,
+      rotated_at TEXT,
+      current_refresh_token_enc TEXT,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
 
-  // 迁移：为旧 MCP 会话补上本地组件版本回报字段。
+  // 迁移：为旧 MCP 会话补上本地组件版本回报字段与 refresh 宽限字段。
   for (const [column, type] of [
     ['mcp_version', 'TEXT'],
     ['skill_version', 'TEXT'],
     ['runtime_version', 'TEXT'],
     ['platform', 'TEXT'],
-    ['last_reported_at', 'TEXT']
+    ['last_reported_at', 'TEXT'],
+    ['previous_refresh_token_hash', 'TEXT'],
+    ['rotated_at', 'TEXT'],
+    ['current_refresh_token_enc', 'TEXT']
   ]) {
     try { db.run(`ALTER TABLE mcp_sessions ADD COLUMN ${column} ${type}`); } catch (e) { /* 字段已存在 */ }
   }
@@ -791,6 +797,8 @@ function createTables() {
     }
   }
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_user ON mcp_sessions(user_id)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_refresh ON mcp_sessions(refresh_token_hash)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_sessions_previous_refresh ON mcp_sessions(previous_refresh_token_hash)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_mcp_connect_codes_user ON mcp_connect_codes(user_id)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_bootstrap_sessions_expiry ON bootstrap_sessions(expires_at)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_agent_releases_channel_status ON agent_releases(channel, status, published_at)`); } catch (e) {}
