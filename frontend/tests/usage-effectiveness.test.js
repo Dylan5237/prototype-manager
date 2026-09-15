@@ -34,6 +34,9 @@ test('efficiency evidence UI exposes controlled entry, audit reason and transpar
   for (const text of ['传统方式与伏羲实际投入对比', '录入效率样本', '传统基线来源说明', '人工复核', '返工', '修订原因', '负值表示实际变慢']) assert.match(page, new RegExp(text))
   assert.match(api, /\/admin\/usage-efficiency/)
   assert.match(page, /aggregateTimeSavingRate == null/)
+  assert.match(page, /includedInFormalAggregate \? '正式计入' : '不计入'/)
+  assert.match(page, /formalExclusionReason/)
+  assert.doesNotMatch(page, /scope\.row\.comparable \? '正式可比'/)
   assert.doesNotMatch(page, /Math\.max\([^\n]*timeSavingRate/)
 })
 

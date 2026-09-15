@@ -82,6 +82,21 @@ function serialize(row) {
   if (!row) return null;
   const traditional = row.traditional_minutes == null ? null : Number(row.traditional_minutes);
   const fuxi = Number(row.fuxi_total_minutes);
+  const hasTaskState = row.task_status !== undefined;
+  const currentlyEligibleTask = hasTaskState
+    ? row.task_status === 'completed' && Number(row.task_is_test) === 0 && !text(row.task_exclusion_reason)
+    : undefined;
+  const includedInFormalAggregate = hasTaskState
+    ? Boolean(row.comparable) && traditional > 0 && currentlyEligibleTask
+    : undefined;
+  let formalExclusionReason;
+  if (hasTaskState && !includedInFormalAggregate) {
+    if (row.task_status !== 'completed') formalExclusionReason = `task_status:${row.task_status}`;
+    else if (Number(row.task_is_test) !== 0) formalExclusionReason = 'task_is_test';
+    else if (text(row.task_exclusion_reason)) formalExclusionReason = row.task_exclusion_reason;
+    else if (!row.comparable) formalExclusionReason = row.exclusion_reason || 'comparison_not_comparable';
+    else if (!(traditional > 0)) formalExclusionReason = 'traditional_minutes_not_positive';
+  }
   return {
     id: row.id, usageTaskId: row.usage_task_id, measurementScope: row.measurement_scope,
     recorderUserId: Number(row.recorder_user_id), reviewerUserId: Number(row.reviewer_user_id),
@@ -94,7 +109,13 @@ function serialize(row) {
     evidenceNote: row.evidence_note || null, measuredAt: row.measured_at,
     recordedAt: row.recorded_at, createdAt: row.created_at, updatedAt: row.updated_at,
     timeSavingRate: row.comparable && traditional > 0 ? Number((((traditional - fuxi) / traditional) * 100).toFixed(1)) : null,
-    task: row.task_kind ? { id: row.usage_task_id, taskKind: row.task_kind, sourceRef: row.source_ref, actorUserId: Number(row.actor_user_id), actorName: row.actor_nickname || row.actor_username || null } : undefined
+    currentlyEligibleTask, includedInFormalAggregate, formalExclusionReason: formalExclusionReason || null,
+    task: row.task_kind ? {
+      id: row.usage_task_id, taskKind: row.task_kind, sourceRef: row.source_ref,
+      actorUserId: Number(row.actor_user_id), actorName: row.actor_nickname || row.actor_username || null,
+      status: row.task_status, isTest: Boolean(row.task_is_test), exclusionReason: row.task_exclusion_reason || null,
+      completedAt: row.task_completed_at
+    } : undefined
   };
 }
 
@@ -149,7 +170,9 @@ function updateEfficiencyComparison(comparisonId, input, { actorUserId } = {}) {
 }
 
 function comparisonRows(where = '', params = []) {
-  return query(`SELECT c.*, t.task_kind, t.source_ref, t.actor_user_id, u.username AS actor_username, u.nickname AS actor_nickname
+  return query(`SELECT c.*, t.task_kind, t.source_ref, t.actor_user_id, t.status AS task_status,
+      t.is_test AS task_is_test, t.exclusion_reason AS task_exclusion_reason, t.completed_at AS task_completed_at,
+      u.username AS actor_username, u.nickname AS actor_nickname
     FROM efficiency_comparisons c
     JOIN usage_tasks t ON t.id=c.usage_task_id LEFT JOIN users u ON u.id=t.actor_user_id ${where}
     ORDER BY c.measured_at DESC, c.id DESC`, params);
@@ -159,31 +182,35 @@ function getEfficiencyComparison(idValue) { return serialize(comparisonRows('WHE
 function getEfficiencyAnalysis({ from, to, measurementScope = 'default', recentLimit = 20 } = {}) {
   const recordClauses = ['c.measurement_scope = ?'];
   const recordParams = [measurementScope];
-  if (from) { recordClauses.push('c.measured_at >= ?'); recordParams.push(from); }
-  if (to) { recordClauses.push('c.measured_at < ?'); recordParams.push(to); }
+  if (from) { recordClauses.push('t.completed_at >= ?'); recordParams.push(from); }
+  if (to) { recordClauses.push('t.completed_at < ?'); recordParams.push(to); }
   const records = comparisonRows(`WHERE ${recordClauses.join(' AND ')}`, recordParams).map(serialize);
   const clauses = ["c.measurement_scope = ?", "c.comparable = 1", "c.traditional_minutes > 0", "t.status = 'completed'", 't.is_test = 0', "COALESCE(t.exclusion_reason, '') = ''"];
   const params = [measurementScope];
-  if (from) { clauses.push('c.measured_at >= ?'); params.push(from); }
-  if (to) { clauses.push('c.measured_at < ?'); params.push(to); }
+  if (from) { clauses.push('t.completed_at >= ?'); params.push(from); }
+  if (to) { clauses.push('t.completed_at < ?'); params.push(to); }
   const comparable = comparisonRows(`WHERE ${clauses.join(' AND ')}`, params).map(serialize);
   const traditionalTotal = comparable.reduce((sum, row) => sum + row.traditionalMinutes, 0);
   const fuxiTotal = comparable.reduce((sum, row) => sum + row.fuxiTotalMinutes, 0);
+  const candidateClauses = ["t.status='completed'", 't.is_test=0', "COALESCE(t.exclusion_reason, '')=''" ];
+  const candidateParams = [measurementScope];
+  if (from) { candidateClauses.push('t.completed_at >= ?'); candidateParams.push(from); }
+  if (to) { candidateClauses.push('t.completed_at < ?'); candidateParams.push(to); }
   const candidates = query(`SELECT t.id, t.task_kind, t.source_ref, t.actor_user_id, t.completed_at,
       u.username AS actor_username, u.nickname AS actor_nickname, c.id AS comparison_id
     FROM usage_tasks t LEFT JOIN users u ON u.id=t.actor_user_id
     LEFT JOIN efficiency_comparisons c ON c.usage_task_id=t.id AND c.measurement_scope=?
-    WHERE t.status='completed' AND t.is_test=0 AND COALESCE(t.exclusion_reason, '')=''
-    ORDER BY t.completed_at DESC`, [measurementScope]).map(row => ({
+    WHERE ${candidateClauses.join(' AND ')}
+    ORDER BY t.completed_at DESC`, candidateParams).map(row => ({
       id: row.id, taskKind: row.task_kind, sourceRef: row.source_ref, actorUserId: Number(row.actor_user_id),
       actorName: row.actor_nickname || row.actor_username || null, completedAt: row.completed_at,
       comparisonId: row.comparison_id || null
     }));
   const limit = Math.min(100, Math.max(1, Number(recentLimit) || 20));
   return {
-    generatedAt: now(), measurementScope,
+    generatedAt: now(), measurementScope, periodAnchor: 'usage_tasks.completed_at',
     formula: '(SUM(traditional_minutes) - SUM(fuxi_total_minutes)) / SUM(traditional_minutes)',
-    inclusionRules: ["comparison.comparable = 1", 'traditional_minutes > 0', "task.status = 'completed'", 'task.is_test = 0', "COALESCE(task.exclusion_reason, '') = ''"],
+    inclusionRules: ["usage_tasks.completed_at >= from AND usage_tasks.completed_at < to", "comparison.comparable = 1", 'traditional_minutes > 0', "task.status = 'completed'", 'task.is_test = 0', "COALESCE(task.exclusion_reason, '') = ''"],
     summary: {
       comparableSampleCount: comparable.length,
       traditionalTotalMinutes: traditionalTotal,

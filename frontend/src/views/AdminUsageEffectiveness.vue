@@ -89,7 +89,8 @@
         <el-table-column label="任务" min-width="180"><template #default="scope">{{ scope.row.task?.sourceRef || scope.row.usageTaskId }}</template></el-table-column>
         <el-table-column prop="traditionalMinutes" label="传统耗时（分钟）" width="130" />
         <el-table-column prop="fuxiTotalMinutes" label="伏羲总投入（分钟）" width="140" />
-        <el-table-column label="口径" width="92"><template #default="scope">{{ scope.row.comparable ? '正式可比' : '已排除' }}</template></el-table-column>
+        <el-table-column label="当前口径" width="92"><template #default="scope">{{ scope.row.includedInFormalAggregate ? '正式计入' : '不计入' }}</template></el-table-column>
+        <el-table-column label="不计入原因" min-width="150"><template #default="scope">{{ scope.row.formalExclusionReason || '—' }}</template></el-table-column>
         <el-table-column label="单例节时率" width="110"><template #default="scope"><span :class="{ negative: scope.row.timeSavingRate < 0 }">{{ scope.row.timeSavingRate == null ? '—' : `${scope.row.timeSavingRate}%` }}</span></template></el-table-column>
         <el-table-column prop="baselineSourceNote" label="基线来源" min-width="210" show-overflow-tooltip />
         <el-table-column label="操作" width="82"><template #default="scope"><el-button link type="primary" @click="openComparison(scope.row)">修订</el-button></template></el-table-column>

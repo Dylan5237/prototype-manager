@@ -32,7 +32,7 @@ test.afterEach(() => {
 
 function completedTask(ref, options = {}) {
   const task = ensureUsageTask({ taskKind: options.taskKind || 'create', actorUserId: 1, sourceRef: ref, isTest: options.isTest });
-  completeUsageTask(task.id, { completedAt: '2026-09-15T09:00:00.000Z' });
+  completeUsageTask(task.id, { completedAt: options.completedAt || '2026-09-15T09:00:00.000Z' });
   return task;
 }
 
@@ -115,7 +115,31 @@ test('test or excluded tasks cannot receive an efficiency comparison', () => {
   const laterExcluded = completedTask('eff-later-excluded');
   sample(laterExcluded);
   setUsageTaskExclusion(laterExcluded.id, { actorUserId: 2, exclusionReason: 'later classification' });
-  assert.equal(getEfficiencyAnalysis({ measurementScope: 'award-2026' }).summary.comparableSampleCount, 0);
+  const result = getEfficiencyAnalysis({ measurementScope: 'award-2026' });
+  assert.equal(result.summary.comparableSampleCount, 0);
+  assert.equal(result.recentSamples[0].currentlyEligibleTask, false);
+  assert.equal(result.recentSamples[0].includedInFormalAggregate, false);
+  assert.equal(result.recentSamples[0].formalExclusionReason, 'later classification');
+});
+
+test('reporting period follows task completion time while measured_at remains metadata', () => {
+  const beforePeriod = completedTask('eff-completed-before', { completedAt: '2026-09-14T23:59:59.000Z' });
+  sample(beforePeriod, { measuredAt: '2026-09-15T10:00:00.000Z' });
+  const insidePeriod = completedTask('eff-completed-inside', { completedAt: '2026-09-15T10:00:00.000Z' });
+  const insideSample = sample(insidePeriod, { measuredAt: '2026-09-17T10:00:00.000Z' });
+
+  const result = getEfficiencyAnalysis({
+    measurementScope: 'award-2026',
+    from: '2026-09-15T00:00:00.000Z',
+    to: '2026-09-16T00:00:00.000Z'
+  });
+  assert.equal(result.periodAnchor, 'usage_tasks.completed_at');
+  assert.equal(result.summary.comparableSampleCount, 1);
+  assert.deepEqual(result.recentSamples.map(row => row.id), [insideSample.id]);
+  assert.deepEqual(result.candidates.map(row => row.id), [insidePeriod.id]);
+  assert.equal(result.recentSamples[0].measuredAt, '2026-09-17T10:00:00.000Z');
+  assert.equal(result.recentSamples[0].task.completedAt, '2026-09-15T10:00:00.000Z');
+  assert.equal(result.recentSamples[0].includedInFormalAggregate, true);
 });
 
 test('breakdown must equal total and duplicate scope cannot double count one task', () => {
