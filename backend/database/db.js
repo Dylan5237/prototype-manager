@@ -380,6 +380,51 @@ function createTables() {
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_tasks_source_ref ON usage_tasks(task_kind, source_ref)`); } catch (e) {}
   try { db.run(`CREATE INDEX IF NOT EXISTS idx_usage_task_attempts_task ON usage_task_attempts(usage_task_id, attempt_no)`); } catch (e) {}
 
+  // 效率对比证据：人工确认基线与实际总投入，不从任务时间戳推断工时。
+  db.run(`
+    CREATE TABLE IF NOT EXISTS efficiency_comparisons (
+      id TEXT PRIMARY KEY,
+      usage_task_id TEXT NOT NULL,
+      measurement_scope TEXT NOT NULL DEFAULT 'default',
+      recorder_user_id INTEGER NOT NULL,
+      reviewer_user_id INTEGER NOT NULL,
+      traditional_minutes REAL,
+      traditional_baseline_type TEXT,
+      baseline_source_note TEXT,
+      fuxi_total_minutes REAL NOT NULL,
+      ai_or_platform_minutes REAL,
+      manual_review_minutes REAL,
+      rework_minutes REAL,
+      comparable INTEGER NOT NULL DEFAULT 0 CHECK(comparable IN (0, 1)),
+      exclusion_reason TEXT,
+      evidence_note TEXT,
+      measured_at TEXT NOT NULL,
+      recorded_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (usage_task_id) REFERENCES usage_tasks(id),
+      FOREIGN KEY (recorder_user_id) REFERENCES users(id),
+      FOREIGN KEY (reviewer_user_id) REFERENCES users(id),
+      UNIQUE(usage_task_id, measurement_scope)
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS efficiency_comparison_audits (
+      id TEXT PRIMARY KEY,
+      comparison_id TEXT NOT NULL,
+      actor_user_id INTEGER NOT NULL,
+      action TEXT NOT NULL CHECK(action IN ('created', 'updated')),
+      change_reason TEXT NOT NULL,
+      before_json TEXT,
+      after_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (comparison_id) REFERENCES efficiency_comparisons(id),
+      FOREIGN KEY (actor_user_id) REFERENCES users(id)
+    )
+  `);
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_efficiency_comparisons_period ON efficiency_comparisons(comparable, measured_at)`); } catch (e) {}
+  try { db.run(`CREATE INDEX IF NOT EXISTS idx_efficiency_audits_comparison ON efficiency_comparison_audits(comparison_id, created_at)`); } catch (e) {}
+
   // prototype_shares 表：记录原型分享给哪些用户
   db.run(`
     CREATE TABLE IF NOT EXISTS prototype_shares (
