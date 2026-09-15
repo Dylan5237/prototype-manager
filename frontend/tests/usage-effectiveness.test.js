@@ -22,12 +22,22 @@ test('page preserves frozen IA, trusted metrics and explicit unsupported-metric 
   for (const text of ['结论摘要', '核心指标', '有效业务任务趋势', '用户覆盖', '业务使用', '质量与效率', '最近业务任务', '数据口径说明']) {
     assert.match(page, new RegExp(text))
   }
-  for (const text of ['待配置用户范围', '暂无复核样本', '暂无效率对比样本', '当前日志无法可靠推出']) {
+  for (const text of ['待配置用户范围', '暂无复核样本', '暂无人工确认的可比样本', '当前日志无法可靠推出']) {
     assert.match(page, new RegExp(text))
   }
   assert.match(page, /is_test=1/)
   assert.match(page, /exclusion_reason/)
   assert.doesNotMatch(page, /92分|4分|mock/i)
+})
+
+test('efficiency evidence UI exposes controlled entry, audit reason and transparent non-clamped formula', () => {
+  for (const text of ['传统方式与伏羲实际投入对比', '录入效率样本', '传统基线来源说明', '人工复核', '返工', '修订原因', '负值表示实际变慢']) assert.match(page, new RegExp(text))
+  assert.match(api, /\/admin\/usage-efficiency/)
+  assert.match(page, /aggregateTimeSavingRate == null/)
+  assert.match(page, /includedInFormalAggregate \? '正式计入' : '不计入'/)
+  assert.match(page, /formalExclusionReason/)
+  assert.doesNotMatch(page, /scope\.row\.comparable \? '正式可比'/)
+  assert.doesNotMatch(page, /Math\.max\([^\n]*timeSavingRate/)
 })
 
 test('repeat-rate UI keeps denominator-zero as an empty value instead of a fake zero', () => {
