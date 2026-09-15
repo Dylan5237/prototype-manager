@@ -214,6 +214,22 @@ function replaceTree(source, target) {
   copyTree(source, target);
 }
 
+function parseAccessExpiresAt(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim()) {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber) && asNumber > 1e12) return asNumber;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+}
+
+function accessTokenStillValid(credentials) {
+  if (!credentials || typeof credentials.accessToken !== 'string' || !credentials.accessToken) return false;
+  return parseAccessExpiresAt(credentials.accessExpiresAt) > Date.now() + 5000;
+}
+
 function readCredentials(credentialsFile) {
   try {
     const credentials = readJson(credentialsFile);
@@ -248,6 +264,14 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
       };
     }
     if (!credentials) return null;
+    if (accessTokenStillValid(credentials)) {
+      return {
+        token: credentials.accessToken,
+        sessionId: credentials.sessionId,
+        accessExpiresAt: parseAccessExpiresAt(credentials.accessExpiresAt),
+        credentials
+      };
+    }
     const response = await fetch(`${apiUrl.replace(/\/+$/, '')}/api/auth/mcp/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -260,12 +284,17 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
       throw error;
     }
     const data = body.data || {};
+    const accessExpiresAt = data.expiresAt
+      ? Date.parse(data.expiresAt)
+      : Date.now() + Number(data.expiresIn || 0) * 1000;
     const next = {
       ...credentials,
       apiUrl,
       refreshToken: data.refreshToken,
       sessionId: data.sessionId || credentials.sessionId,
       sessionExpiresAt: data.sessionExpiresAt || credentials.sessionExpiresAt || null,
+      accessToken: data.accessToken,
+      accessExpiresAt,
       deviceLabel,
       updatedAt: nowIso()
     };
@@ -273,7 +302,7 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
     return {
       token: data.accessToken,
       sessionId: next.sessionId,
-      accessExpiresAt: data.expiresAt ? Date.parse(data.expiresAt) : Date.now() + Number(data.expiresIn || 0) * 1000,
+      accessExpiresAt,
       credentials: next
     };
   } finally {

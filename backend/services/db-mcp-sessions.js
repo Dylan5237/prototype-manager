@@ -48,10 +48,18 @@ function createSession(userId, deviceLabel) {
   return { id, refreshToken, expiresAt };
 }
 
-// 校验 refresh token，成功后轮换：新 token 写回，旧 token 立即失效；有效期滑动延长。
+function findSessionByRefreshToken(refreshToken) {
+  const hash = sha256(refreshToken);
+  const current = queryOne(`SELECT * FROM mcp_sessions WHERE refresh_token_hash = ?`, [hash]);
+  if (current) return current;
+  return queryOne(`SELECT * FROM mcp_sessions WHERE previous_refresh_token_hash = ?`, [hash]);
+}
+
+// 校验 refresh token 并轮换。当前 token 与上一轮 token 都可换新；
+// 上一轮 token 成功时不吊销会话，避免多实例/丢响应把健康会话整族作废。
 function rotateSession(refreshToken, deviceLabel) {
   if (!refreshToken) return { ok: false, reason: 'MISSING_REFRESH_TOKEN' };
-  const row = queryOne(`SELECT * FROM mcp_sessions WHERE refresh_token_hash = ?`, [sha256(refreshToken)]);
+  const row = findSessionByRefreshToken(refreshToken);
   if (!row) return { ok: false, reason: 'INVALID_REFRESH_TOKEN' };
   if (row.revoked_at) return { ok: false, reason: 'SESSION_REVOKED' };
   if (Date.parse(row.expires_at) <= Date.now()) return { ok: false, reason: 'SESSION_EXPIRED' };
@@ -59,8 +67,8 @@ function rotateSession(refreshToken, deviceLabel) {
   const now = new Date().toISOString();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
   run(
-    `UPDATE mcp_sessions SET refresh_token_hash = ?, last_used_at = ?, expires_at = ?, device_label = COALESCE(?, device_label) WHERE id = ?`,
-    [sha256(nextToken), now, expiresAt, deviceLabel || null, row.id]
+    `UPDATE mcp_sessions SET refresh_token_hash = ?, previous_refresh_token_hash = ?, last_used_at = ?, expires_at = ?, device_label = COALESCE(?, device_label) WHERE id = ?`,
+    [sha256(nextToken), row.refresh_token_hash, now, expiresAt, deviceLabel || null, row.id]
   );
   return { ok: true, sessionId: row.id, userId: row.user_id, refreshToken: nextToken, expiresAt };
 }
