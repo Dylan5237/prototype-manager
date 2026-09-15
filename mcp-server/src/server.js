@@ -5,7 +5,8 @@ const os = require('os');
 const path = require('path');
 const { performance } = require('node:perf_hooks');
 const { validateProject, validateZipFile, packProject, ZipError } = require('./fuxi-zip');
-const { acquireFileLock } = require('./local-lock');
+const { withRefreshLock } = require('./local-lock');
+const { installInstanceGuard } = require('./instance-lock');
 
 const API_URL = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
 const MCP_VERSION = (() => {
@@ -15,7 +16,6 @@ const SKILL_VERSION = process.env.FUXI_SKILL_VERSION || 'unknown';
 let cachedToken = process.env.FUXI_TOKEN || '';
 const CREDENTIALS_FILE = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
 const DEVICE_LABEL = `${os.hostname()} (${process.platform})`;
-const REFRESH_LOCK_FILE = `${CREDENTIALS_FILE}.refresh.lock`;
 let refreshToken = '';
 let sessionId = null;
 let sessionExpiresAt = null;
@@ -727,11 +727,7 @@ function applyRotatedSession(data) {
 }
 
 async function refreshAccessTokenInternal() {
-  const unlock = await acquireFileLock(REFRESH_LOCK_FILE, {
-    errorCode: 'AUTHENTICATION_BUSY',
-    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
-  });
-  try {
+  return withRefreshLock(CREDENTIALS_FILE, async () => {
     // 另一个 MCP 进程可能刚刚轮换过 token；锁内重新读取，避免使用旧 token。
     applyCredentialData(readCredentialData());
     if (!refreshToken) throw new ToolError('AUTHENTICATION_REQUIRED', 'No refresh token is available');
@@ -746,9 +742,7 @@ async function refreshAccessTokenInternal() {
       body = await postRefresh(refreshToken);
     }
     return applyRotatedSession(body.data);
-  } finally {
-    unlock();
-  }
+  });
 }
 
 async function refreshAccessToken() {
@@ -1839,6 +1833,15 @@ async function handle(message) {
 
   if (message.id !== undefined) {
     error(message.id, -32601, `Method not found: ${message.method}`);
+  }
+}
+
+if (require.main === module) {
+  try {
+    installInstanceGuard({ credentialsFile: CREDENTIALS_FILE, apiUrl: API_URL });
+  } catch (error) {
+    process.stderr.write(`[fuxi-mcp] ${error.message}\n`);
+    process.exit(error.code === 'MCP_INSTANCE_IN_USE' ? 2 : 1);
   }
 }
 

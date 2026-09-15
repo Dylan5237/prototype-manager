@@ -9,14 +9,26 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function processIsZombie(pid) {
+  if (process.platform !== 'linux') return false;
+  try {
+    const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+    const idx = stat.lastIndexOf(')');
+    if (idx < 0) return false;
+    return stat.slice(idx + 2, idx + 3) === 'Z';
+  } catch (error) {
+    return false;
+  }
+}
+
 function processIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch (error) {
     return error.code === 'EPERM';
   }
+  return !processIsZombie(pid);
 }
 
 function readLockOwner(lockFile) {
@@ -98,8 +110,28 @@ async function acquireFileLock(lockFile, options = {}) {
   throw locked;
 }
 
+function refreshLockPath(credentialsFile) {
+  return `${path.resolve(credentialsFile)}.refresh.lock`;
+}
+
+async function withRefreshLock(credentialsFile, fn, options = {}) {
+  const unlock = await acquireFileLock(refreshLockPath(credentialsFile), {
+    errorCode: 'AUTHENTICATION_BUSY',
+    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试',
+    ...options
+  });
+  try {
+    return await fn();
+  } finally {
+    unlock();
+  }
+}
+
 module.exports = {
   acquireFileLock,
   acquireFileLockSync,
-  removeStaleLock
+  processIsAlive,
+  refreshLockPath,
+  removeStaleLock,
+  withRefreshLock
 };

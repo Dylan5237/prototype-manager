@@ -29,6 +29,7 @@ function createMcpProcess(apiUrl, credentialsFile, extraEnv = {}) {
       FUXI_CONNECT_CODE: '',
       FUXI_USERNAME: '',
       FUXI_PASSWORD: '',
+      FUXI_MCP_INSTANCE_OWNER_PID: '',
       ...extraEnv
     },
     stdio: ['pipe', 'pipe', 'pipe']
@@ -188,8 +189,8 @@ test('separate MCP processes serialize rotating refresh tokens through the crede
       sessionId: 'session-1'
     }));
 
-    const first = createMcpProcess(apiUrl, credentialsFile);
-    const second = createMcpProcess(apiUrl, credentialsFile);
+    const first = createMcpProcess(apiUrl, credentialsFile, { FUXI_MCP_INSTANCE_POLICY: 'shared' });
+    const second = createMcpProcess(apiUrl, credentialsFile, { FUXI_MCP_INSTANCE_POLICY: 'shared' });
     try {
       await Promise.all([
         first.send('initialize', { protocolVersion: '2024-11-05' }),

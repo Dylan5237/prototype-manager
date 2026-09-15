@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 const { parseZipBuffer } = require('./fuxi-zip');
-const { acquireFileLock, acquireFileLockSync } = require('./local-lock');
+const { acquireFileLockSync, withRefreshLock } = require('./local-lock');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const FORBIDDEN_SEGMENTS = new Set([
@@ -185,7 +185,12 @@ function smokeCheck(mcpRoot, skillRoot) {
     input,
     encoding: 'utf8',
     timeout: 2500,
-    killSignal: 'SIGTERM'
+    killSignal: 'SIGTERM',
+    env: {
+      ...process.env,
+      FUXI_MCP_INSTANCE_POLICY: 'shared',
+      FUXI_CREDENTIALS_FILE: path.join(os.tmpdir(), `fuxi-mcp-smoke-${process.pid}-${Date.now()}.json`)
+    }
   });
   const replies = (probe.stdout || '').split(/\r?\n/).filter(Boolean).flatMap(line => {
     try { return [JSON.parse(line)]; } catch (error) { return []; }
@@ -232,11 +237,7 @@ function writeCredentials(credentialsFile, credentials) {
 }
 
 async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
-  const unlock = await acquireFileLock(`${credentialsFile}.refresh.lock`, {
-    errorCode: 'AUTHENTICATION_BUSY',
-    message: '设备会话正在由另一个 MCP 进程刷新，请稍后重试'
-  });
-  try {
+  return withRefreshLock(credentialsFile, async () => {
     let credentials = readCredentials(credentialsFile);
     const token = process.env.FUXI_TOKEN || '';
     if (token && credentials) {
@@ -289,9 +290,7 @@ async function getSessionAuth({ apiUrl, credentialsFile, deviceLabel }) {
       accessExpiresAt: data.expiresAt ? Date.parse(data.expiresAt) : Date.now() + Number(data.expiresIn || 0) * 1000,
       credentials: next
     };
-  } finally {
-    unlock();
-  }
+  });
 }
 
 async function claimUpdate({ apiUrl, token, sessionId }) {
@@ -514,6 +513,7 @@ function startMcp(p, current, auth = null) {
     env.FUXI_TOKEN = auth.token;
     if (auth.accessExpiresAt) env.FUXI_ACCESS_EXPIRES_AT = String(auth.accessExpiresAt);
   }
+  if (!env.FUXI_MCP_INSTANCE_OWNER_PID) env.FUXI_MCP_INSTANCE_OWNER_PID = String(process.pid);
   return spawn(process.execPath, [server], { stdio: 'inherit', env });
 }
 

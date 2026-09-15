@@ -25,6 +25,7 @@ test.beforeEach(() => {
   fs.writeFileSync(path.join(sourceRoot, 'mcp', 'src', 'launcher.js'), '#!/usr/bin/env node\n');
   fs.writeFileSync(path.join(sourceRoot, 'mcp', 'src', 'bootstrap.js'), '#!/usr/bin/env node\n');
   fs.writeFileSync(path.join(sourceRoot, 'mcp', 'src', 'local-lock.js'), 'module.exports = {};\n');
+  fs.writeFileSync(path.join(sourceRoot, 'mcp', 'src', 'instance-lock.js'), 'module.exports = {};\n');
   fs.writeFileSync(path.join(sourceRoot, 'mcp', 'package.json'), '{"name":"test-mcp"}\n');
   fs.writeFileSync(path.join(sourceRoot, 'skill', 'SKILL.md'), '---\nname: test-skill\n---\n');
 });
