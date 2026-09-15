@@ -266,6 +266,7 @@ test('install downloads in parallel, reuses local ZIPs, preserves other MCP entr
       ['src/launcher.js', '#!/usr/bin/env node\n'],
       ['src/bootstrap.js', '#!/usr/bin/env node\n'],
       ['src/local-lock.js', 'module.exports = {};\n'],
+      ['src/instance-lock.js', 'module.exports = {};\n'],
       ['package.json', '{"name":"fuxi-platform-mcp","version":"test"}\n']
     ]);
     const skillZip = packageZip(root, 'fuxi-prototype', [['SKILL.md', '---\nname: fuxi-prototype\n---\n']]);

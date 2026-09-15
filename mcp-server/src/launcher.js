@@ -8,11 +8,23 @@ const {
   reportReadyUpdate,
   reportSessionRuntime
 } = require('./update-runtime');
+const { claimMcpInstance } = require('./instance-lock');
 
 async function main() {
   const apiUrl = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
   const credentialsFile = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
   const installRoot = process.env.FUXI_INSTALL_ROOT || path.join(os.homedir(), '.fuxi', 'agent-runtime');
+
+  let instance;
+  try {
+    instance = await claimMcpInstance({ credentialsFile, apiUrl });
+  } catch (error) {
+    process.stderr.write(`[fuxi-mcp] ${error.message}\n`);
+    process.exitCode = error.code === 'MCP_INSTANCE_IN_USE' ? 2 : 1;
+    return;
+  }
+  process.env.FUXI_MCP_INSTANCE_OWNER_PID = String(process.pid);
+
   const startup = await prepareStartup({
     apiUrl,
     credentialsFile,
@@ -22,6 +34,7 @@ async function main() {
 
   if (!startup.current) {
     process.stderr.write('[fuxi-update] no current MCP installation; set FUXI_MCP_TARGET for first migration\n');
+    instance.release();
     process.exitCode = 1;
     return;
   }
@@ -33,11 +46,27 @@ async function main() {
   let child;
   try {
     child = startMcp(startup.p, startup.current, startup.auth);
+    if (child && child.pid) instance.setChildPid(child.pid);
   } catch (error) {
     process.stderr.write(`[fuxi-update] MCP start failed: ${error.code || error.message}\n`);
+    instance.release();
     process.exitCode = 1;
     return;
   }
+
+  const stopChild = () => {
+    if (child && child.exitCode === null && child.signalCode === null) {
+      try { child.kill('SIGTERM'); } catch (error) {}
+    }
+  };
+  process.once('SIGTERM', () => {
+    stopChild();
+    instance.release();
+  });
+  process.once('SIGINT', () => {
+    stopChild();
+    instance.release();
+  });
 
   if (startup.update && startup.update.status === 'READY_TO_START') {
     try {
@@ -67,9 +96,11 @@ async function main() {
 
   child.on('error', error => {
     process.stderr.write(`[fuxi-update] MCP process failed: ${error.message}\n`);
+    instance.release();
     process.exitCode = 1;
   });
   child.on('exit', (code, signal) => {
+    instance.release();
     process.exitCode = typeof code === 'number' ? code : 1;
     if (signal) process.stderr.write(`[fuxi-update] MCP exited by ${signal}\n`);
   });

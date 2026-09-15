@@ -12,6 +12,7 @@ const ARTIFACTS = {
       /(?:^|\/)src\/launcher\.js$/,
       /(?:^|\/)src\/bootstrap\.js$/,
       /(?:^|\/)src\/local-lock\.js$/,
+      /(?:^|\/)src\/instance-lock\.js$/,
       /(?:^|\/)package\.json$/
     ],
     rootName: 'fuxi-platform-mcp'

@@ -41,9 +41,15 @@ async function waitForHealth(apiUrl, child) {
 }
 
 function startMcp(env) {
+  if (!env.FUXI_CREDENTIALS_FILE) {
+    env = {
+      ...env,
+      FUXI_CREDENTIALS_FILE: path.join(os.tmpdir(), `fuxi-mcp-itest-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}.json`)
+    };
+  }
   const child = spawn(process.execPath, [path.join(mcpRoot, 'src', 'server.js')], {
     cwd: mcpRoot,
-    env: { ...process.env, ...env },
+    env: { ...process.env, FUXI_MCP_INSTANCE_OWNER_PID: '', ...env },
     stdio: ['pipe', 'pipe', 'pipe']
   });
   let buffer = '';
@@ -536,6 +542,7 @@ async function main() {
     const mcpEntries = mcpPackage.getEntries().map(entry => entry.entryName);
     assert(mcpEntries.includes('fuxi-platform-mcp/src/server.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/src/bootstrap.js'));
+    assert(mcpEntries.includes('fuxi-platform-mcp/src/instance-lock.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/src/fuxi-zip.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/package.json'));
     assert(!mcpEntries.some(name => name.includes('/tests/')));

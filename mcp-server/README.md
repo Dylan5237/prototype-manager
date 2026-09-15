@@ -23,6 +23,7 @@ Set these environment variables in the MCP host:
 | `FUXI_PASSWORD` | No | Login password for the username/password fallback. |
 | `FUXI_INSTALL_ROOT` | No | Stable launcher local runtime root; defaults to `~/.fuxi/agent-runtime`. |
 | `FUXI_SKILL_TARGET` | No | Native Skill directory to replace after a verified update; defaults to Cursor's `~/.cursor/skills/fuxi-prototype`. |
+| `FUXI_MCP_INSTANCE_POLICY` | No | Single-instance policy: `takeover` (default; later starter becomes owner), `fail` (second start exits closed), or `shared` (tests/diagnostics only). |
 
 On first connect, pass `FUXI_CONNECT_CODE` from the platform MCP dialog. The server exchanges it for an access token
 and a rotating refresh token, then writes the refresh token to `FUXI_CREDENTIALS_FILE`. Later starts restore the
@@ -31,11 +32,15 @@ without re-entering the code. The refresh token rotates on every refresh and the
 platform's MCP session list.
 
 For deferred updates, configure the AI client to start `src/launcher.js` instead of `src/server.js`. The launcher
-uses the existing device session to claim a scheduled update, downloads the fixed MCP/Skill ZIP artifacts in
-parallel, verifies their SHA-256 digests, runs local Smoke checks, replaces the native Skill directory, and only
-then starts the MCP server. Startup passes the already refreshed short-lived access token to the child server;
-refresh token rotation is protected by a process lock and in-process single-flight. Update logs are written to
-stderr so MCP JSON-RPC stdout remains clean. If no update is available, it starts the current installation unchanged.
+claims a per-credentials-file instance lock **before** session refresh, then uses the existing device session to
+claim a scheduled update, downloads the fixed MCP/Skill ZIP artifacts in parallel, verifies their SHA-256 digests,
+runs local Smoke checks, replaces the native Skill directory, and only then starts the MCP server. Startup passes
+the already refreshed short-lived access token to the child server. Refresh token rotation is protected by a
+cross-process file lock (`*.refresh.lock`) plus in-process single-flight. A second MCP/launcher for the same
+credential file either takes over the live owner (`takeover`) or exits with code 2 and guidance (`fail`). Stdio MCP
+cannot multiplex two hosts onto one process, so "reuse" means launcher-to-child inheritance, not a second host
+attaching. Update logs are written to stderr so MCP JSON-RPC stdout remains clean. If no update is available, it
+starts the current installation unchanged.
 
 ## Tools
 
