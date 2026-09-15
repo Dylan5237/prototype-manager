@@ -37,6 +37,44 @@ then starts the MCP server. Startup passes the already refreshed short-lived acc
 refresh token rotation is protected by a process lock and in-process single-flight. Update logs are written to
 stderr so MCP JSON-RPC stdout remains clean. If no update is available, it starts the current installation unchanged.
 
+### Single-instance launcher and refresh single-flight
+
+WorkBuddy/Cursor can spawn many `node` processes against the same `~/.fuxi` credentials. Concurrent refresh of a
+rotating refresh token is what turned a healthy session into `INVALID_REFRESH_TOKEN` (#48). This package now
+enforces one live MCP instance per identity and one refresh at a time.
+
+**Identity** is `sha256(resolved credentials file + resolved install root + normalized apiUrl)`. Lock files live
+next to the credentials file: `mcp-instance-<id>.lock` (owner pid) and `mcp-instance-<id>.json` (launcher/server
+pids, paths, `apiUrl`).
+
+**Start strategy**
+
+1. `launcher.js` acquires the instance lock before update/auth work. `server.js` does the same unless the launcher
+   already holds it (`FUXI_MCP_INSTANCE_LOCK_HELD=1`) or tests/smoke set `FUXI_MCP_ALLOW_MULTI=1`.
+2. A second start for the same identity exits 0 with stderr `MCP_ALREADY_RUNNING pid=… lock=…`. MCP is stdio-only,
+   so a later process cannot attach to the first process's JSON-RPC pipe; exiting cleanly avoids a second refresh
+   loop. Hosts that spawn duplicates should keep the first instance.
+3. If the lock pid is dead, the new process takes over: leftover `serverPid` from the state file is SIGTERM'd
+   (then SIGKILL after 1s), the stale lock is removed, and this process becomes the instance.
+
+**Refresh single-flight**
+
+- `${credentialsFile}.refresh.lock` is a cross-process mutex. Waiters block, then re-read the credentials file.
+- Unexpired `accessToken` / `accessExpiresAt` (5s skew) skips `/api/auth/mcp/refresh`.
+- 401 after a sibling rotation: re-read; reuse a valid access token, or retry once with the new refresh token.
+- Dead session (`INVALID_REFRESH_TOKEN` / `SESSION_REVOKED` / `SESSION_EXPIRED`): write a tombstone
+  (`reconnectRequired: true`, no refresh token). `FUXI_CONNECT_CODE` can mint a new session; otherwise
+  `check_connection` returns `reconnectHint` and does not keep retrying the dead token.
+
+**Atomic credential writes**
+
+Credentials are written to a unique temp file then renamed onto the target (Windows `EPERM`/`EACCES`/`EEXIST`
+falls back to copy+replace). Payload keeps the #49 fields: `accessToken`, `accessExpiresAt`, and the dead-token
+tombstone.
+
+Escape hatches: `FUXI_MCP_ALLOW_MULTI=1` (tests and update smoke), `FUXI_MCP_INSTANCE_LOCK_HELD=1` (child of
+launcher). Skill `fuxi-prototype` does not implement refresh or the launcher, so it does not need a matching change.
+
 ## Tools
 
 - `check_connection`: health-check the configured Fuxi backend.

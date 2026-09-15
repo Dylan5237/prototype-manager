@@ -8,11 +8,39 @@ const {
   reportReadyUpdate,
   reportSessionRuntime
 } = require('./update-runtime');
+const { acquireMcpInstanceSync } = require('./instance-lock');
 
 async function main() {
   const apiUrl = (process.env.FUXI_API_URL || 'http://localhost:3001').replace(/\/+$/, '');
   const credentialsFile = process.env.FUXI_CREDENTIALS_FILE || path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
   const installRoot = process.env.FUXI_INSTALL_ROOT || path.join(os.homedir(), '.fuxi', 'agent-runtime');
+  const instance = acquireMcpInstanceSync({
+    apiUrl,
+    credentialsFile,
+    installRoot,
+    role: 'launcher'
+  });
+  if (instance.status === 'already_running') {
+    const ownerPid = instance.owner && instance.owner.pid;
+    process.stderr.write(`[fuxi-mcp] MCP_ALREADY_RUNNING pid=${ownerPid || 'unknown'} lock=${instance.paths.lockFile}\n`);
+    return;
+  }
+
+  let child = null;
+  const releaseInstance = () => {
+    try { instance.unlock(); } catch (error) {}
+  };
+  const stopChildAndExit = (exitCode) => {
+    if (child && child.pid) {
+      try { child.kill('SIGTERM'); } catch (error) {}
+    }
+    releaseInstance();
+    process.exit(exitCode);
+  };
+  process.once('exit', releaseInstance);
+  process.once('SIGINT', () => stopChildAndExit(130));
+  process.once('SIGTERM', () => stopChildAndExit(143));
+
   const startup = await prepareStartup({
     apiUrl,
     credentialsFile,
@@ -23,6 +51,7 @@ async function main() {
   if (!startup.current) {
     process.stderr.write('[fuxi-update] no current MCP installation; set FUXI_MCP_TARGET for first migration\n');
     process.exitCode = 1;
+    releaseInstance();
     return;
   }
 
@@ -30,14 +59,15 @@ async function main() {
     process.stderr.write(`[fuxi-update] rolled back ${startup.update.releaseId}: ${startup.update.errorCode || 'UPDATE_FAILED'}\n`);
   }
 
-  let child;
   try {
-    child = startMcp(startup.p, startup.current, startup.auth);
+    child = startMcp(startup.p, startup.current, startup.auth, { FUXI_MCP_INSTANCE_LOCK_HELD: '1' });
   } catch (error) {
     process.stderr.write(`[fuxi-update] MCP start failed: ${error.code || error.message}\n`);
     process.exitCode = 1;
+    releaseInstance();
     return;
   }
+  instance.noteChild(child.pid);
 
   if (startup.update && startup.update.status === 'READY_TO_START') {
     try {
@@ -72,6 +102,7 @@ async function main() {
   child.on('exit', (code, signal) => {
     process.exitCode = typeof code === 'number' ? code : 1;
     if (signal) process.stderr.write(`[fuxi-update] MCP exited by ${signal}\n`);
+    releaseInstance();
   });
 }
 

@@ -18,17 +18,19 @@ function readBody(req) {
   });
 }
 
-function createMcpProcess(apiUrl, credentialsFile) {
+function createMcpProcess(apiUrl, credentialsFile, extraEnv = {}) {
   const child = spawn(process.execPath, ['src/server.js'], {
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
       FUXI_API_URL: apiUrl,
       FUXI_CREDENTIALS_FILE: credentialsFile,
+      FUXI_INSTALL_ROOT: path.join(path.dirname(credentialsFile), 'runtime'),
       FUXI_TOKEN: '',
       FUXI_CONNECT_CODE: '',
       FUXI_USERNAME: '',
-      FUXI_PASSWORD: ''
+      FUXI_PASSWORD: '',
+      ...extraEnv
     },
     stdio: ['pipe', 'pipe', 'pipe']
   });
@@ -135,7 +137,7 @@ test('server loads credentials before check_connection and single-flights concur
   }
 });
 
-test('separate MCP processes serialize rotating refresh tokens through the credential lock', async () => {
+test('separate MCP processes reuse a just-rotated access token instead of stacking refresh rotations', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-mcp-process-lock-'));
   let server;
   let refreshCalls = 0;
@@ -187,8 +189,8 @@ test('separate MCP processes serialize rotating refresh tokens through the crede
       sessionId: 'session-1'
     }));
 
-    const first = createMcpProcess(apiUrl, credentialsFile);
-    const second = createMcpProcess(apiUrl, credentialsFile);
+    const first = createMcpProcess(apiUrl, credentialsFile, { FUXI_MCP_ALLOW_MULTI: '1' });
+    const second = createMcpProcess(apiUrl, credentialsFile, { FUXI_MCP_ALLOW_MULTI: '1' });
     try {
       await Promise.all([
         first.send('initialize', { protocolVersion: '2024-11-05' }),
@@ -199,11 +201,322 @@ test('separate MCP processes serialize rotating refresh tokens through the crede
         second.send('tools/call', { name: 'check_connection', arguments: {} })
       ]);
       const values = [firstReply, secondReply].map(reply => JSON.parse(reply.result.content[0].text));
-      assert.equal(refreshCalls, 2);
+      assert.equal(refreshCalls, 1);
       assert.deepEqual(values.map(value => value.authentication), ['verified', 'verified']);
     } finally {
       await Promise.all([first.close(), second.close()]);
     }
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('MCP reuses an unexpired access token from the credentials file without rotating', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-mcp-access-reuse-'));
+  let server;
+  let refreshCalls = 0;
+  try {
+    server = http.createServer(async (req, res) => {
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', time: new Date().toISOString() }));
+        return;
+      }
+      if (req.url === '/api/auth/mcp/refresh') {
+        refreshCalls += 1;
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, code: 'REFRESH_SHOULD_NOT_RUN' }));
+        return;
+      }
+      if (req.url === '/api/auth/mcp/heartbeat') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, data: { session: {}, updates: [] } }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${server.address().port}`;
+    const credentialsFile = path.join(root, 'mcp-credentials.json');
+    fs.writeFileSync(credentialsFile, JSON.stringify({
+      apiUrl,
+      refreshToken: 'refresh-should-not-rotate',
+      sessionId: 'session-1',
+      accessToken: 'cached-access-token',
+      accessExpiresAt: Date.now() + 60 * 60 * 1000
+    }));
+
+    const mcp = createMcpProcess(apiUrl, credentialsFile);
+    try {
+      await mcp.send('initialize', { protocolVersion: '2024-11-05' });
+      const reply = await mcp.send('tools/call', { name: 'check_connection', arguments: {} });
+      const value = JSON.parse(reply.result.content[0].text);
+      assert.equal(refreshCalls, 0);
+      assert.equal(value.authentication, 'verified');
+    } finally {
+      await mcp.close();
+    }
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('dead refresh token with a connect code re-onboards instead of looping', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-mcp-dead-token-'));
+  let server;
+  let refreshCalls = 0;
+  let connectCalls = 0;
+  try {
+    server = http.createServer(async (req, res) => {
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', time: new Date().toISOString() }));
+        return;
+      }
+      if (req.url === '/api/auth/mcp/refresh') {
+        refreshCalls += 1;
+        await readBody(req);
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, code: 'INVALID_REFRESH_TOKEN', message: 'refresh token 无效' }));
+        return;
+      }
+      if (req.url === '/api/auth/mcp/connect') {
+        connectCalls += 1;
+        await readBody(req);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          data: {
+            accessToken: 'new-access-token',
+            refreshToken: 'new-refresh-token',
+            sessionId: 'session-2',
+            expiresIn: 3600,
+            sessionExpiresAt: new Date(Date.now() + 90 * 24 * 3600 * 1000).toISOString()
+          }
+        }));
+        return;
+      }
+      if (req.url === '/api/auth/mcp/heartbeat') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, data: { session: {}, updates: [] } }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${server.address().port}`;
+    const credentialsFile = path.join(root, 'mcp-credentials.json');
+    fs.writeFileSync(credentialsFile, JSON.stringify({
+      apiUrl,
+      refreshToken: 'dead-refresh-token',
+      sessionId: 'session-1'
+    }));
+
+    const mcp = createMcpProcess(apiUrl, credentialsFile, { FUXI_CONNECT_CODE: 'fresh-connect-code' });
+    try {
+      await mcp.send('initialize', { protocolVersion: '2024-11-05' });
+      const reply = await mcp.send('tools/call', { name: 'check_connection', arguments: {} });
+      const value = JSON.parse(reply.result.content[0].text);
+      assert.equal(refreshCalls, 1);
+      assert.equal(connectCalls, 1);
+      assert.equal(value.authentication, 'verified');
+      const persisted = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+      assert.equal(persisted.refreshToken, 'new-refresh-token');
+      assert.equal(persisted.sessionId, 'session-2');
+      assert.equal(persisted.accessToken, 'new-access-token');
+    } finally {
+      await mcp.close();
+    }
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('dead refresh token without a connect code asks for reconnect and stops retrying', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-mcp-reconnect-hint-'));
+  let server;
+  let refreshCalls = 0;
+  try {
+    server = http.createServer(async (req, res) => {
+      if (req.url === '/api/health') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'ok', time: new Date().toISOString() }));
+        return;
+      }
+      if (req.url === '/api/auth/mcp/refresh') {
+        refreshCalls += 1;
+        await readBody(req);
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, code: 'INVALID_REFRESH_TOKEN', message: 'refresh token 无效' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${server.address().port}`;
+    const credentialsFile = path.join(root, 'mcp-credentials.json');
+    fs.writeFileSync(credentialsFile, JSON.stringify({
+      apiUrl,
+      refreshToken: 'dead-refresh-token',
+      sessionId: 'session-1'
+    }));
+
+    const mcp = createMcpProcess(apiUrl, credentialsFile);
+    try {
+      await mcp.send('initialize', { protocolVersion: '2024-11-05' });
+      const first = JSON.parse((await mcp.send('tools/call', { name: 'check_connection', arguments: {} })).result.content[0].text);
+      const second = JSON.parse((await mcp.send('tools/call', { name: 'check_connection', arguments: {} })).result.content[0].text);
+      assert.equal(first.authentication, 'INVALID_REFRESH_TOKEN');
+      assert.equal(first.reconnectRequired, true);
+      assert.match(first.reconnectHint, /连接码/);
+      assert.equal(second.authentication, 'INVALID_REFRESH_TOKEN');
+      assert.equal(second.reconnectRequired, true);
+      assert.equal(refreshCalls, 1);
+      const persisted = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+      assert.equal(persisted.refreshToken, undefined);
+      assert.equal(persisted.reconnectRequired, true);
+    } finally {
+      await mcp.close();
+    }
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+const { getSessionAuth } = require('../src/update-runtime');
+
+test('launcher skips refresh when credentials still have a valid access token', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-launcher-access-reuse-'));
+  let server;
+  let refreshCalls = 0;
+  try {
+    server = http.createServer(async (req, res) => {
+      if (req.url === '/api/auth/mcp/refresh') {
+        refreshCalls += 1;
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, code: 'REFRESH_SHOULD_NOT_RUN' }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${server.address().port}`;
+    const credentialsFile = path.join(root, 'mcp-credentials.json');
+    fs.writeFileSync(credentialsFile, JSON.stringify({
+      apiUrl,
+      refreshToken: 'refresh-should-not-rotate',
+      sessionId: 'session-1',
+      accessToken: 'launcher-access-token',
+      accessExpiresAt: Date.now() + 60 * 60 * 1000
+    }));
+    const previousToken = process.env.FUXI_TOKEN;
+    delete process.env.FUXI_TOKEN;
+    try {
+      const auth = await getSessionAuth({
+        apiUrl,
+        credentialsFile,
+        deviceLabel: 'test-device'
+      });
+      assert.equal(refreshCalls, 0);
+      assert.equal(auth.token, 'launcher-access-token');
+      assert.equal(auth.sessionId, 'session-1');
+    } finally {
+      if (previousToken === undefined) delete process.env.FUXI_TOKEN;
+      else process.env.FUXI_TOKEN = previousToken;
+    }
+  } finally {
+    if (server) await new Promise(resolve => server.close(resolve));
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('cross-process getSessionAuth single-flights refresh and waiters reread credentials', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-session-auth-workers-'));
+  let server;
+  let refreshCalls = 0;
+  let validRefreshToken = 'initial-refresh-token';
+  try {
+    server = http.createServer(async (req, res) => {
+      if (req.url === '/api/auth/mcp/refresh') {
+        const body = await readBody(req);
+        refreshCalls += 1;
+        await new Promise(resolve => setTimeout(resolve, 120));
+        if (body.refreshToken !== validRefreshToken) {
+          res.writeHead(401, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, code: 'INVALID_REFRESH_TOKEN' }));
+          return;
+        }
+        validRefreshToken = `rotated-refresh-token-${refreshCalls}`;
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          data: {
+            accessToken: `access-token-${refreshCalls}`,
+            refreshToken: validRefreshToken,
+            sessionId: 'session-1',
+            expiresIn: 3600,
+            sessionExpiresAt: new Date(Date.now() + 3600000).toISOString()
+          }
+        }));
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+    const apiUrl = `http://127.0.0.1:${server.address().port}`;
+    const credentialsFile = path.join(root, 'mcp-credentials.json');
+    fs.writeFileSync(credentialsFile, JSON.stringify({
+      apiUrl,
+      refreshToken: 'initial-refresh-token',
+      sessionId: 'session-1'
+    }));
+
+    const runWorker = () => new Promise((resolve, reject) => {
+      const child = spawn(process.execPath, [path.join(__dirname, 'session-auth-worker.js')], {
+        env: {
+          ...process.env,
+          FUXI_API_URL: apiUrl,
+          FUXI_CREDENTIALS_FILE: credentialsFile,
+          FUXI_TOKEN: '',
+          FUXI_DEVICE_LABEL: 'worker'
+        },
+        stdio: ['ignore', 'pipe', 'pipe']
+      });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', chunk => { stdout += chunk; });
+      child.stderr.on('data', chunk => { stderr += chunk; });
+      child.on('exit', (code) => {
+        try {
+          resolve({ code, value: JSON.parse(stdout.trim().split('\n').pop()), stderr });
+        } catch (error) {
+          reject(new Error(`worker parse failed code=${code} stdout=${stdout} stderr=${stderr}`));
+        }
+      });
+    });
+
+    const [first, second] = await Promise.all([runWorker(), runWorker()]);
+    assert.equal(first.code, 0);
+    assert.equal(second.code, 0);
+    assert.equal(first.value.ok, true);
+    assert.equal(second.value.ok, true);
+    assert.equal(refreshCalls, 1);
+    const persisted = JSON.parse(fs.readFileSync(credentialsFile, 'utf8'));
+    assert.equal(persisted.refreshToken, 'rotated-refresh-token-1');
+    assert.equal(typeof persisted.accessToken, 'string');
+    assert.equal(first.value.token, persisted.accessToken);
+    assert.equal(second.value.token, persisted.accessToken);
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     fs.rmSync(root, { recursive: true, force: true });
