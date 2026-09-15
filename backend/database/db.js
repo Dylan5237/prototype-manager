@@ -1,6 +1,8 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
 const { applyCollaborationSchema } = require('./collaboration-schema');
 const { PROMPT_TEMPLATE_DEFAULTS } = require('../services/prompt-template-defaults');
 const { HELP_DOCUMENT_DEFAULTS } = require('../services/help-document-defaults');
@@ -14,28 +16,149 @@ let activeDbPath = DEFAULT_DB_PATH;
 let persistDatabase = true;
 let transactionDepth = 0;
 let writeQueue = Promise.resolve();
+let accessMode = 'readOnly';
+let lastKnownFingerprint = null;
+let writerAuthority = null;
+
+const MISSING_DATABASE_FINGERPRINT = 'missing';
+
+function databaseError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
+function fingerprintDatabase(filePath) {
+  if (!fs.existsSync(filePath)) return MISSING_DATABASE_FINGERPRINT;
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function canonicalDatabasePath(filePath) {
+  const resolved = path.resolve(filePath);
+  if (fs.existsSync(resolved)) return fs.realpathSync(resolved);
+  const parent = path.dirname(resolved);
+  return path.join(fs.existsSync(parent) ? fs.realpathSync(parent) : parent, path.basename(resolved));
+}
+
+function leasePathFor(filePath) {
+  return `${filePath}.writer.lock`;
+}
+
+function isProcessAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
+function readLeaseMetadata(leasePath) {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(leasePath, 'owner.json'), 'utf8'));
+  } catch (error) {
+    return null;
+  }
+}
+
+function removeStaleLease(leasePath, metadata) {
+  if (!metadata || metadata.host !== os.hostname() || isProcessAlive(Number(metadata.pid))) return false;
+  fs.rmSync(leasePath, { recursive: true, force: true });
+  return true;
+}
+
+function acquireWriterAuthority() {
+  if (writerAuthority) return writerAuthority;
+  if (!persistDatabase) return null;
+  const leasePath = leasePathFor(activeDbPath);
+  const metadata = {
+    dbPath: activeDbPath,
+    pid: process.pid,
+    host: os.hostname(),
+    ownerToken: crypto.randomUUID()
+  };
+  fs.mkdirSync(path.dirname(activeDbPath), { recursive: true });
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      fs.mkdirSync(leasePath);
+      fs.writeFileSync(path.join(leasePath, 'owner.json'), JSON.stringify(metadata));
+      writerAuthority = { leasePath, metadata };
+      return writerAuthority;
+    } catch (error) {
+      if (error.code !== 'EEXIST') {
+        try { fs.rmSync(leasePath, { recursive: true, force: true }); } catch (cleanupError) {}
+        throw error;
+      }
+      const existing = readLeaseMetadata(leasePath);
+      if (attempt === 0 && removeStaleLease(leasePath, existing)) continue;
+      throw databaseError('DB_WRITE_AUTHORITY_HELD', `Database writer authority is already held for ${activeDbPath}`);
+    }
+  }
+  throw databaseError('DB_WRITE_AUTHORITY_HELD', `Database writer authority is already held for ${activeDbPath}`);
+}
+
+function releaseWriterAuthority() {
+  if (!writerAuthority) return;
+  const { leasePath, metadata } = writerAuthority;
+  const current = readLeaseMetadata(leasePath);
+  if (current && current.ownerToken === metadata.ownerToken) {
+    fs.rmSync(leasePath, { recursive: true, force: true });
+  }
+  writerAuthority = null;
+}
+
+function assertWriter() {
+  if (accessMode !== 'writer') {
+    throw databaseError('DB_READ_ONLY', 'Database was initialized in readOnly mode');
+  }
+  if (!persistDatabase) return;
+  if (!writerAuthority) {
+    throw databaseError('DB_WRITE_AUTHORITY_LOST', 'Database writer authority is not held');
+  }
+  const current = readLeaseMetadata(writerAuthority.leasePath);
+  if (!current || current.ownerToken !== writerAuthority.metadata.ownerToken) {
+    throw databaseError('DB_WRITE_AUTHORITY_LOST', 'Database writer authority is no longer valid');
+  }
+}
 
 async function initDatabase(options = {}) {
-  SQL = await initSqlJs();
   if (db) {
-    db.close();
-    db = null;
+    closeDatabase();
   }
-  activeDbPath = path.resolve(options.path || process.env.FUXI_DB_PATH || DEFAULT_DB_PATH);
+  SQL = await initSqlJs();
+  activeDbPath = canonicalDatabasePath(options.path || process.env.FUXI_DB_PATH || DEFAULT_DB_PATH);
   persistDatabase = options.persist !== false;
-  
-  if (fs.existsSync(activeDbPath)) {
-    const filebuffer = fs.readFileSync(activeDbPath);
-    db = new SQL.Database(filebuffer);
-  } else {
-    db = new SQL.Database();
+  accessMode = options.mode || 'readOnly';
+  if (!['writer', 'readOnly'].includes(accessMode)) {
+    throw new TypeError(`Unsupported database access mode: ${accessMode}`);
   }
-  
-  // 创建表结构
-  createTables();
-  
-  // 保存初始数据库
-  saveDatabase();
+  if (!persistDatabase && !options.path) {
+    throw databaseError('DB_NON_PERSISTENT_PATH_REQUIRED', 'persist:false requires an explicit isolated database path');
+  }
+  try {
+    if (accessMode === 'writer') acquireWriterAuthority();
+    lastKnownFingerprint = fingerprintDatabase(activeDbPath);
+
+    if (fs.existsSync(activeDbPath)) {
+      const filebuffer = fs.readFileSync(activeDbPath);
+      db = new SQL.Database(filebuffer);
+    } else {
+      db = new SQL.Database();
+    }
+
+    if (accessMode === 'writer') {
+      // 只有唯一 writer 可以执行建表、迁移、默认数据和初始持久化。
+      createTables();
+      saveDatabase();
+    }
+  } catch (error) {
+    if (db) db.close();
+    db = null;
+    releaseWriterAuthority();
+    SQL = null;
+    accessMode = 'readOnly';
+    lastKnownFingerprint = null;
+    throw error;
+  }
   
   return db;
 }
@@ -773,18 +896,27 @@ function migrateRoleToArray() {
 
 function saveDatabase() {
   if (!db || !persistDatabase) return;
+  assertWriter();
+  const currentFingerprint = fingerprintDatabase(activeDbPath);
+  if (currentFingerprint !== lastKnownFingerprint) {
+    throw databaseError('STALE_DATABASE_SNAPSHOT', 'Database changed on disk after this snapshot was loaded');
+  }
   fs.mkdirSync(path.dirname(activeDbPath), { recursive: true });
   const data = db.export();
-  fs.writeFileSync(activeDbPath, Buffer.from(data));
+  const bytes = Buffer.from(data);
+  fs.writeFileSync(activeDbPath, bytes);
+  lastKnownFingerprint = crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
 function getDb() {
   if (!db) throw new Error('Database not initialized');
+  assertWriter();
   return db;
 }
 
 // 执行SQL（INSERT/UPDATE/DELETE）
 function run(sql, params = []) {
+  assertWriter();
   const result = db.run(sql, params);
   if (transactionDepth === 0) saveDatabase();
   return result;
@@ -792,6 +924,7 @@ function run(sql, params = []) {
 
 function runInTransaction(work) {
   if (typeof work !== 'function') throw new TypeError('work 必须是函数');
+  assertWriter();
   if (transactionDepth > 0) return work(db);
 
   db.run('BEGIN IMMEDIATE TRANSACTION');
@@ -815,6 +948,7 @@ function runInTransaction(work) {
 function enqueueWrite(work) {
   if (typeof work !== 'function') return Promise.reject(new TypeError('work 必须是函数'));
   const execute = async () => {
+    assertWriter();
     db.run('BEGIN IMMEDIATE TRANSACTION');
     transactionDepth += 1;
     try {
@@ -885,11 +1019,26 @@ function migrateVersionLabels() {
 
 function closeDatabase() {
   if (db) db.close();
+  releaseWriterAuthority();
   db = null;
   SQL = null;
   transactionDepth = 0;
   writeQueue = Promise.resolve();
+  accessMode = 'readOnly';
+  lastKnownFingerprint = null;
 }
+
+function acquireWriteAuthority() {
+  if (!db) throw new Error('Database not initialized');
+  if (!persistDatabase) {
+    accessMode = 'writer';
+    return;
+  }
+  acquireWriterAuthority();
+  accessMode = 'writer';
+}
+
+process.once('exit', releaseWriterAuthority);
 
 function getDatabasePath() {
   return activeDbPath;
@@ -904,6 +1053,7 @@ module.exports = {
   saveDatabase,
   runInTransaction,
   enqueueWrite,
+  acquireWriteAuthority,
   closeDatabase,
   getDatabasePath
 };

@@ -12,7 +12,7 @@ let tempRoot;
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-admin-usage-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false, mode: 'writer' });
 });
 
 test.afterEach(() => {

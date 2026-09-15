@@ -24,7 +24,7 @@ const {
 } = require('../services/webhook-security');
 
 test.before(async () => {
-  await database.initDatabase({ path: dbPath });
+  await database.initDatabase({ path: dbPath, mode: 'writer' });
 });
 
 test.after(() => {

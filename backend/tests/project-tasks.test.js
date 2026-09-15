@@ -15,7 +15,7 @@ const member = { id: 2, username: 'member', roles: ['uploader'] };
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-project-tasks-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db') });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), mode: 'writer' });
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (1, 'owner', 'hash', '负责人', '["admin"]', ?)`, [timestamp]);
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (2, 'member', 'hash', '执行人', '["uploader"]', ?)`, [timestamp]);
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (3, 'viewer', 'hash', '查看人', '["viewer"]', ?)`, [timestamp]);

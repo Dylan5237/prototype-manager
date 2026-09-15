@@ -42,7 +42,7 @@ test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-lightweight-collaboration-'));
   reposRoot = path.join(tempRoot, 'repos');
   candidatesRoot = path.join(tempRoot, 'candidates');
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db') });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), mode: 'writer' });
   seed();
   service = new LightweightCollaborationService({ reposRoot, candidatesRoot });
 });

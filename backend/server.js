@@ -39,7 +39,7 @@ async function startServer() {
   await initProxy();
   
   // 初始化数据库
-  await initDatabase();
+  await initDatabase({ mode: 'writer' });
   
   // 初始化默认管理员
   initDefaultAdmin();

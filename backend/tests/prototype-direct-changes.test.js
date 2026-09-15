@@ -30,7 +30,7 @@ test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-direct-change-'));
   reposRoot = path.join(tempRoot, 'repos');
   candidatesRoot = path.join(tempRoot, 'candidates');
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db') });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), mode: 'writer' });
   const timestamp = '2026-08-24T00:00:00.000Z';
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
     [1, 'owner', 'hash', '负责人', '["viewer"]', timestamp]);
