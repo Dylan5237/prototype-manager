@@ -24,7 +24,7 @@ async function main() {
   const baseUrl = (arg('base-url', process.env.FUXI_PUBLIC_BASE_URL || '')).replace(/\/+$/, '');
   if (!releaseId || !baseUrl) throw new Error('release-id 和 base-url 必填');
 
-  await initDatabase();
+  await initDatabase({ mode: 'writer' });
   let bundle = null;
   let committed = false;
   try {

@@ -46,7 +46,7 @@ function request(method, route, token) {
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-candidate-preview-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false, mode: 'writer' });
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (1, 'owner', 'hash', '负责人', '["viewer"]', ?)`, [timestamp]);
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (2, 'editor', 'hash', '编辑者', '["viewer"]', ?)`, [timestamp]);
   database.run(`INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (3, 'outsider', 'hash', '外人', '["viewer"]', ?)`, [timestamp]);

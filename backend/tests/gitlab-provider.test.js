@@ -254,7 +254,7 @@ test('phase 1 vertical slice provisions a protected repository into the real dom
   const dbPath = path.join(tempRoot, 'phase1.db');
   const database = require('../database/db');
   try {
-    await database.initDatabase({ path: dbPath });
+    await database.initDatabase({ path: dbPath, mode: 'writer' });
     const timestamp = '2026-08-14T00:00:00.000Z';
     database.run(`
       INSERT INTO users (id, username, password_hash, nickname, role, created_at)

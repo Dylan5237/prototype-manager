@@ -47,7 +47,7 @@ function seed() {
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-agent-updates-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'updates.db'), persist: false });
+  await database.initDatabase({ path: path.join(tempRoot, 'updates.db'), persist: false, mode: 'writer' });
   seed();
 });
 

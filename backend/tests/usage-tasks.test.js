@@ -24,7 +24,7 @@ let tempRoot;
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-usage-tasks-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false, mode: 'writer' });
   const timestamp = new Date().toISOString();
   database.run(
     `INSERT INTO users (username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?)`,

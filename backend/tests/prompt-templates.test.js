@@ -19,7 +19,7 @@ let tempRoot;
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-prompt-templates-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'prompt-templates.db'), persist: false });
+  await database.initDatabase({ path: path.join(tempRoot, 'prompt-templates.db'), persist: false, mode: 'writer' });
 });
 
 test.afterEach(() => {
@@ -88,7 +88,7 @@ test('upgrades the default onboarding template without overwriting the current t
   `, [legacyTemplate, JSON.stringify(['baseUrl']), JSON.stringify(legacyMock), legacyTemplate, JSON.stringify(legacyMock)]);
   const dbPath = database.getDatabasePath();
   database.closeDatabase();
-  await database.initDatabase({ path: dbPath });
+  await database.initDatabase({ path: dbPath, mode: 'writer' });
 
   const upgraded = getPromptTemplate('mcp.onboarding');
   assert.equal(upgraded.template, current.template);

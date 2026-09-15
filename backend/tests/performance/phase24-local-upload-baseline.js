@@ -195,7 +195,7 @@ async function main() {
   let server;
 
   try {
-    await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false });
+    await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false, mode: 'writer' });
     database.run(
       'INSERT INTO users (id, username, password_hash, nickname, role, created_at) VALUES (?, ?, ?, ?, ?, ?)',
       [1, 'phase24-uploader', 'test-hash', 'phase24 uploader', '["uploader"]', new Date().toISOString()]

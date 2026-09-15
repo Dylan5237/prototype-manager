@@ -106,7 +106,7 @@ let database;
 test.before(async () => {
   await createLegacyDatabase();
   database = require('../database/db');
-  await database.initDatabase({ path: dbPath });
+  await database.initDatabase({ path: dbPath, mode: 'writer' });
 });
 
 test.after(() => {
@@ -142,7 +142,7 @@ test('collaboration migration preserves legacy data and adds safe defaults', () 
 });
 
 test('collaboration migration is idempotent', async () => {
-  await database.initDatabase({ path: dbPath });
+  await database.initDatabase({ path: dbPath, mode: 'writer' });
   const rows = database.query(`
     SELECT version FROM schema_migrations
     WHERE version = '20260814_collaboration_phase1'

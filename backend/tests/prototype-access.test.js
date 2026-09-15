@@ -59,7 +59,7 @@ function request(method, route, token) {
 
 test.beforeEach(async () => {
   tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bl007-access-'));
-  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false });
+  await database.initDatabase({ path: path.join(tempRoot, 'app.db'), persist: false, mode: 'writer' });
 
   insertUser(1, 'admin', 'admin');
   insertUser(2, 'owner', 'viewer');
