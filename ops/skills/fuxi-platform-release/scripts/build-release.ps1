@@ -45,6 +45,7 @@ if (-not (Test-Path (Join-Path $SkillsRepositoryRoot 'fuxi-prototype\SKILL.md'))
 }
 Invoke-Checked npm @('run','build') (Join-Path $PlatformRoot 'frontend')
 if (-not $Lightweight) {
+  Invoke-Checked node @('--test','tests/verify-production-release-contract.test.js') (Join-Path $PlatformRoot 'ops\skills\fuxi-platform-release')
   Invoke-Checked npm @('run','check') (Join-Path $PlatformRoot 'mcp-server')
   Invoke-Checked npm @('run','test:integration') (Join-Path $PlatformRoot 'mcp-server')
 }
@@ -78,7 +79,7 @@ try {
     platformBranch = Get-BranchLabel $PlatformRoot
     skillBranch = Get-BranchLabel $SkillsRepositoryRoot
     releaseProfile = if ($Lightweight) { 'test-lightweight' } else { 'full' }
-    verification = if ($Lightweight) { 'frontend-build+package-checksum+manual-test' } else { 'frontend-build+mcp-check+mcp-integration' }
+    verification = if ($Lightweight) { 'frontend-build+package-checksum+manual-test' } else { 'frontend-build+release-verifier-contract+mcp-check+mcp-integration' }
     persistentPaths = @('backend/data','backend/repos','backend/uploads','backend/.env')
   }
   [IO.File]::WriteAllText((Join-Path $stage 'manifest.json'), ($manifest | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
