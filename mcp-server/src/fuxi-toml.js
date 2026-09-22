@@ -12,6 +12,10 @@
 //   byte of the file is preserved, including unrelated Codex settings.
 
 const BARE_KEY_RE = /^[A-Za-z0-9_-]+$/;
+// 伏羲只管理自己条目的这三个字段；Codex 还支持 env_vars / startup_timeout_sec
+// 等字段，凡是用户自己加的都不属于我们，绝不能在重写时丢弃。
+const MANAGED_SERVER_KEYS = new Set(['command', 'args', 'env']);
+const MANAGED_SERVER_TABLES = new Set(['env']);
 const BARE_KEY_TOKEN_RE = /[A-Za-z0-9_-]+/y;
 const INTEGER_RE = /^[+-]?(?:0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0[oO][0-7](?:_?[0-7])*|0[bB][01](?:_?[01])*|(?:0|[1-9](?:_?\d)*))$/;
 const FLOAT_RE = /^[+-]?(?:0|[1-9](?:_?\d)*)(?:\.\d(?:_?\d)*)?(?:[eE][+-]?\d(?:_?\d)*)?$/;
@@ -432,6 +436,28 @@ function readServerEntry(document, name) {
   return entry;
 }
 
+// 列出伏羲条目里不由我们管理的 assignment / 子表。返回非空表示"重写会丢用户数据"，
+// 调用方据此 fail closed，而不是把用户字段静默删掉。
+function unmanagedServerContent(document, name) {
+  const extras = [];
+  for (const table of document.tables) {
+    const path = table.path;
+    if (path[0] !== 'mcp_servers' || path[1] !== name) continue;
+    if (path.length === 2) {
+      for (const assignment of table.assignments) {
+        const [head, ...rest] = assignment.path;
+        if (MANAGED_SERVER_KEYS.has(head) && rest.length === 0) continue;
+        if (head === 'env') continue;
+        extras.push(assignment.path.join('.'));
+      }
+      continue;
+    }
+    if (path.length === 3 && MANAGED_SERVER_TABLES.has(path[2])) continue;
+    extras.push(path.join('.'));
+  }
+  return extras;
+}
+
 // Returns the normalized view of mcp_servers that the installer compares and
 // merges against. Throws TomlError for anything it cannot verify.
 function readMcpServers(text) {
@@ -440,7 +466,12 @@ function readMcpServers(text) {
   const names = mcpServerNames(document);
   const servers = {};
   for (const name of names) servers[name] = readServerEntry(document, name);
-  return { names, servers };
+  const unmanaged = {};
+  for (const name of names) {
+    const extras = unmanagedServerContent(document, name);
+    if (extras.length) unmanaged[name] = extras;
+  }
+  return { names, servers, unmanaged };
 }
 
 function renderKeySegment(key) {
@@ -473,6 +504,14 @@ function renderMcpServerBlock(name, entry, lineEnding) {
 function upsertMcpServer(text, name, entry) {
   const document = parseDocument(text);
   assertSupportedDocument(document);
+  const extras = unmanagedServerContent(document, name);
+  if (extras.length) {
+    throw new TomlError(
+      'TOML_UNSUPPORTED',
+      `[mcp_servers.${name}] 含有伏羲不管理的字段（${extras.join(', ')}）；重写会丢失这些用户配置，请先人工确认如何处理`,
+      { unmanaged: extras, server: name }
+    );
+  }
   const rendered = renderMcpServerBlock(name, entry, document.lineEnding);
   const body = document.body;
   const blocks = document.tables.filter(table => table.path.length >= 2
@@ -501,12 +540,13 @@ function upsertMcpServer(text, name, entry) {
   const lastStatementEnd = lastBlock.assignments.length
     ? lastBlock.assignments[lastBlock.assignments.length - 1].end
     : lastBlock.headerEnd;
+  // 末尾到下一个表头之间只可能是空白与注释（TOML 语法保证）。原样保留，
+  // 避免在用户注释上做静默删除；缺少换行时补一个，保证不会与表头粘连。
   const gap = body.slice(lastStatementEnd, regionEnd);
-  const separator = /^[ \t\r\n]*$/.test(gap) ? gap : document.lineEnding;
+  const separator = /^[\r\n]/.test(gap) ? gap : `${document.lineEnding}${gap}`;
   const tail = `${rendered}${separator}`;
   const nextText = `${document.bom ? '\ufeff' : ''}${body.slice(0, firstStart)}${tail}${body.slice(regionEnd)}`;
-  const normalized = tail.endsWith('\n') ? nextText : `${nextText}${document.lineEnding}`;
-  return { text: normalized, changed: normalized !== text };
+  return { text: nextText, changed: nextText !== text };
 }
 
 function throwUnsupported(message, document, position) {
@@ -518,5 +558,6 @@ module.exports = {
   parseDocument,
   readMcpServers,
   upsertMcpServer,
+  unmanagedServerContent,
   renderMcpServerBlock
 };

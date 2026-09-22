@@ -290,7 +290,10 @@ function preflight(manifest, options = {}) {
     configFormat: targets.format,
     backupRequired: fs.existsSync(targets.mcpConfig) || fs.existsSync(targets.skillTarget),
     reloadRequired: true,
-    existingMcpEntries: document.names
+    existingMcpEntries: document.names,
+    // 伏羲条目里用户自己加的字段（如 startup_timeout_sec）。此处只如实报告；真正需要
+    // 重写时 writeConfigEntry 会 fail closed，避免静默删除用户配置。
+    unmanagedFuxiEntryKeys: document.unmanaged
   };
   if (!plan.writable) {
     throw new BootstrapError('WRITE_PERMISSION_REQUIRED', 'MCP config or Skill target is not writable', plan);
@@ -601,12 +604,19 @@ function readConfigDocument(file, format) {
     const text = exists ? fs.readFileSync(file, 'utf8') : '';
     try {
       const parsed = readMcpServers(text);
-      return { format, exists, doc: text, servers: parsed.servers, names: parsed.names };
+      return {
+        format,
+        exists,
+        doc: text,
+        servers: parsed.servers,
+        names: parsed.names,
+        unmanaged: parsed.unmanaged['fuxi-platform'] || []
+      };
     } catch (error) {
       throw tomlErrorToBootstrap(error, file);
     }
   }
-  if (!exists) return { format, exists, doc: {}, servers: {}, names: [] };
+  if (!exists) return { format, exists, doc: {}, servers: {}, names: [], unmanaged: [] };
   let value;
   try {
     value = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -617,7 +627,7 @@ function readConfigDocument(file, format) {
   const servers = value.mcpServers && typeof value.mcpServers === 'object' && !Array.isArray(value.mcpServers)
     ? value.mcpServers
     : {};
-  return { format, exists, doc: value, servers, names: Object.keys(servers) };
+  return { format, exists, doc: value, servers, names: Object.keys(servers), unmanaged: [] };
 }
 
 function writeTextAtomic(file, text) {

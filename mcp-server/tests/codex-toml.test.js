@@ -9,6 +9,9 @@ const { TomlError, readMcpServers, upsertMcpServer } = require('../src/fuxi-toml
 // Windows paths come from path.win32 and expected output from JSON.stringify so
 // the fixtures never depend on hand-written backslash escaping.
 const WIN = (...parts) => path.win32.join(...parts);
+const BSLASH = String.fromCharCode(92);
+const DQ = String.fromCharCode(34);
+const SQ = String.fromCharCode(39);
 
 const FUXI_ENTRY = {
   command: WIN('C:', 'Program Files', 'nodejs', 'node.exe'),
@@ -182,7 +185,7 @@ test('reformatted entries with multi-line arrays and inline env tables are read 
     '  "/opt/fuxi/launcher.js",   # launcher',
     '  "--flag",',
     ']',
-    'env = { FUXI_API_URL = "http://127.0.0.1:3001", \'FUXI_INSTALL_ROOT\' = \'/opt/fuxi/agent-runtime\' }',
+    'env = { FUXI_API_URL = "http://127.0.0.1:3001", ' + SQ + 'FUXI_INSTALL_ROOT' + SQ + ' = ' + SQ + '/opt/fuxi/agent-runtime' + SQ + ' }',
     '',
     '[mcp_servers.other]',
     'command = "other"',
@@ -223,4 +226,146 @@ test('settings that follow the Fuxi entry stay untouched', () => {
   assert.equal(written.text.includes('[features]\nweb_search = true'), true);
   assert.equal(written.text.includes('[[skills.config]]\nname = "archify"'), true);
   assert.equal(written.text.includes('command = "old"'), false);
+});
+
+// 真实 Codex 配置里 mcp server 还会出现 env_vars / startup_timeout_sec 等字段
+// （本机 ~/.codex/config.toml 的 node_repl 即如此）。用户若把这些字段加到伏羲条目上，
+// 重写必须 fail closed，不能静默删除。
+test('user-managed keys inside the Fuxi entry block a rewrite instead of being dropped', () => {
+  const fixture = [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'startup_timeout_sec = 60',
+    'env_vars = ["PATH"]',
+    ''
+  ].join('\n');
+  const parsed = readMcpServers(fixture);
+  assert.deepEqual(parsed.unmanaged['fuxi-platform'], ['startup_timeout_sec', 'env_vars']);
+  assert.throws(
+    () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.unmanaged, ['startup_timeout_sec', 'env_vars']);
+      assert.equal(error.details.server, 'fuxi-platform');
+      return true;
+    }
+  );
+});
+
+test('a user sub-table under the Fuxi entry blocks a rewrite instead of being dropped', () => {
+  const fixture = [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    '',
+    '[mcp_servers.fuxi-platform.metadata]',
+    'owner = "platform"',
+    ''
+  ].join('\n');
+  assert.deepEqual(readMcpServers(fixture).unmanaged['fuxi-platform'], ['mcp_servers.fuxi-platform.metadata']);
+  assert.throws(
+    () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+    error => assertTomlError(error, 'TOML_UNSUPPORTED')
+  );
+});
+
+test('entries without user-managed keys report no unmanaged content', () => {
+  const parsed = readMcpServers(CODEX_FIXTURE);
+  assert.deepEqual(parsed.unmanaged, {});
+  const written = upsertMcpServer(CODEX_FIXTURE, 'fuxi-platform', FUXI_ENTRY);
+  assert.deepEqual(readMcpServers(written.text).unmanaged, {});
+});
+
+test('comments between the Fuxi entry and the next table are preserved', () => {
+  const fixture = [
+    '[mcp_servers.fuxi-platform]',
+    'command = "old"',
+    '',
+    '# keep this note',
+    '',
+    '[features]',
+    'web_search = true',
+    ''
+  ].join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.text.includes('# keep this note'), true);
+  assert.equal(written.text.includes('[features]\nweb_search = true'), true);
+  const second = upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(second.changed, false);
+  assert.equal(second.text, written.text);
+});
+
+test('basic-string escapes are decoded and re-encoded without loss', () => {
+  const windowsPath = WIN('C:', 'runtimes', 'node.exe');
+  const escaped = JSON.stringify(windowsPath); // TOML basic string == JSON escaping here
+  const fixture = '[mcp_servers.other]\ncommand = ' + escaped + '\n';
+  assert.equal(readMcpServers(fixture).servers.other.command, windowsPath);
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.deepEqual(readMcpServers(written.text).servers.other, { command: windowsPath });
+  // A malformed escape sequence inside a basic string is rejected, not guessed.
+  assert.throws(
+    () => readMcpServers('[mcp_servers.other]\ncommand = "' + BSLASH + 'users' + BSLASH + 'tester"\n'),
+    error => assertTomlError(error, 'TOML_INVALID')
+  );
+});
+
+test('a Codex config shaped like a real user profile round-trips', () => {
+  // Shape taken from a real Windows Codex config: root scalars, dotted and quoted
+  // project keys, nested tables, array-of-tables, plus servers that carry an env
+  // sub-table and the extra Codex keys env_vars / startup_timeout_sec.
+  const projectBasic = '[projects.' + DQ + 'c:' + BSLASH + BSLASH + 'users' + BSLASH + BSLASH + 'tester' + DQ + ']';
+  const projectLiteral = '[projects.' + SQ + 'd:' + BSLASH + 'work' + BSLASH + 'app' + SQ + ']';
+  const nodeCommand = 'C:' + BSLASH + 'runtimes' + BSLASH + 'node.exe';
+  const codexHome = 'C:' + BSLASH + 'Users' + BSLASH + 'tester' + BSLASH + '.codex';
+  const fixtureLines = [
+    'approval_policy = "never"',
+    'model_provider = "custom"',
+    '',
+    projectBasic,
+    'trust_level = "trusted"',
+    '',
+    projectLiteral,
+    'trust_level = "trusted"',
+    '',
+    '[windows]',
+    'sandbox = "elevated"',
+    '',
+    '[mcp_servers.node_repl]',
+    'command = ' + JSON.stringify(nodeCommand),
+    'args = []',
+    'startup_timeout_sec = 30',
+    'env_vars = ["PATH", "HOME"]',
+    '',
+    '[mcp_servers.node_repl.env]',
+    'CODEX_HOME = ' + JSON.stringify(codexHome),
+    '',
+    '[[skills.config]]',
+    'name = "neat-freak"',
+    '',
+    '[[skills.config]]',
+    'name = "archify"',
+    '',
+    '[shell_environment_policy.set]',
+    'FOO = "bar"',
+    ''
+  ];
+  const fixture = fixtureLines.join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, true);
+  // Stronger than enumerating lines: every unrelated line must survive verbatim.
+  for (const line of fixture.split('\n')) {
+    if (!line.trim()) continue;
+    assert.equal(written.text.includes(line), true, 'unrelated line was lost: ' + line);
+  }
+  for (const line of [projectBasic, projectLiteral, 'startup_timeout_sec = 30', 'env_vars = ["PATH", "HOME"]',
+    'CODEX_HOME = ' + JSON.stringify(codexHome), '[shell_environment_policy.set]', 'FOO = "bar"']) {
+    assert.equal(written.text.includes(line), true, 'missing preserved line: ' + line);
+  }
+  assert.equal(written.text.split('[[skills.config]]').length - 1, 2);
+  // Unrelated servers keep their extra keys and stay listed.
+  const parsed = readMcpServers(written.text);
+  assert.deepEqual(parsed.names, ['node_repl', 'fuxi-platform']);
+  assert.equal(parsed.servers.node_repl.command, nodeCommand);
+  assert.equal(parsed.servers.node_repl.env.CODEX_HOME, codexHome);
+  assert.deepEqual(parsed.servers['fuxi-platform'], FUXI_ENTRY);
+  assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
 });

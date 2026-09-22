@@ -187,6 +187,7 @@ test('Codex preflight reports an empty config as ready without creating it', () 
     assert.equal(plan.configFormat, 'toml');
     assert.equal(plan.configExists, false);
     assert.deepEqual(plan.existingMcpEntries, []);
+    assert.deepEqual(plan.unmanagedFuxiEntryKeys, []);
     assert.equal(plan.mcpConfig, path.join(root, '.codex', 'config.toml'));
     assert.equal(plan.skillTarget, path.join(root, '.agents', 'skills', SKILL_BASENAME));
     assert.equal(fs.existsSync(plan.mcpConfig), false);
@@ -277,6 +278,7 @@ test('a Codex install writes the official targets, preserves unrelated config an
     assert.equal(entry.env.FUXI_INSTALL_ROOT, state.installRoot);
     assert.equal(entry.env.FUXI_CONNECT_CODE, undefined);
     assert.deepEqual(parsed.servers.other, { command: 'node', env: { OTHER_FLAG: '1' } });
+    assert.deepEqual(parsed.unmanaged, [], 'a platform-written entry owns no user fields');
 
     assert.equal(fs.existsSync(path.join(skillTarget, 'SKILL.md')), true);
     assert.equal(verified.ok, true);
@@ -378,6 +380,76 @@ test('an existing .codex directory never triggers automatic Codex detection', ()
     os.homedir = originalHomedir;
     if (originalClient === undefined) delete process.env.FUXI_CLIENT;
     else process.env.FUXI_CLIENT = originalClient;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// A user may hand-add supported Codex keys (startup_timeout_sec, env_vars) to the
+// Fuxi entry. Preflight must report them, and a rewrite must fail closed rather
+// than delete them; an already-complete install must stay a no-op.
+test('user keys on the Fuxi entry are reported, never silently deleted', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-user-keys-'));
+  const home = path.join(root, 'home');
+  const originalHomedir = os.homedir;
+  os.homedir = () => home;
+  try {
+    const configFile = path.join(home, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    const userAugmented = [
+      'approval_policy = "never"',
+      '',
+      '[mcp_servers.fuxi-platform]',
+      'command = "stale-node"',
+      'args = ["/opt/stale/launcher.js"]',
+      'startup_timeout_sec = 60',
+      ''
+    ].join('\n');
+    fs.writeFileSync(configFile, userAugmented);
+
+    const plan = preflight(CODEX_MANIFEST, { client: 'codex' });
+    assert.deepEqual(plan.unmanagedFuxiEntryKeys, ['startup_timeout_sec']);
+    assert.deepEqual(plan.existingMcpEntries, ['fuxi-platform']);
+    assert.equal(fs.readFileSync(configFile, 'utf8'), userAugmented);
+
+    // A rewrite is required here (stale command), so the install must stop with a
+    // specific structured error instead of dropping the user key.
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const skillZip = skillPackageZip(root);
+    await assert.rejects(
+      () => runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false }),
+      error => {
+        assert.ok(error instanceof BootstrapError, 'expected BootstrapError, got ' + error);
+        assert.equal(error.code, 'MCP_CONFIG_UNSUPPORTED');
+        assert.equal(error.details.file, configFile);
+        assert.deepEqual(error.details.unmanaged, ['startup_timeout_sec']);
+        return true;
+      }
+    );
+    assert.equal(fs.readFileSync(configFile, 'utf8'), userAugmented, 'the user key must survive a refused install');
+  } finally {
+    os.homedir = originalHomedir;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an already-complete Codex install stays a no-op even with a user key present', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-user-keys-noop-'));
+  const home = path.join(root, 'home');
+  try {
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const skillZip = skillPackageZip(root);
+    const first = await runCodexInstall({ root, home, mcpZip, skillZip });
+
+    // Add a user key after the successful install, then reinstall.
+    const augmented = fs.readFileSync(first.configFile, 'utf8')
+      .replace('[mcp_servers.fuxi-platform]\n', '[mcp_servers.fuxi-platform]\nstartup_timeout_sec = 60\n');
+    fs.writeFileSync(first.configFile, augmented);
+
+    const second = await runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false });
+    assert.equal(second.state.status, 'COMPLETE');
+    assert.equal(second.state.reason, 'ALREADY_COMPLETE');
+    assert.equal(fs.readFileSync(first.configFile, 'utf8'), augmented, 'a no-op install must not rewrite the config');
+  } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
