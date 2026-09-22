@@ -367,7 +367,9 @@ router.get('/bootstrap-session', (req, res) => {
   const user = findUserById(session.userId);
   if (!user) return res.status(401).json({ success: false, code: 'USER_NOT_FOUND', message: '用户不存在' });
 
-  if (!session.client || !['workbuddy', 'cursor'].includes(session.client)) {
+  // 以 Host 注册表为准，避免新增 Host 时在多处维护同一份 allowlist。
+  const hostProfile = getOnboardingHost(session.client);
+  if (!hostProfile || hostProfile.mode !== 'install' || !hostProfile.client) {
     return res.status(409).json({ success: false, code: 'BOOTSTRAP_HOST_UNBOUND', message: 'Bootstrap 会话未绑定受支持的 Host' });
   }
   const requestedClient = String(req.query.client || '').trim().toLowerCase();

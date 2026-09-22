@@ -9,6 +9,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { parseZipBuffer } = require('./fuxi-zip');
 const { acquireFileLockSync } = require('./local-lock');
+const { TomlError, readMcpServers, upsertMcpServer } = require('./fuxi-toml');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 10000;
@@ -72,6 +73,16 @@ function workbuddyDefaultSkillTarget() {
   return path.join(os.homedir(), '.workbuddy', 'skills', PACKAGE_ROOTS.skill);
 }
 
+// Codex 官方用户级契约：MCP 配置固定为 ~/.codex/config.toml，Skill 固定落在
+// $HOME/.agents/skills。不接受路径覆盖，也不做目录探测。
+function codexDefaultMcpConfig() {
+  return path.join(os.homedir(), '.codex', 'config.toml');
+}
+
+function codexDefaultSkillTarget() {
+  return path.join(os.homedir(), '.agents', 'skills', PACKAGE_ROOTS.skill);
+}
+
 function detectKnownClient() {
   const requested = String(process.env.FUXI_CLIENT || '').trim().toLowerCase();
   if (requested && requested !== 'auto') return requested;
@@ -94,6 +105,9 @@ function validateSkillTarget(skillTarget, clientName) {
   }
   if (String(clientName || '').toLowerCase() === 'workbuddy' && !samePath(resolved, workbuddyDefaultSkillTarget())) {
     throw new BootstrapError('INVALID_SKILL_TARGET', 'WorkBuddy Skill target must use its built-in fuxi-prototype directory', { client: clientName });
+  }
+  if (String(clientName || '').toLowerCase() === 'codex' && !samePath(resolved, codexDefaultSkillTarget())) {
+    throw new BootstrapError('INVALID_SKILL_TARGET', 'Codex Skill target must use the user-level .agents/skills directory', { client: clientName });
   }
   return resolved;
 }
@@ -199,6 +213,18 @@ function clientTargets(manifest, options = {}) {
     mcpConfig = defaultMcpConfig;
     skillTarget = defaultSkillTarget;
   }
+  if (name === 'codex') {
+    const defaultMcpConfig = codexDefaultMcpConfig();
+    const defaultSkillTarget = codexDefaultSkillTarget();
+    if (configValue && !samePath(configValue, defaultMcpConfig)) {
+      throw new BootstrapError('INVALID_MCP_CONFIG', 'Codex MCP config must use the user-level ~/.codex/config.toml', { client: name });
+    }
+    if (skillValue && !samePath(skillValue, defaultSkillTarget)) {
+      throw new BootstrapError('INVALID_SKILL_TARGET', 'Codex Skill target must use the user-level .agents/skills directory', { client: name });
+    }
+    mcpConfig = defaultMcpConfig;
+    skillTarget = defaultSkillTarget;
+  }
   if (!mcpConfig && name === 'cursor') {
     const candidates = [
       path.join(os.homedir(), '.cursor', 'mcp.json'),
@@ -222,12 +248,19 @@ function clientTargets(manifest, options = {}) {
     name,
     mcpConfig: absolute(mcpConfig, 'mcpConfig'),
     skillTarget: validateSkillTarget(skillTarget, name),
-    format: client.configFormat || 'json'
+    format: client.configFormat || (name === 'codex' ? 'toml' : 'json')
   };
 }
 
 function checkWritable(target) {
-  const existing = fs.existsSync(target) ? target : path.dirname(target);
+  // 目标可能尚未创建（例如首次接入时 $HOME/.agents/skills 还不存在）。
+  // 这时判定"最近的已存在祖先目录"可写，才与 install 实际创建父目录的行为一致。
+  let existing = path.resolve(target);
+  while (!fs.existsSync(existing)) {
+    const parent = path.dirname(existing);
+    if (parent === existing) return false;
+    existing = parent;
+  }
   try {
     fs.accessSync(existing, fs.constants.R_OK | fs.constants.W_OK);
     return true;
@@ -241,36 +274,23 @@ function preflight(manifest, options = {}) {
     throw new BootstrapError('NODE_VERSION_UNSUPPORTED', 'Node.js >= 18 is required', { nodeVersion: process.version });
   }
   const targets = clientTargets(manifest, options);
-  if (targets.format !== 'json') {
+  if (!SUPPORTED_CONFIG_FORMATS.has(targets.format)) {
     throw new BootstrapError('CONFIG_FORMAT_UNSUPPORTED', `MCP config format is not supported: ${targets.format}`, { format: targets.format });
   }
-  let config = {};
-  if (fs.existsSync(targets.mcpConfig)) {
-    try {
-      config = readJson(targets.mcpConfig);
-    } catch (error) {
-      if (error instanceof BootstrapError) {
-        throw new BootstrapError('MCP_CONFIG_INVALID', error.message, { file: targets.mcpConfig });
-      }
-      throw error;
-    }
-    if (!config || typeof config !== 'object' || Array.isArray(config)) {
-      throw new BootstrapError('MCP_CONFIG_INVALID', 'MCP config root must be a JSON object', { file: targets.mcpConfig });
-    }
-  }
+  const document = readConfigDocument(targets.mcpConfig, targets.format);
   const plan = {
     ok: true,
     status: 'READY',
     client: targets.name,
     mcpConfig: targets.mcpConfig,
     skillTarget: targets.skillTarget,
-    configExists: fs.existsSync(targets.mcpConfig),
+    configExists: document.exists,
     skillExists: fs.existsSync(targets.skillTarget),
     writable: checkWritable(targets.mcpConfig) && checkWritable(targets.skillTarget),
     configFormat: targets.format,
     backupRequired: fs.existsSync(targets.mcpConfig) || fs.existsSync(targets.skillTarget),
     reloadRequired: true,
-    existingMcpEntries: config.mcpServers && typeof config.mcpServers === 'object' ? Object.keys(config.mcpServers) : []
+    existingMcpEntries: document.names
   };
   if (!plan.writable) {
     throw new BootstrapError('WRITE_PERMISSION_REQUIRED', 'MCP config or Skill target is not writable', plan);
@@ -562,19 +582,64 @@ function mergeMcpConfig(config, entry) {
   return output;
 }
 
-function readConfig(file) {
-  if (!fs.existsSync(file)) return {};
+const SUPPORTED_CONFIG_FORMATS = new Set(['json', 'toml']);
+
+function tomlErrorToBootstrap(error, file) {
+  if (!(error instanceof TomlError)) return error;
+  return new BootstrapError(
+    error.code === 'TOML_UNSUPPORTED' ? 'MCP_CONFIG_UNSUPPORTED' : 'MCP_CONFIG_INVALID',
+    error.message,
+    { file, tomlCode: error.code, ...(error.details || {}) }
+  );
+}
+
+// 按客户端格式读取 MCP 目标：JSON 面向 WorkBuddy/Cursor，TOML 面向 Codex 的
+// ~/.codex/config.toml。任何无法完整校验的配置都 fail closed，不猜、不覆盖。
+function readConfigDocument(file, format) {
+  const exists = fs.existsSync(file);
+  if (format === 'toml') {
+    const text = exists ? fs.readFileSync(file, 'utf8') : '';
+    try {
+      const parsed = readMcpServers(text);
+      return { format, exists, doc: text, servers: parsed.servers, names: parsed.names };
+    } catch (error) {
+      throw tomlErrorToBootstrap(error, file);
+    }
+  }
+  if (!exists) return { format, exists, doc: {}, servers: {}, names: [] };
+  let value;
   try {
-    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    value = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('root must be an object');
-    return value;
   } catch (error) {
     throw new BootstrapError('MCP_CONFIG_INVALID', `Cannot parse MCP config: ${error.message}`, { file });
   }
+  const servers = value.mcpServers && typeof value.mcpServers === 'object' && !Array.isArray(value.mcpServers)
+    ? value.mcpServers
+    : {};
+  return { format, exists, doc: value, servers, names: Object.keys(servers) };
 }
 
-function writeConfig(file, value) {
-  writeJsonAtomic(file, value);
+function writeTextAtomic(file, text) {
+  ensureDirectory(path.dirname(file));
+  const temp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  fs.writeFileSync(temp, text, { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(temp, file);
+}
+
+// 只更新伏羲自己的 MCP 条目；返回是否真的落盘，供回滚判断复用。
+function writeConfigEntry(file, document, name, entry) {
+  try {
+    if (document.format === 'toml') {
+      const result = upsertMcpServer(document.doc, name, entry);
+      if (result.changed) writeTextAtomic(file, result.text);
+      return result.changed;
+    }
+    writeJsonAtomic(file, mergeMcpConfig(document.doc, entry));
+    return true;
+  } catch (error) {
+    throw tomlErrorToBootstrap(error, file);
+  }
 }
 
 function parseToolReply(line, id) {
@@ -649,6 +714,7 @@ function buildState({ manifest, plan, state, mcp, skill, mcpRoot, credentialsFil
     apiUrl: manifest.apiUrl,
     statePath: state,
     mcpConfig: plan.mcpConfig,
+    configFormat: plan.configFormat,
     skillTarget: plan.skillTarget,
     mcpRoot,
     credentialsFile,
@@ -684,8 +750,10 @@ function readCompletedInstall(stateFile, manifest) {
     }
     const mcpReady = Boolean(state.mcpRoot && fs.existsSync(path.join(state.mcpRoot, 'src', 'server.js')) && fs.existsSync(path.join(state.mcpRoot, 'src', 'launcher.js')));
     const skillReady = Boolean(state.skillTarget && skillTargetReady(state.skillTarget, state.client));
-    const config = state.mcpConfig && fs.existsSync(state.mcpConfig) ? readConfig(state.mcpConfig) : null;
-    const configEntry = config && config.mcpServers && config.mcpServers['fuxi-platform'];
+    const config = state.mcpConfig && fs.existsSync(state.mcpConfig)
+      ? readConfigDocument(state.mcpConfig, state.configFormat || 'json')
+      : null;
+    const configEntry = config ? config.servers['fuxi-platform'] : null;
     if (!mcpReady || !skillReady || !mcpEntryMatchesState(configEntry, state, manifest)) return null;
     return state;
   } catch (error) {
@@ -772,10 +840,9 @@ async function install(manifest, options = {}) {
 
     step = 'CONFIGURE';
     stageStarted = Date.now();
-    const config = readConfig(plan.mcpConfig);
+    const configDocument = readConfigDocument(plan.mcpConfig, plan.configFormat);
     const entry = mcpEntry(manifest, mcpInstallRoot, plan.skillTarget, credentialsFile, installRoot, manifest.connectCode);
-    writeConfig(plan.mcpConfig, mergeMcpConfig(config, entry));
-    configWritten = true;
+    configWritten = writeConfigEntry(plan.mcpConfig, configDocument, 'fuxi-platform', entry);
     mark('configureMs', stageStarted);
 
     step = 'CONNECT';
@@ -795,14 +862,15 @@ async function install(manifest, options = {}) {
 
     step = 'VERIFY';
     stageStarted = Date.now();
-    const finalConfig = readConfig(plan.mcpConfig);
-    if (finalConfig.mcpServers && finalConfig.mcpServers['fuxi-platform']) {
-      const finalEntry = { ...finalConfig.mcpServers['fuxi-platform'] };
-      if (finalEntry.env) {
-        finalEntry.env = { ...finalEntry.env };
-        delete finalEntry.env.FUXI_CONNECT_CODE;
+    const finalConfig = readConfigDocument(plan.mcpConfig, plan.configFormat);
+    const finalEntry = finalConfig.servers['fuxi-platform'];
+    if (finalEntry) {
+      const sanitizedEntry = { ...finalEntry };
+      if (sanitizedEntry.env) {
+        sanitizedEntry.env = { ...sanitizedEntry.env };
+        delete sanitizedEntry.env.FUXI_CONNECT_CODE;
       }
-      writeConfig(plan.mcpConfig, mergeMcpConfig({ ...finalConfig, mcpServers: { ...finalConfig.mcpServers } }, finalEntry));
+      writeConfigEntry(plan.mcpConfig, finalConfig, 'fuxi-platform', sanitizedEntry);
     }
     removePath(path.join(staging, 'mcp.zip'));
     removePath(path.join(staging, 'skill.zip'));
@@ -864,8 +932,8 @@ function verify(stateFile) {
   let configHasFuxi = false;
   if (state.mcpConfig && fs.existsSync(state.mcpConfig)) {
     try {
-      const config = readConfig(state.mcpConfig);
-      configHasFuxi = Boolean(config.mcpServers && mcpEntryMatchesState(config.mcpServers['fuxi-platform'], state, { apiUrl: state.apiUrl }));
+      const config = readConfigDocument(state.mcpConfig, state.configFormat || 'json');
+      configHasFuxi = Boolean(mcpEntryMatchesState(config.servers['fuxi-platform'], state, { apiUrl: state.apiUrl }));
     } catch (error) {}
   }
   const checks = {
@@ -950,6 +1018,10 @@ module.exports = {
   downloadArtifact,
   mergeMcpConfig,
   mcpEntry,
+  codexDefaultMcpConfig,
+  codexDefaultSkillTarget,
+  readConfigDocument,
+  writeConfigEntry,
   acquireBootstrapLock,
   selfTest,
   install,

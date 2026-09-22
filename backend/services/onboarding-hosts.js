@@ -27,12 +27,16 @@ const ONBOARDING_HOSTS = Object.freeze([
   Object.freeze({
     id: 'codex',
     label: 'Codex',
-    mode: 'unsupported',
-    support: 'planned',
+    mode: 'install',
+    support: 'compatible',
     recommended: false,
-    description: '尚未建立经过验证的确定性安装 profile，本版本不会猜测配置路径。',
-    client: null,
-    promptFragment: ''
+    description: '兼容支持，使用 Codex 官方用户级 MCP 配置与 Skill 目录。',
+    client: 'codex',
+    promptFragment: `- 当前 Host 已由用户明确选择为 Codex；不得扫描 .codex、.workbuddy、.cursor 或推断当前 Host。
+- 不得切换为自动推断模式、追加任何配置/安装路径覆盖参数或修改平台提供的入口命令。
+- Codex 的 MCP 配置写入 ~/.codex/config.toml 的 [mcp_servers.fuxi-platform] 表，Skill 写入 $HOME/.agents/skills/fuxi-prototype；不得改写这两处之外的既有配置。
+- Bootstrap COMPLETE 只代表本地安装和自检完成；重载或重启 Codex 后，才能在新会话中执行 Host E2E。
+- 如果 Codex 需要用户信任 fuxi-platform MCP 而无法代替用户操作 UI，返回 USER_ACTION_REQUIRED，并说明需要用户完成的确切动作。`
   }),
   Object.freeze({
     id: 'other',

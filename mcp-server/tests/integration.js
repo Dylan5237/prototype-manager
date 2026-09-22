@@ -334,7 +334,7 @@ async function main() {
     assert.equal(hostsResponse.status, 200);
     assert.deepEqual(hosts.data.map(host => host.id), ['workbuddy', 'cursor', 'codex', 'other']);
     assert.equal(hosts.data[0].recommended, true);
-    assert.equal(hosts.data.find(host => host.id === 'codex').mode, 'unsupported');
+    assert.equal(hosts.data.find(host => host.id === 'codex').mode, 'install');
     assert.equal(hosts.data.find(host => host.id === 'other').mode, 'discovery');
 
     const missingHostResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap`, {
@@ -358,9 +358,33 @@ async function main() {
     });
     const codex = await codexResponse.json();
     assert.equal(codexResponse.status, 200);
-    assert.equal(codex.data.mode, 'unsupported');
-    assert.match(codex.data.prompt, /UNSUPPORTED_HOST/);
-    assert.equal(codex.data.canonicalOnboarding, null);
+    assert.equal(codex.data.mode, 'install');
+    assert.equal(codex.data.host.id, 'codex');
+    assert(codex.data.prompt.includes('用户已明确选择 Codex'));
+    assert(codex.data.prompt.includes('~/.codex/config.toml'));
+    assert(codex.data.prompt.includes('$HOME/.agents/skills/fuxi-prototype'));
+    assert(codex.data.prompt.includes('USER_ACTION_REQUIRED'));
+    assert(codex.data.prompt.includes('用户已明确选择 Codex'));
+    assert(codex.data.canonicalOnboarding.command.startsWith('node -e "'));
+    assert(!codex.data.canonicalOnboarding.command.includes('workbuddy'));
+    assert(!codex.data.canonicalOnboarding.command.includes('cursor'));
+    assert(codex.data.bootstrapSession.credential);
+
+    const codexOnboardingResponse = await fetch(codex.data.canonicalOnboarding.url);
+    const codexOnboardingBuffer = Buffer.from(await codexOnboardingResponse.arrayBuffer());
+    assert.equal(codexOnboardingResponse.status, 200);
+    assert.equal(require('crypto').createHash('sha256').update(codexOnboardingBuffer).digest('hex'), codex.data.canonicalOnboarding.sha256);
+    const codexOnboardingSource = codexOnboardingBuffer.toString('utf8');
+    assert.match(codexOnboardingSource, /"client":"codex"/);
+    assert.doesNotMatch(codexOnboardingSource, /"client":"auto"/);
+
+    const codexManifestResponse = await fetch(`${apiUrl}/api/integrations/bootstrap-session`, {
+      headers: { Authorization: `Bearer ${codex.data.bootstrapSession.credential}` }
+    });
+    const codexManifest = await codexManifestResponse.json();
+    assert.equal(codexManifestResponse.status, 200);
+    assert.equal(codexManifest.data.manifest.client.name, 'codex');
+    assert.equal(codexManifest.data.manifest.bootstrapId, codex.data.bootstrapSession.bootstrapId);
 
     const bootstrapResponse = await fetch(`${apiUrl}/api/integrations/agent-bootstrap?host=workbuddy`, {
       headers: { Authorization: `Bearer ${login.data.token}` }
