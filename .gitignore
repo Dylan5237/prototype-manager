@@ -36,6 +36,8 @@ docs/*
 !docs/PHASE28_HELP_PROMPT_SNAPSHOT.md
 !docs/BACKLOG.md
 !docs/CONTRACT_FREEZE_TASK_V2.md
+!docs/ai-award-2026/
+!docs/ai-award-2026/**
 !docs/skill-patches/
 !docs/skill-patches/**
 !docs/prototypes/
