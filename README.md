@@ -2,14 +2,15 @@
 
 伏羲是 AI 生成前端原型的托管、预览、版本和协作控制面，提供 Web 管理界面、后端 API 和面向 Agent 的 MCP Server。它不提供网页代码编辑器；修改由本地 IDE 或已接入的 AI Agent 完成，平台负责交付校验、候选预览、人工采用和版本保护。
 
-## 当前状态（2026-09-02）
+## 当前状态（2026-09-22）
 
-- 管理员使用统计 v1.0 已完成 16077 测试和 16088 正式环境 live verification；当前正式 release 为 `20260828-185117-c1edcab0`。该身份锁的是当时 16088 的 **deploy/manifest tip**（脚本消费的 GitLab `main` 克隆），write authority 仍为 GitHub `origin`。
-- 阶段 20 已快进到本地 `main` 并部署 16077 release `20260830-092500-adf7ea7f`；阶段 21 已完成本地与远程仓库治理及安全同步，阶段 22 项目模块首批增量已部署 16077，16088 仍运行既有生产 release。
-- 16077 当前 release 为 `20260902-095755-97fc9e9a`，已接入项目模块高保真列表/工作台并通过 release/manifest、PM2/Nginx、认证 API、分页/筛选回读和浏览器复测；16088 未进行本轮发布。
-- 当前主流程是“创建/修改原型 → 校验并交付 → 预览/回读”；项目协作使用“任务码 → 候选 ZIP → 独立预览 → 负责人采用/退回 → 基础版本 CAS”闭环。
-- 阶段 20 已完成：BL-003 前端分包和 BL-004 Linux 日志修复已通过 16077 验收，BL-006 只读清理预览和性能基线已交付；BL-006 实际清理和 16088 发布仍是独立人工门禁。
-- 阶段 22 BL-007 管理员全量原型只读预览已完成平台实现、本地/API 回归和 16077 跨用户真实复核；项目模块高保真列表/三栏工作台已接入真实路由并部署 16077，同时保留固定第一个已绑定菜单、列表摘要/筛选分页、绑定原型服务端搜索分页、MCP 签出门禁、预览容错、权限显示对齐等能力；完整角色/写入闭环验收仍见 [`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md`](docs/PHASE22_PROJECT_MODULE_EVIDENCE.md)。
+- 伏羲已进入 **Productization / Operations** 阶段：核心闭环已形成，当前重点从功能扩张转向发布可靠性、权限正确性、Agent 接入成功率和项目协作体验收敛。项目控制面见 [Command Center #66](https://github.com/Dylan5237/prototype-manager/issues/66)。
+- GitHub `main` 是唯一写权威 / Dev SoT；GitLab `develop` / `main` 仅承担测试/生产投影与 deploy/manifest identity。允许经处置人确认的 projection merge 导致 SHA 不同，禁止把 GitLab 反写成第二套权威。
+- 16088 最新记录的生产切换为 release `20260916-112822-f458f3e9`；生产服务当时保持健康，但 post-deploy verifier 因 Bootstrap 已改为显式 Host 选择而仍校验旧契约，在 `400 HOST_SELECTION_REQUIRED` 停止。当前第一优先级是 Issue #59：修正验证脚本后对现有生产 release 做只读复核，不因此重新部署。
+- 项目内修改主链路已切到 Task v2：正式版与单一待审修订分离，采用/退回由负责人显式决策；旧 `changeId` 写路径已退役为兼容读边界。
+- MCP / Skill 已具备 Host 选择、Bootstrap、refresh token 轮换、单实例与跨进程 refresh 单飞等运行能力；后续接入体验重点转向 Windows/Cursor 与 WorkBuddy 的真实成功率和人话化 Help。
+- 评优证据侧已完成真实业务任务观测（#39）、准确性复核账本（#55）和效率/节时证据账本（#56）；真实生产数据采集已启动，禁止用 acceptance/test 流量制造指标。
+- 2026-09-22 仓库治理已收口：历史 feature/worktree 已清理，`agent-project-ops` 已采纳（#64），旧 Task v2 Command Center #11 与 reconciliation #43 已归档。当前产品 backlog 继续保留在独立 Issues 中。
 
 ## 快速访问
 
