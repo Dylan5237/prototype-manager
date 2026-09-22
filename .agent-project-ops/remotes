@@ -1,0 +1,5 @@
+authority=origin
+projection=zoesoftgitlab
+projection_url=http://192.168.2.145:11980/fuxi/fuxi-platform.git
+share_export=(none)
+share_export_url=
