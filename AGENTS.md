@@ -9,17 +9,25 @@
 
 ## Git 操作规范
 
-- 仓库 `zoesoftgitlab` 是伏羲平台 GitLab 远端；`origin` 是 GitHub，不作为伏羲生产源码来源。
-- 平台分支分层：`main` 是生产源码，`develop` 是测试集成源码，`feat/*` 是特性开发；本地、GitLab 和 GitHub 保持同名分支，但 GitLab 是部署事实源。
-- 平台变更先在 `feat/*` 开发并评审，再合入 `develop`；16077 只允许从 GitLab `develop` 新鲜克隆构建。验证后再按独立确认合入并推送 GitLab `main`。
-- 生产发布只能从 GitLab `main` 新鲜构建；GitHub 仅作镜像与协作，不作为 16077/16088 发布来源。
+- **Write authority（写权威）** = GitHub `origin`（本仓 Issues / PRs / 合入）。Agent 落地与耐久决策只认这里。`origin` 是唯一写权威，不是镜像仓。
+- **`zoesoftgitlab`**（仅当本机已配置该 remote 名时）= 可选同历史 **投影**，并且/或者当前 `deploy-*-from-gitlab.ps1` / 16077 / 16088 **读取** 的 deploy/manifest tip 远端。它 **不是** write authority，**不是** 生产源码 SoT，**不是** 代码权威的唯一事实源。本检出当前只登记了 `origin`；不要发明未出现在 `git remote -v` 里的 remote。
+- 平台分支分层保持 `feat/*` → 评审合入 `develop`（测试集成）→ 独立确认后合入 `main`（生产发布枝）；本地与各远端尽量同名。**落地权威在 GitHub**：先在 `origin` 合入，再把同历史 **快进（FF）投影** 到已配置的 `zoesoftgitlab` 对应枝。部署脚本若仍从 GitLab 新鲜克隆，必须先确认投影 tip 已 FF 自权威 tip，才能宣称可部署。
+- **双 tip（必须显式区分，禁止偷换）：**
+
+  | Tip | 含义 | 禁止说法 |
+  | --- | --- | --- |
+  | **Write authority tip** | GitHub `origin` 默认枝（或 Command Center 点名枝）在 PR merge 后的 tip。Issues / PRs / Agent 合入只认此 tip。 | 把 GitLab / 投影 / 发布 SHA 写成写权威 |
+  | **Deploy / manifest tip** | `deploy-test-from-gitlab.ps1` / `deploy-production-from-gitlab.ps1` 当前新鲜克隆的提交（今日脚本消费 GitLab `develop` → 16077、GitLab `main` → 16088）。可滞后；宣称可部署前须已从权威 tip FF。 | 把它写成 write SoT、生产源码 SoT 或唯一事实源 |
+
+- 反置合同是反模式：禁止把 GitLab 写成唯一生产/写权威，禁止把 GitHub 降为「仅镜像」。部署脚本今天 **消费** GitLab tip 作为 deploy floor；该 tip 并非 write SoT。
+- 投影 tip 的 SHA **可以** 与权威 tip 不同（例如多一串 projection merge）；这是预期形态，不是要把 GitHub tip force 盖成 GitLab merge tip。禁止 force push。
 - 提交遵循 Conventional Commits：`type(scope): 中文标题`；body 写现象/根因 -> 改法；footer 使用 `Co-Authored-By: Codex <noreply@openai.com>`。
 - 一个独立任务一个 commit；commit 前按改动范围执行必要的 `npm test`、`npm run build`、MCP 检查或文档检查。
-- 不执行 force push，不用 reset/clean/checkout 覆盖用户改动；不把凭证、密码或长期 token 写入仓库。
+- 不用 reset/clean/checkout 覆盖用户改动；不把凭证、密码或长期 token 写入仓库。
 
 ## 伏羲平台与配套 Skill 的双边分析规则
 
-- 配套 Skill 独立仓库路径：`D:\_projects\skills\prototype-manager-skills`；Skill 入口为 `fuxi-prototype`；测试集成使用 GitLab `develop`，生产使用 GitLab `main`。
+- 配套 Skill 独立仓库路径：`D:\_projects\skills\prototype-manager-skills`；Skill 入口为 `fuxi-prototype`。Skill 的 16077/16088 脚本今日仍新鲜克隆 GitLab `develop` / `main` 作为 **deploy/manifest tip**（可滞后，须 FF 自该 Skill 仓的写权威 tip）；这不是把 Skill GitLab 写成写权威。Skill 仓自身的 AGENTS 远程合同不在本文件改写范围内。
 - 任何需求先同时分析 FuxiPlatform 与配套 Skill 两个仓库的影响，不能只看平台或只看 Skill。
 - 重点检查双方的 API/工具契约、入口目录、分发包、版本/hash、运行时配置和验收链路；判断需求是否需要一边改、两边改或仅记录不改。
 - 涉及平台接口、MCP 工具、Skill 入口、ZIP 分发、运行时 profile 或安装流程时，默认按跨仓库变更评估；不能因改动集中在一边就跳过另一边分析。
@@ -47,7 +55,7 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 
 ## 当前状态和下一步
 
-- 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`，GitHub `origin` 不作为生产来源。
+- 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`。该身份锁的是当时 16088 的 **deploy/manifest tip**（脚本消费的 GitLab `main` 克隆），write authority 仍为 GitHub `origin`。
 - 阶段 20 已快进到本地 `main` 并完成 16077 release `20260830-092500-adf7ea7f` 验收；阶段 21 安全同步已完成，阶段 22 项目模块首批增量已部署测试环境，尚未部署 16088。
 - 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 当前测试 release 为 `20260902-095755-97fc9e9a`，健康 200、bootstrap 未授权 401、认证 API 回读、项目高保真列表/三栏工作台和预览 iframe 浏览器复测通过。
 - 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
@@ -61,5 +69,5 @@ Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1
 ## 测试环境部署约定
 
 - 用户已于 2026-09-02 明确授权后续 16077 测试环境部署无需逐次确认；执行仍必须使用本 Skill 的安全脚本和 `DEPLOY_FUXI_TEST` 门禁参数。该授权不包含 16088 生产发布、远程推送、删除或回滚。
-- `16077` 后续统一运行 `deploy-test-from-gitlab.ps1`（或其兼容包装 `quick-deploy-test.ps1`）：新鲜克隆平台与 Skill 的 GitLab `develop`，再执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；禁止直接打包任意 worktree。
-- 只有准备发布 `16088` 时才使用完整构建、MCP 校验/集成、生产基线和发布验收门禁。
+- `16077` 后续统一运行 `deploy-test-from-gitlab.ps1`（或其兼容包装 `quick-deploy-test.ps1`）：新鲜克隆平台与 Skill 的 GitLab `develop`（**deploy/manifest tip**，不是 write SoT），再执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；禁止直接打包任意 worktree。宣称测发前，该 GitLab `develop` 须已 FF 自 GitHub 权威 tip。
+- 只有准备发布 `16088` 时才使用完整构建、MCP 校验/集成、生产基线和发布验收门禁。`deploy-production-from-gitlab.ps1` 今日仍新鲜克隆 GitLab `main` 作为生产 **deploy/manifest tip**（同样不是 write SoT）；切换前须已 FF 自 `origin/main`。

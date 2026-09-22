@@ -4,7 +4,7 @@
 
 ## 当前状态（2026-09-02）
 
-- 管理员使用统计 v1.0 已完成 16077 测试和 16088 正式环境 live verification；当前正式 release 为 `20260828-185117-c1edcab0`，GitHub `origin` 不作为生产来源。
+- 管理员使用统计 v1.0 已完成 16077 测试和 16088 正式环境 live verification；当前正式 release 为 `20260828-185117-c1edcab0`。该身份锁的是当时 16088 的 **deploy/manifest tip**（脚本消费的 GitLab `main` 克隆），write authority 仍为 GitHub `origin`。
 - 阶段 20 已快进到本地 `main` 并部署 16077 release `20260830-092500-adf7ea7f`；阶段 21 已完成本地与远程仓库治理及安全同步，阶段 22 项目模块首批增量已部署 16077，16088 仍运行既有生产 release。
 - 16077 当前 release 为 `20260902-095755-97fc9e9a`，已接入项目模块高保真列表/工作台并通过 release/manifest、PM2/Nginx、认证 API、分页/筛选回读和浏览器复测；16088 未进行本轮发布。
 - 当前主流程是“创建/修改原型 → 校验并交付 → 预览/回读”；项目协作使用“任务码 → 候选 ZIP → 独立预览 → 负责人采用/退回 → 基础版本 CAS”闭环。
