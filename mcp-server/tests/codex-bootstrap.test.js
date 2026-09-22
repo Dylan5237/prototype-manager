@@ -8,12 +8,14 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { buildZip } = require('../src/fuxi-zip');
+const { FUXI_MANAGED_ENV_KEYS } = require('../src/fuxi-toml');
 const {
   BootstrapError,
   clientTargets,
   codexDefaultMcpConfig,
   codexDefaultSkillTarget,
   install,
+  mcpEntry,
   preflight,
   readConfigDocument,
   verify
@@ -449,6 +451,146 @@ test('an already-complete Codex install stays a no-op even with a user key prese
     assert.equal(second.state.status, 'COMPLETE');
     assert.equal(second.state.reason, 'ALREADY_COMPLETE');
     assert.equal(fs.readFileSync(first.configFile, 'utf8'), augmented, 'a no-op install must not rewrite the config');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// ---- Gap 1: env 里非伏羲管理的用户变量（安装器层面） ----
+
+test('the installer only writes env keys declared as Fuxi-managed', () => {
+  // 白名单必须覆盖安装器实际写出的每一个 env 键，否则我们自己的键会被判成用户资产。
+  const plain = mcpEntry({ apiUrl: 'http://127.0.0.1:3001' }, '/opt/mcp', '/opt/skill', '/opt/creds', '/opt/root', null);
+  const withConnect = mcpEntry({ apiUrl: 'http://127.0.0.1:3001' }, '/opt/mcp', '/opt/skill', '/opt/creds', '/opt/root', 'connect-code');
+  for (const entry of [plain, withConnect]) {
+    for (const key of Object.keys(entry.env)) {
+      assert.equal(FUXI_MANAGED_ENV_KEYS.includes(key), true, key + ' must be declared as Fuxi-managed');
+    }
+  }
+  assert.equal(Object.keys(withConnect.env).includes('FUXI_CONNECT_CODE'), true);
+  assert.equal(FUXI_MANAGED_ENV_KEYS.includes('FUXI_CONNECT_CODE'), true);
+});
+
+function userEnvConfig(extraEnvLines) {
+  return [
+    'approval_policy = "never"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'args = ["/opt/stale/launcher.js"]',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_API_URL = "http://stale.invalid"',
+    ...extraEnvLines,
+    ''
+  ].join('\n');
+}
+
+test('Codex preflight reports user env vars on the Fuxi entry without touching the file', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-env-preflight-'));
+  const originalHomedir = os.homedir;
+  os.homedir = () => root;
+  try {
+    const config = path.join(root, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(config), { recursive: true });
+    const content = userEnvConfig(['NODE_OPTIONS = "--max-old-space-size=4096"', 'HTTP_PROXY = "http://proxy.invalid:8080"']);
+    fs.writeFileSync(config, content);
+    const plan = preflight(CODEX_MANIFEST, { client: 'codex' });
+    assert.equal(plan.ok, true);
+    assert.deepEqual(plan.unmanagedFuxiEnvKeys, ['NODE_OPTIONS', 'HTTP_PROXY']);
+    assert.deepEqual(plan.unmanagedFuxiEntryKeys, [
+      'mcp_servers.fuxi-platform.env.NODE_OPTIONS',
+      'mcp_servers.fuxi-platform.env.HTTP_PROXY'
+    ]);
+    assert.equal(fs.readFileSync(config, 'utf8'), content, 'preflight must not modify the config');
+  } finally {
+    os.homedir = originalHomedir;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a required Codex rewrite fails closed when the Fuxi entry has user env vars', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-env-blocked-'));
+  const home = path.join(root, 'home');
+  try {
+    const configFile = path.join(home, '.codex', 'config.toml');
+    const skillTarget = path.join(home, '.agents', 'skills', SKILL_BASENAME);
+    const userConfig = userEnvConfig(['NODE_OPTIONS = "--max-old-space-size=4096"']);
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(configFile, userConfig);
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const skillZip = skillPackageZip(root);
+    await assert.rejects(
+      () => runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false }),
+      error => {
+        assert.ok(error instanceof BootstrapError, 'expected BootstrapError, got ' + error);
+        assert.equal(error.code, 'MCP_CONFIG_UNSUPPORTED');
+        assert.equal(error.details.file, configFile);
+        assert.deepEqual(error.details.unmanagedEnvKeys, ['NODE_OPTIONS']);
+        return true;
+      }
+    );
+    assert.equal(fs.readFileSync(configFile, 'utf8'), userConfig, 'the user env var must survive a refused install');
+    assert.equal(fs.existsSync(skillTarget), false, 'rollback must remove the unverified Skill');
+    const failed = JSON.parse(fs.readFileSync(path.join(root, 'runtime', 'bootstrap-state.json'), 'utf8'));
+    assert.equal(failed.status, 'FAILED');
+    assert.equal(failed.failure.code, 'MCP_CONFIG_UNSUPPORTED');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('an already-complete Codex install is a no-op even with user env vars on the entry', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-env-noop-'));
+  const home = path.join(root, 'home');
+  try {
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const skillZip = skillPackageZip(root);
+    const first = await runCodexInstall({ root, home, mcpZip, skillZip });
+    // 用户随后往伏羲条目的 env 里加了变量：已装完的接入必须保持空操作。
+    const augmented = fs.readFileSync(first.configFile, 'utf8').replace(
+      '[mcp_servers.fuxi-platform.env]\n',
+      '[mcp_servers.fuxi-platform.env]\nNODE_OPTIONS = "--max-old-space-size=4096"\n'
+    );
+    fs.writeFileSync(first.configFile, augmented);
+    const second = await runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false });
+    assert.equal(second.state.status, 'COMPLETE');
+    assert.equal(second.state.reason, 'ALREADY_COMPLETE');
+    assert.equal(second.verified.ok, true);
+    assert.equal(fs.readFileSync(first.configFile, 'utf8'), augmented, 'a no-op install must not rewrite the config');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a required Codex rewrite fails closed when the Fuxi block holds a user comment', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-comment-blocked-'));
+  const home = path.join(root, 'home');
+  try {
+    const configFile = path.join(home, '.codex', 'config.toml');
+    const userConfig = [
+      'approval_policy = "never"',
+      '',
+      '[mcp_servers.fuxi-platform]',
+      '# 由伏羲平台接管，请勿手改',
+      'command = "stale-node"',
+      'args = ["/opt/stale/launcher.js"]',
+      ''
+    ].join('\n');
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(configFile, userConfig);
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const skillZip = skillPackageZip(root);
+    await assert.rejects(
+      () => runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false }),
+      error => {
+        assert.ok(error instanceof BootstrapError, 'expected BootstrapError, got ' + error);
+        assert.equal(error.code, 'MCP_CONFIG_UNSUPPORTED');
+        assert.equal(error.details.commentLines.length, 1);
+        return true;
+      }
+    );
+    assert.equal(fs.readFileSync(configFile, 'utf8'), userConfig, 'the user comment must survive a refused install');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

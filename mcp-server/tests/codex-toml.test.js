@@ -4,7 +4,29 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 
-const { TomlError, readMcpServers, upsertMcpServer } = require('../src/fuxi-toml');
+const { TomlError, FUXI_MANAGED_ENV_KEYS, readMcpServers, upsertMcpServer } = require('../src/fuxi-toml');
+
+// 用户手加到伏羲条目 env 上的变量：不是我们的，重写会丢，必须被检出。
+const USER_ENV_FIXTURE = [
+  '[mcp_servers.fuxi-platform]',
+  'command = "stale-node"',
+  'args = ["/opt/stale/launcher.js"]',
+  '',
+  '[mcp_servers.fuxi-platform.env]',
+  'FUXI_API_URL = "http://stale.invalid"',
+  'NODE_OPTIONS = "--max-old-space-size=4096"',
+  'HTTP_PROXY = "http://proxy.invalid:8080"',
+  ''
+].join('\n');
+
+// 同样的用户变量，写在内联 env 表里。
+const USER_INLINE_ENV_FIXTURE = [
+  '[mcp_servers.fuxi-platform]',
+  'command = "stale-node"',
+  'args = ["/opt/stale/launcher.js"]',
+  'env = { FUXI_API_URL = "http://stale.invalid", NODE_OPTIONS = "--max-old-space-size=4096" }',
+  ''
+].join('\n');
 
 // Windows paths come from path.win32 and expected output from JSON.stringify so
 // the fixtures never depend on hand-written backslash escaping.
@@ -268,11 +290,17 @@ test('a user sub-table under the Fuxi entry blocks a rewrite instead of being dr
   );
 });
 
-test('entries without user-managed keys report no unmanaged content', () => {
-  const parsed = readMcpServers(CODEX_FIXTURE);
-  assert.deepEqual(parsed.unmanaged, {});
+test('a platform-written entry reports no unmanaged content, while user env vars do', () => {
+  // 平台自己写出来的伏羲条目只含受管理内容。
   const written = upsertMcpServer(CODEX_FIXTURE, 'fuxi-platform', FUXI_ENTRY);
-  assert.deepEqual(readMcpServers(written.text).unmanaged, {});
+  const parsed = readMcpServers(written.text);
+  assert.equal(parsed.unmanaged['fuxi-platform'], undefined);
+  assert.equal(parsed.unmanagedEnv['fuxi-platform'], undefined);
+  // 同一份配置里，无关 server 的 env 子表带着用户变量，仍必须被识别为未管理内容
+  // （CODEX_FIXTURE 的 node_repl.env 里就是 NODE_OPTIONS）。
+  const fixture = readMcpServers(CODEX_FIXTURE);
+  assert.deepEqual(fixture.unmanagedEnv, { node_repl: ['NODE_OPTIONS'] });
+  assert.deepEqual(fixture.unmanaged, { node_repl: ['mcp_servers.node_repl.env.NODE_OPTIONS'] });
 });
 
 test('comments between the Fuxi entry and the next table are preserved', () => {
@@ -368,4 +396,265 @@ test('a Codex config shaped like a real user profile round-trips', () => {
   assert.equal(parsed.servers.node_repl.env.CODEX_HOME, codexHome);
   assert.deepEqual(parsed.servers['fuxi-platform'], FUXI_ENTRY);
   assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
+});
+
+// ---- Gap 1: env 里非伏羲管理的用户变量 ----
+
+test('the managed env whitelist covers the installer keys and nothing more', () => {
+  // 白名单必须恰好是安装器写进去的那几个 FUXI_* 键；多写会掩盖用户变量，少写会误报。
+  assert.deepEqual([...FUXI_MANAGED_ENV_KEYS].sort(), [
+    'FUXI_API_URL', 'FUXI_CONNECT_CODE', 'FUXI_CREDENTIALS_FILE',
+    'FUXI_INSTALL_ROOT', 'FUXI_MCP_TARGET', 'FUXI_SKILL_TARGET'
+  ]);
+  const whitelisted = [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    ...FUXI_MANAGED_ENV_KEYS.map(key => key + ' = "value"'),
+    ''
+  ].join('\n');
+  assert.deepEqual(readMcpServers(whitelisted).unmanagedEnv, {});
+  assert.deepEqual(readMcpServers(whitelisted).unmanaged, {});
+});
+
+test('user env vars in the [env] sub-table block a rewrite instead of being dropped', () => {
+  const parsed = readMcpServers(USER_ENV_FIXTURE);
+  assert.deepEqual(parsed.unmanagedEnv['fuxi-platform'], ['NODE_OPTIONS', 'HTTP_PROXY']);
+  assert.deepEqual(parsed.unmanaged['fuxi-platform'], [
+    'mcp_servers.fuxi-platform.env.NODE_OPTIONS',
+    'mcp_servers.fuxi-platform.env.HTTP_PROXY'
+  ]);
+  // 用户变量本身仍然可读，只是不允许在重写时被丢掉。
+  assert.equal(parsed.servers['fuxi-platform'].env.NODE_OPTIONS, '--max-old-space-size=4096');
+  assert.equal(parsed.servers['fuxi-platform'].env.HTTP_PROXY, 'http://proxy.invalid:8080');
+  assert.throws(
+    () => upsertMcpServer(USER_ENV_FIXTURE, 'fuxi-platform', FUXI_ENTRY),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.unmanagedEnvKeys, ['NODE_OPTIONS', 'HTTP_PROXY']);
+      assert.equal(error.details.server, 'fuxi-platform');
+      assert.deepEqual(error.details.commentLines, []);
+      return true;
+    }
+  );
+});
+
+test('user env vars in an inline env table block a rewrite instead of being dropped', () => {
+  const parsed = readMcpServers(USER_INLINE_ENV_FIXTURE);
+  assert.deepEqual(parsed.unmanagedEnv['fuxi-platform'], ['NODE_OPTIONS']);
+  assert.deepEqual(parsed.unmanaged['fuxi-platform'], ['mcp_servers.fuxi-platform.env.NODE_OPTIONS']);
+  assert.equal(parsed.servers['fuxi-platform'].env.NODE_OPTIONS, '--max-old-space-size=4096');
+  assert.throws(
+    () => upsertMcpServer(USER_INLINE_ENV_FIXTURE, 'fuxi-platform', FUXI_ENTRY),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.unmanagedEnvKeys, ['NODE_OPTIONS']);
+      return true;
+    }
+  );
+});
+
+test('user env vars written as dotted env keys block a rewrite too', () => {
+  const fixture = [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'env.FUXI_API_URL = "http://stale.invalid"',
+    'env.HTTP_PROXY = "http://proxy.invalid:8080"',
+    ''
+  ].join('\n');
+  const parsed = readMcpServers(fixture);
+  assert.deepEqual(parsed.unmanagedEnv['fuxi-platform'], ['HTTP_PROXY']);
+  assert.equal(parsed.servers['fuxi-platform'].env.HTTP_PROXY, 'http://proxy.invalid:8080');
+  assert.throws(
+    () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.unmanagedEnvKeys, ['HTTP_PROXY']);
+      return true;
+    }
+  );
+});
+
+// ---- Gap 1 + 2: 已匹配时必须空操作 ----
+
+// 把 FUXI_ENTRY 的受管理内容写成文件，再附上用户自己加的东西。
+function matchingFile({ extraEnv = [], extraLines = [] } = {}) {
+  return [
+    '[mcp_servers.fuxi-platform]',
+    'command = ' + JSON.stringify(FUXI_ENTRY.command),
+    'args = ' + JSON.stringify(FUXI_ENTRY.args),
+    ...extraLines,
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    ...Object.entries(FUXI_ENTRY.env).map(([key, value]) => key + ' = ' + JSON.stringify(value)),
+    ...extraEnv,
+    ''
+  ].join('\n');
+}
+
+test('a matching entry with user env vars is left byte-for-byte unchanged', () => {
+  const fixture = matchingFile({ extraEnv: ['NODE_OPTIONS = "--max-old-space-size=4096"', 'HTTP_PROXY = "http://proxy.invalid:8080"'] });
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, false);
+  assert.equal(written.text, fixture);
+  // 用户变量仍在读数里，且被如实标为未管理。
+  const parsed = readMcpServers(written.text);
+  assert.equal(parsed.servers['fuxi-platform'].env.NODE_OPTIONS, '--max-old-space-size=4096');
+  assert.deepEqual(parsed.unmanagedEnv['fuxi-platform'], ['NODE_OPTIONS', 'HTTP_PROXY']);
+});
+
+test('a change in our own managed value still forces the rewrite path', () => {
+  // 同一个文件，只把伏羲自己的 FUXI_API_URL 改掉：这时才需要重写，用户变量就会阻塞。
+  const fixture = matchingFile({ extraEnv: ['NODE_OPTIONS = "--max-old-space-size=4096"'] });
+  assert.throws(
+    () => upsertMcpServer(fixture, 'fuxi-platform', { ...FUXI_ENTRY, env: { ...FUXI_ENTRY.env, FUXI_API_URL: 'http://changed.invalid' } }),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.unmanagedEnvKeys, ['NODE_OPTIONS']);
+      return true;
+    }
+  );
+});
+
+// ---- Gap 2: 块内用户注释 ----
+
+const INNER_COMMENT_FORMS = {
+  'before the first assignment': [
+    '[mcp_servers.fuxi-platform]',
+    '# 这里的地址请勿改动',
+    'command = "stale-node"',
+    'args = ["/opt/stale/launcher.js"]',
+    ''
+  ],
+  'between two assignments': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    '# 由平台接管，勿手动编辑',
+    'args = ["/opt/stale/launcher.js"]',
+    ''
+  ],
+  'at the end of the last assignment line': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'args = ["/opt/stale/launcher.js"] # 行尾说明',
+    ''
+  ],
+  'before an env sub-table key': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    '# 环境变量说明',
+    'FUXI_API_URL = "http://stale.invalid"',
+    ''
+  ]
+};
+
+test('comments inside the Fuxi block block a rewrite instead of being dropped', () => {
+  for (const [label, lines] of Object.entries(INNER_COMMENT_FORMS)) {
+    const fixture = lines.join('\n');
+    assert.throws(
+      () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+      error => {
+        assertTomlError(error, 'TOML_UNSUPPORTED');
+        assert.equal(error.details.commentLines.length > 0, true, label + ': expected comment lines');
+        assert.equal(error.details.server, 'fuxi-platform');
+        return true;
+      },
+      label
+    );
+  }
+});
+
+test('a matching entry with an inner comment is left byte-for-byte unchanged', () => {
+  const fixture = [
+    '[mcp_servers.fuxi-platform]',
+    '# 平台接管此条目',
+    'command = ' + JSON.stringify(FUXI_ENTRY.command),
+    'args = ' + JSON.stringify(FUXI_ENTRY.args),
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    ...Object.entries(FUXI_ENTRY.env).map(([key, value]) => key + ' = ' + JSON.stringify(value)),
+    ''
+  ].join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, false);
+  assert.equal(written.text, fixture);
+  assert.equal(written.text.includes('# 平台接管此条目'), true);
+});
+
+test('a comment after the block is not a blocker and survives a required rewrite', () => {
+  // 末尾到下一个表头之间的注释不在替换区间内，属于可保留内容，不应阻塞重写。
+  const fixture = [
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'args = ["/opt/stale/launcher.js"]',
+    '',
+    '# 以下为本地其它配置',
+    '',
+    '[features]',
+    'web_search = true',
+    ''
+  ].join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, true);
+  assert.equal(written.text.includes('# 以下为本地其它配置'), true);
+  assert.equal(written.text.includes('[features]\nweb_search = true'), true);
+  assert.deepEqual(readMcpServers(written.text).servers['fuxi-platform'], FUXI_ENTRY);
+  assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
+});
+
+// ---- 注释探测的边界：既不能漏（丢注释），也不能误报（把 # 当注释） ----
+
+test('a # inside a string is not a comment and does not block a rewrite', () => {
+  const fixture = '[mcp_servers.other]\ncommand = "C:/a#b/node.exe"\nurl = "http://x/#frag"\n';
+  assert.equal(readMcpServers(fixture).servers.other.command, 'C:/a#b/node.exe');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, true);
+  assert.equal(written.text.includes('command = "C:/a#b/node.exe"'), true);
+  assert.equal(written.text.includes('url = "http://x/#frag"'), true);
+});
+
+test('a comment inside a multi-line array blocks a rewrite', () => {
+  // 数组里的注释位于被替换区间，规范化重写会丢掉它，因此必须 fail closed。
+  const fixture = ['[mcp_servers.fuxi-platform]', 'command = "stale"', 'args = [', '  "/opt/x.js",  # launcher', ']', ''].join('\n');
+  assert.throws(
+    () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.commentLines, [4]);
+      return true;
+    }
+  );
+});
+
+test('a reformatted multi-line array without comments is normalised and stays idempotent', () => {
+  const fixture = ['[mcp_servers.fuxi-platform]', 'command = "stale"', 'args = [', '  "/opt/x.js",', ']', ''].join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, true);
+  assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
+  assert.deepEqual(readMcpServers(written.text).servers['fuxi-platform'], FUXI_ENTRY);
+});
+
+test('inner comments are detected under a BOM and CRLF line endings', () => {
+  const fixture = '\ufeff[mcp_servers.fuxi-platform]\r\n# boom\r\ncommand = "stale"\r\n';
+  assert.throws(
+    () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+    error => {
+      assertTomlError(error, 'TOML_UNSUPPORTED');
+      assert.deepEqual(error.details.commentLines, [2]);
+      return true;
+    }
+  );
+});
+
+test('an outside comment written directly above the next table stays put', () => {
+  const fixture = ['[mcp_servers.fuxi-platform]', 'command = "stale"', '# note', '[features]', 'web_search = true', ''].join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, true);
+  assert.equal(written.text.includes('# note'), true);
+  assert.equal(written.text.includes('[features]\nweb_search = true'), true);
+  assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
+  assert.deepEqual(readMcpServers(written.text).names, ['fuxi-platform']);
 });

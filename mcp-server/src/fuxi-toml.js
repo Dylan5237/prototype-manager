@@ -15,7 +15,17 @@ const BARE_KEY_RE = /^[A-Za-z0-9_-]+$/;
 // 伏羲只管理自己条目的这三个字段；Codex 还支持 env_vars / startup_timeout_sec
 // 等字段，凡是用户自己加的都不属于我们，绝不能在重写时丢弃。
 const MANAGED_SERVER_KEYS = new Set(['command', 'args', 'env']);
-const MANAGED_SERVER_TABLES = new Set(['env']);
+// 伏羲安装器写进自己条目的环境变量白名单（与 bootstrap.js 的 mcpEntry 对应）。
+// env 里除此之外的任何变量都是用户资产：重写会丢，因此必须探测出来。
+const FUXI_MANAGED_ENV_KEYS = Object.freeze([
+  'FUXI_API_URL',
+  'FUXI_CREDENTIALS_FILE',
+  'FUXI_MCP_TARGET',
+  'FUXI_INSTALL_ROOT',
+  'FUXI_SKILL_TARGET',
+  'FUXI_CONNECT_CODE'
+]);
+const MANAGED_ENV_KEY_SET = new Set(FUXI_MANAGED_ENV_KEYS);
 const BARE_KEY_TOKEN_RE = /[A-Za-z0-9_-]+/y;
 const INTEGER_RE = /^[+-]?(?:0[xX][0-9A-Fa-f](?:_?[0-9A-Fa-f])*|0[oO][0-7](?:_?[0-7])*|0[bB][01](?:_?[01])*|(?:0|[1-9](?:_?\d)*))$/;
 const FLOAT_RE = /^[+-]?(?:0|[1-9](?:_?\d)*)(?:\.\d(?:_?\d)*)?(?:[eE][+-]?\d(?:_?\d)*)?$/;
@@ -54,10 +64,12 @@ function lineNumberAt(lineStarts, position) {
 }
 
 class Scanner {
-  constructor(text) {
+  constructor(text, comments) {
     this.text = text;
     this.pos = 0;
     this.lineStarts = computeLineStarts(text);
+    // 注释位置按需记录：重写只允许落在没有用户注释的区间上。
+    this.comments = comments || null;
   }
 
   atEnd() {
@@ -88,7 +100,9 @@ class Scanner {
 
   skipComment() {
     if (this.peek() !== '#') return;
+    const start = this.pos;
     while (!this.atEnd() && this.peek() !== '\n') this.pos += 1;
+    if (this.comments) this.comments.push({ start, end: this.pos });
   }
 
   consumeNewline() {
@@ -320,7 +334,8 @@ class Scanner {
 function parseDocument(text) {
   const bom = text.charCodeAt(0) === 0xfeff;
   const body = bom ? text.slice(1) : text;
-  const scanner = new Scanner(body);
+  const comments = [];
+  const scanner = new Scanner(body, comments);
   const tables = [];
   const rootAssignments = [];
   const rootKeys = new Set();
@@ -370,10 +385,22 @@ function parseDocument(text) {
     scanner.skipSpaces();
     scanner.skipComment();
     if (!scanner.atEnd() && !scanner.consumeNewline()) scanner.fail('Unexpected content after value');
+    // statementEnd 含行尾注释与换行：整"行"都属于这条语句，重写会整行替换。
+    assignment.statementEnd = scanner.pos;
     lastStatementEnd = scanner.pos;
   }
 
-  return { text, body, bom, tables, rootAssignments, lastStatementEnd, lineEnding: body.includes('\r\n') ? '\r\n' : '\n' };
+  return {
+    text,
+    body,
+    bom,
+    tables,
+    rootAssignments,
+    lastStatementEnd,
+    lineStarts: scanner.lineStarts,
+    comments,
+    lineEnding: body.includes('\r\n') ? '\r\n' : '\n'
+  };
 }
 
 // The Fuxi installer writes only canonical [mcp_servers.<name>] tables. Any
@@ -436,26 +463,104 @@ function readServerEntry(document, name) {
   return entry;
 }
 
-// 列出伏羲条目里不由我们管理的 assignment / 子表。返回非空表示"重写会丢用户数据"，
-// 调用方据此 fail closed，而不是把用户字段静默删掉。
+function isPlainTable(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+// 列出伏羲条目里不由我们管理的字段、子表和 env 变量。任何一项非空都表示
+// "重写会丢用户数据"，调用方据此 fail closed，而不是静默删除。
+// env 需要逐键判断：伏羲只拥有 FUXI_* 白名单，用户加的 NODE_OPTIONS / HTTP_PROXY
+// 等同样属于用户资产，三种写法（内联 env 表、点号键、[....env] 子表）都要覆盖。
 function unmanagedServerContent(document, name) {
-  const extras = [];
+  const fields = [];
+  const envKeys = [];
+  const addEnvKey = key => {
+    if (MANAGED_ENV_KEY_SET.has(key)) return;
+    if (!envKeys.includes(key)) envKeys.push(key);
+  };
   for (const table of document.tables) {
     const path = table.path;
     if (path[0] !== 'mcp_servers' || path[1] !== name) continue;
     if (path.length === 2) {
       for (const assignment of table.assignments) {
         const [head, ...rest] = assignment.path;
-        if (MANAGED_SERVER_KEYS.has(head) && rest.length === 0) continue;
-        if (head === 'env') continue;
-        extras.push(assignment.path.join('.'));
+        if (head === 'env') {
+          if (!rest.length) {
+            if (isPlainTable(assignment.value)) Object.keys(assignment.value).forEach(addEnvKey);
+            else fields.push(`mcp_servers.${name}.env`);
+          } else {
+            addEnvKey(rest.join('.'));
+          }
+          continue;
+        }
+        if (MANAGED_SERVER_KEYS.has(head) && !rest.length) continue;
+        fields.push(assignment.path.join('.'));
       }
       continue;
     }
-    if (path.length === 3 && MANAGED_SERVER_TABLES.has(path[2])) continue;
-    extras.push(path.join('.'));
+    if (path.length === 3 && path[2] === 'env') {
+      for (const assignment of table.assignments) {
+        if (assignment.path.length === 1) addEnvKey(assignment.path[0]);
+        else fields.push(`mcp_servers.${name}.env.${assignment.path.join('.')}`);
+      }
+      continue;
+    }
+    fields.push(path.join('.'));
   }
-  return extras;
+  return { fields, envKeys };
+}
+
+// 未管理内容的完整路径清单（env 变量按 mcp_servers.<name>.env.<KEY> 展开）。
+function unmanagedPaths(name, found) {
+  return [
+    ...found.fields,
+    ...found.envKeys.map(key => `mcp_servers.${name}.env.${key}`)
+  ];
+}
+
+function sameStringArray(expected, actual) {
+  if (!Array.isArray(expected) || !Array.isArray(actual)) return false;
+  if (expected.length !== actual.length) return false;
+  return expected.every((value, index) => value === actual[index]);
+}
+
+// 只保留白名单里的键（伏羲写进去的那几个）。用户加的变量不参与"是否已匹配"的判断：
+// 它们的存在不代表需要重写，只有伏羲自己的值变了才算需要重写。
+function managedEnvProjection(env) {
+  const source = isPlainTable(env) ? env : {};
+  const projection = {};
+  for (const key of FUXI_MANAGED_ENV_KEYS) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) projection[key] = source[key];
+  }
+  return projection;
+}
+
+function sameStringMap(left, right) {
+  const leftKeys = Object.keys(left);
+  if (leftKeys.length !== Object.keys(right).length) return false;
+  return leftKeys.every(key => Object.prototype.hasOwnProperty.call(right, key)
+    && String(left[key]) === String(right[key]));
+}
+
+// 判断条目是否已经完全是伏羲要写入的内容。为真时不做任何重写，用户的注释与额外
+// 字段因此逐字节保持原样（重复接入必须是空操作）。
+function entryMatchesEntry(expected, actual) {
+  if (!isPlainTable(actual)) return false;
+  if (String(expected.command) !== String(actual.command)) return false;
+  if (!sameStringArray(expected.args || [], actual.args || [])) return false;
+  return sameStringMap(managedEnvProjection(expected.env), managedEnvProjection(actual.env));
+}
+
+// 被替换区间内的用户注释（含表头与赋值之间、赋值之间、行尾注释）。
+// 区间末尾到下一个表头之间的注释不在替换范围内，会被原样保留，因此不算阻塞项。
+function commentLinesIn(document, start, end) {
+  const lines = [];
+  for (const comment of document.comments) {
+    if (comment.start < start || comment.start >= end) continue;
+    const line = lineNumberAt(document.lineStarts, comment.start);
+    if (!lines.includes(line)) lines.push(line);
+  }
+  return lines;
 }
 
 // Returns the normalized view of mcp_servers that the installer compares and
@@ -467,11 +572,14 @@ function readMcpServers(text) {
   const servers = {};
   for (const name of names) servers[name] = readServerEntry(document, name);
   const unmanaged = {};
+  const unmanagedEnv = {};
   for (const name of names) {
-    const extras = unmanagedServerContent(document, name);
-    if (extras.length) unmanaged[name] = extras;
+    const found = unmanagedServerContent(document, name);
+    const paths = unmanagedPaths(name, found);
+    if (paths.length) unmanaged[name] = paths;
+    if (found.envKeys.length) unmanagedEnv[name] = found.envKeys;
   }
-  return { names, servers, unmanaged };
+  return { names, servers, unmanaged, unmanagedEnv };
 }
 
 function renderKeySegment(key) {
@@ -498,25 +606,43 @@ function renderMcpServerBlock(name, entry, lineEnding) {
   return lines.join(lineEnding);
 }
 
+// 重写前把"会被替换掉的区间"里所有用户内容列出来。只要区间落在用户写的内容上
+// （未知字段、未知 env 变量、任何注释），就 fail closed，不做有损重写。
+// 注意：只有"确实需要重写"时才会走到这里 —— 条目已经匹配时 upsert 直接返回空操作。
+function assertRewritePreservesUserContent(document, name, start, end) {
+  const found = unmanagedServerContent(document, name);
+  const paths = unmanagedPaths(name, found);
+  const commentLines = commentLinesIn(document, start, end);
+  if (!paths.length && !commentLines.length) return;
+  const reasons = [];
+  if (found.fields.length) reasons.push(`不管理的字段/子表：${found.fields.join(', ')}`);
+  if (found.envKeys.length) reasons.push(`不管理的环境变量：${found.envKeys.join(', ')}`);
+  if (commentLines.length) reasons.push(`用户注释（第 ${commentLines.join(', ')} 行）`);
+  throw new TomlError(
+    'TOML_UNSUPPORTED',
+    `[mcp_servers.${name}] 需要重写，但它含有${reasons.join('；')}；重写会丢失这些用户内容，请先人工确认如何处理`,
+    { server: name, unmanaged: paths, unmanagedEnvKeys: found.envKeys, commentLines }
+  );
+}
+
 // Replaces only the [mcp_servers.<name>] region. The returned text keeps every
-// unrelated byte untouched, and `changed` stays false when the entry already
-// matches so a repeated install is byte-for-byte idempotent.
+// unrelated byte untouched. When the entry already carries exactly the managed
+// values nothing is rewritten, so repeated installs are byte-for-byte idempotent
+// even if the user added their own keys or comments to the block.
 function upsertMcpServer(text, name, entry) {
   const document = parseDocument(text);
   assertSupportedDocument(document);
-  const extras = unmanagedServerContent(document, name);
-  if (extras.length) {
-    throw new TomlError(
-      'TOML_UNSUPPORTED',
-      `[mcp_servers.${name}] 含有伏羲不管理的字段（${extras.join(', ')}）；重写会丢失这些用户配置，请先人工确认如何处理`,
-      { unmanaged: extras, server: name }
-    );
-  }
-  const rendered = renderMcpServerBlock(name, entry, document.lineEnding);
   const body = document.body;
   const blocks = document.tables.filter(table => table.path.length >= 2
     && table.path[0] === 'mcp_servers' && table.path[1] === name);
 
+  // 空操作优先于一切检查：条目已经是我们要写入的内容时，用户的注释和额外字段
+  // 都不需要被触碰，重复接入必须逐字节不变。
+  if (blocks.length && entryMatchesEntry(entry, readServerEntry(document, name))) {
+    return { text, changed: false };
+  }
+
+  const rendered = renderMcpServerBlock(name, entry, document.lineEnding);
   if (!blocks.length) {
     const trimmed = body.replace(/[ \t\r\n]+$/, '');
     const prefix = trimmed ? document.lineEnding + document.lineEnding : '';
@@ -537,11 +663,14 @@ function upsertMcpServer(text, name, entry) {
     ? document.tables[lastIndex + 1].headerStart
     : body.length;
   const lastBlock = document.tables[lastIndex];
+  // 用 statementEnd（含行尾注释与换行）而不是 end（值之后）：整行都属于本条目，
+  // 否则行尾注释会被当成"块外空白"而被搬走，用户注释的归属就被悄悄改掉了。
   const lastStatementEnd = lastBlock.assignments.length
-    ? lastBlock.assignments[lastBlock.assignments.length - 1].end
+    ? lastBlock.assignments[lastBlock.assignments.length - 1].statementEnd
     : lastBlock.headerEnd;
-  // 末尾到下一个表头之间只可能是空白与注释（TOML 语法保证）。原样保留，
-  // 避免在用户注释上做静默删除；缺少换行时补一个，保证不会与表头粘连。
+  // 被替换的区间是 [firstStart, lastStatementEnd)；末尾到下一个表头之间只可能是
+  // 空白与注释（TOML 语法保证），原样保留以避免删除用户注释。
+  assertRewritePreservesUserContent(document, name, firstStart, lastStatementEnd);
   const gap = body.slice(lastStatementEnd, regionEnd);
   const separator = /^[\r\n]/.test(gap) ? gap : `${document.lineEnding}${gap}`;
   const tail = `${rendered}${separator}`;
@@ -555,6 +684,7 @@ function throwUnsupported(message, document, position) {
 
 module.exports = {
   TomlError,
+  FUXI_MANAGED_ENV_KEYS,
   parseDocument,
   readMcpServers,
   upsertMcpServer,

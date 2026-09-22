@@ -153,7 +153,20 @@ test('the platform bootstrap artifact resolves the Codex targets on a clean mach
 
   const home = path.join(tempRoot, 'clean-home');
   const configFile = path.join(home, '.codex', 'config.toml');
-  const unrelated = '[mcp_servers.other]\ncommand = "node"\n';
+  // 既有配置里同时放：无关 server、伏羲自有条目、以及用户加在伏羲 env 里的变量。
+  // 这样 preflight 会走完整读取路径，并如实上报未管理内容（含 env 变量）。
+  const unrelated = [
+    '[mcp_servers.other]',
+    'command = "node"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_API_URL = "http://stale.invalid"',
+    'NODE_OPTIONS = "--max-old-space-size=4096"',
+    ''
+  ].join('\n');
   fs.mkdirSync(path.dirname(configFile), { recursive: true });
   fs.writeFileSync(configFile, unrelated);
   const script = path.join(tempRoot, 'fuxi-bootstrap.cjs');
@@ -180,7 +193,9 @@ test('the platform bootstrap artifact resolves the Codex targets on a clean mach
   assert.equal(plan.client, 'codex');
   assert.equal(plan.status, 'READY');
   assert.equal(plan.configFormat, 'toml');
-  assert.deepEqual(plan.existingMcpEntries, ['other']);
+  assert.deepEqual(plan.existingMcpEntries, ['other', 'fuxi-platform']);
+  assert.deepEqual(plan.unmanagedFuxiEnvKeys, ['NODE_OPTIONS']);
+  assert.deepEqual(plan.unmanagedFuxiEntryKeys, ['mcp_servers.fuxi-platform.env.NODE_OPTIONS']);
   assert.equal(plan.configExists, true);
   assert.equal(plan.mcpConfig, path.join(home, '.codex', 'config.toml'));
   assert.equal(plan.skillTarget, path.join(home, '.agents', 'skills', 'fuxi-prototype'));
