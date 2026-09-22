@@ -42,7 +42,7 @@ Hard rules:
 - No silent force push. Force on a default branch requires explicit disposer authorization on the Issue (who / when / from-SHA / to-SHA / why).
 - A Cloud or local checkout is a draft until the commit lands on GitHub `origin` via PR.
 
-Command Center (fleet index): [#11](https://github.com/Dylan5237/prototype-manager/issues/11). This binding adoption: [#64](https://github.com/Dylan5237/prototype-manager/issues/64). Related reconciliation: [#43](https://github.com/Dylan5237/prototype-manager/issues/43).
+Command Center (fleet index): [#66](https://github.com/Dylan5237/prototype-manager/issues/66). This binding adoption: [#64](https://github.com/Dylan5237/prototype-manager/issues/64). Historical reconciliation: [#43](https://github.com/Dylan5237/prototype-manager/issues/43).
 
 ## Before your first push in this clone
 
