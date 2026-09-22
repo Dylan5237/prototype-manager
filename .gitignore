@@ -83,3 +83,8 @@ Thumbs.db
 # Local backups
 .backup/
 .release/
+
+# agent-project-ops (merged from methodology gitignore-agent-ops; keep product rules above)
+.worktrees/*
+!.worktrees/.gitkeep
+CLAUDE.local.md

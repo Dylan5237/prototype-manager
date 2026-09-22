@@ -1,73 +1,123 @@
-# Fuxi Platform
+# 伏羲平台 / prototype-manager — project operations binding
 
-伏羲原型管理平台：Web 界面 + 后端 API + MCP server，管理 AI 生成的前端原型及其 runtime/profile 交付。
+This repository is governed by the pinned `agent-project-ops` snapshot under `.agent-project-ops/`.
 
-## 思考风格
+- Methodology: `https://github.com/Dylan5237/agent-project-ops`
+- PIN: `f9ed33c7fd089480e8459da21805e9a635848c89` (`main`, fetched 2026-09-22T06:21:31Z)
+- Disposer: `@Dylan5237`
+- Write authority remote: `origin`
+- Projection remote: `zoesoftgitlab` (projection of authority; not colleague share-export)
+- Colleague GitLab / filtered share: share-export via `.agent-project-ops/scripts/share-export.sh` — never `git push --mirror` from this clone. This repo's GitLab remote is **not** that path (`share_export=(none)`).
 
-- 不默认用户的判断正确；结合当前代码、测试、运行态和授权边界客观判断。
-- 区分代码完成、提交、合并、推送、部署和 live verification，不用其中一个状态替代另一个。
+## Always load first
 
-## Git 操作规范
+Read `.agent-project-ops/PRINCIPLES.md`. Invariants win over convenience. Load the relevant skill wrapper under `.agents/skills/`; it points to the full pinned skill body.
 
-- **Write authority（写权威）** = GitHub `origin`（本仓 Issues / PRs / 合入）。Agent 落地与耐久决策只认这里。`origin` 是唯一写权威，不是镜像仓。
-- **`zoesoftgitlab`**（仅当本机已配置该 remote 名时）= 可选同历史 **投影**，并且/或者当前 `deploy-*-from-gitlab.ps1` / 16077 / 16088 **读取** 的 deploy/manifest tip 远端。它 **不是** write authority，**不是** 生产源码 SoT，**不是** 代码权威的唯一事实源。本检出当前只登记了 `origin`；不要发明未出现在 `git remote -v` 里的 remote。
-- 平台分支分层保持 `feat/*` → 评审合入 `develop`（测试集成）→ 独立确认后合入 `main`（生产发布枝）；本地与各远端尽量同名。**落地权威在 GitHub**：先在 `origin` 合入，再把同历史 **快进（FF）投影** 到已配置的 `zoesoftgitlab` 对应枝。部署脚本若仍从 GitLab 新鲜克隆，必须先确认投影 tip 已 FF 自权威 tip，才能宣称可部署。
-- **双 tip（必须显式区分，禁止偷换）：**
+Core rules:
 
-  | Tip | 含义 | 禁止说法 |
-  | --- | --- | --- |
-  | **Write authority tip** | GitHub `origin` 默认枝（或 Command Center 点名枝）在 PR merge 后的 tip。Issues / PRs / Agent 合入只认此 tip。 | 把 GitLab / 投影 / 发布 SHA 写成写权威 |
-  | **Deploy / manifest tip** | `deploy-test-from-gitlab.ps1` / `deploy-production-from-gitlab.ps1` 当前新鲜克隆的提交（今日脚本消费 GitLab `develop` → 16077、GitLab `main` → 16088）。可滞后；宣称可部署前须已从权威 tip FF。 | 把它写成 write SoT、生产源码 SoT 或唯一事实源 |
+1. Chat is not project state. Durable decisions/status belong on GitHub Issues/PRs/git objects.
+2. Agent proposes; the named disposer freezes/Accepts/exceptions. PR merge is not Phase PASS.
+3. `origin` (GitHub) is the only write authority. Projection remotes are not a second write path. Colleague GitLab is share-export (filtered business tree), not a projection — and this clone does not register a share-export remote.
+4. Unknown remotes fail closed. `.agent-project-ops/remotes` is the clone-portable registry.
+5. Topic branches push to `origin` only. Never use a projection as a fallback when `origin` is unavailable. Never push this bound clone to a colleague-share GitLab.
+6. One task, one worktree under `.worktrees/`; keep the primary checkout clean for sync/control work.
+7. Do not copy business/domain SOP back into the methodology snapshot or upstream methodology repository.
 
-- 反置合同是反模式：禁止把 GitLab 写成唯一生产/写权威，禁止把 GitHub 降为「仅镜像」。部署脚本今天 **消费** GitLab tip 作为 deploy floor；该 tip 并非 write SoT。
-- 投影 tip 的 SHA **可以** 与权威 tip 不同（例如多一串 projection merge）；这是预期形态，不是要把 GitHub tip force 盖成 GitLab merge tip。禁止 force push。
-- 提交遵循 Conventional Commits：`type(scope): 中文标题`；body 写现象/根因 -> 改法；footer 使用 `Co-Authored-By: Codex <noreply@openai.com>`。
-- 一个独立任务一个 commit；commit 前按改动范围执行必要的 `npm test`、`npm run build`、MCP 检查或文档检查。
-- 不用 reset/clean/checkout 覆盖用户改动；不把凭证、密码或长期 token 写入仓库。
+## Git contract (Fuxi disposer — authority vs projection vs deploy identity)
 
-## 伏羲平台与配套 Skill 的双边分析规则
+This section **replaces** any older wording that treated GitLab as 生产源码 / 部署事实源 and GitHub as 仅镜像. That inverted contract is forbidden.
 
-- 配套 Skill 独立仓库路径：`D:\_projects\skills\prototype-manager-skills`；Skill 入口为 `fuxi-prototype`。Skill 的 16077/16088 脚本今日仍新鲜克隆 GitLab `develop` / `main` 作为 **deploy/manifest tip**（可滞后，须 FF 自该 Skill 仓的写权威 tip）；这不是把 Skill GitLab 写成写权威。Skill 仓自身的 AGENTS 远程合同不在本文件改写范围内。
-- 任何需求先同时分析 FuxiPlatform 与配套 Skill 两个仓库的影响，不能只看平台或只看 Skill。
-- 重点检查双方的 API/工具契约、入口目录、分发包、版本/hash、运行时配置和验收链路；判断需求是否需要一边改、两边改或仅记录不改。
-- 涉及平台接口、MCP 工具、Skill 入口、ZIP 分发、运行时 profile 或安装流程时，默认按跨仓库变更评估；不能因改动集中在一边就跳过另一边分析。
-- 两边都改时分别提交、分别验证，并在发布记录中绑定 platform commit 与 Skill commit；只改一边时必须记录另一边无需修改的依据。
+| Surface | Remote / URL | Role |
+| --- | --- | --- |
+| **Write authority / Dev SoT tip** | `origin` → GitHub `Dylan5237/prototype-manager` | **Only write authority.** Issues, PRs, and merges land here. Agent landing and durable decisions only recognize this tip. Default branch `main` after PR merge is the Dev SoT tip. |
+| **Projection tip** | `zoesoftgitlab` → `http://192.168.2.145:11980/fuxi/fuxi-platform.git` (GitLab `fuxi/fuxi-platform`) | **Projection of authority**, not write SoT. GitLab `main` may include disposer-allowed **projection merge commits**, so its SHA **may differ** from GitHub `main` **by design**. Do not force-align GitLab `main` SHA onto GitHub `main`. |
+| **Deploy / manifest identity** | whatever `deploy-test-from-gitlab.ps1` / `deploy-production-from-gitlab.ps1` actually clones (today: GitLab `develop` → 16077, GitLab `main` → 16088) | Release/deploy may consume a GitLab branch or release-manifest tip. That is **deploy identity**, **not** write authority. Never call a deploy SHA “the source of truth.” |
 
-## 怎么跑起来
+Hard rules:
 
-- 后端：`cd backend && npm install && npm start`（端口 3001，SQLite）
-- 前端：`cd frontend && npm install && npm run dev`（端口 3000）
-- MCP：`cd mcp-server && node src/server.js`（stdio，需 `FUXI_API_URL` + `FUXI_TOKEN`）
-- 前端构建：`cd frontend && npm run build`（Vite production build；当前 package script 不含 `vue-tsc`）
+- Topic branches (`feat/` `fix/` `docs/` `chore/` `evidence/` `cursor/` …) push to **`origin` only**. Never push features to `zoesoftgitlab` as a workaround when GitHub is inconvenient.
+- `develop` on GitLab may fast-forward-track GitHub `main`. Do **not** treat GitLab `develop` (or any GitLab branch) as source of truth.
+- Unknown remotes → fail closed until `@Dylan5237` classifies them in `.agent-project-ops/remotes` and on the control-plane Issue.
+- Direct push to `main` on authority is forbidden; open a PR on GitHub.
+- No silent force push. Force on a default branch requires explicit disposer authorization on the Issue (who / when / from-SHA / to-SHA / why).
+- A Cloud or local checkout is a draft until the commit lands on GitHub `origin` via PR.
 
-## 技术栈
+Command Center (fleet index): [#11](https://github.com/Dylan5237/prototype-manager/issues/11). This binding adoption: [#64](https://github.com/Dylan5237/prototype-manager/issues/64). Related reconciliation: [#43](https://github.com/Dylan5237/prototype-manager/issues/43).
 
-Vue 3.3 + Vite 5 + Element Plus 2.4（前端）；Node.js + Express 4 + sql.js 1.14（后端）；Node.js stdio MCP（mcp-server）。
+## Before your first push in this clone
 
-## 目录与约定
+`git clone` does **not** inherit `core.hooksPath`.
 
-- `backend/`：API 路由、服务层、SQLite 数据库；数据在 `backend/data/app.db` 和 `backend/repos/`。
-- `frontend/`：Vue SPA，页面在 `src/views/`，API 封装在 `src/api/`。
-- `mcp-server/`：面向 Agent 的 MCP 工具（本分支源码含 Task v2；生产切流未宣称完成），源码在 `src/server.js`。
-- `ops/skills/fuxi-platform-release/`：维护者发布技能，内置只读预检、不可变 release、备份和回滚脚本。
-- `docs/`：体系持续事实入口（`TECHNICAL_DESIGN.md`、`MCP_SKILLS_EVOLUTION_JOURNEY.md`、`BACKLOG.md`）。
-- `.backup/` 和 `.release/`：本地备份和发布产物，Git 忽略。
+Run:
 
-## 当前状态和下一步
+```bash
+git config --get core.hooksPath
+```
 
-- 管理员使用统计 v1.0 已完成正式发布；2026-08-29 只读探针确认当前生产 release 为 `20260828-185117-c1edcab0`，health `200`、bootstrap 未授权 `401`。该身份锁的是当时 16088 的 **deploy/manifest tip**（脚本消费的 GitLab `main` 克隆），write authority 仍为 GitHub `origin`。
-- 阶段 20 已快进到本地 `main` 并完成 16077 release `20260830-092500-adf7ea7f` 验收；阶段 21 安全同步已完成，阶段 22 项目模块首批增量已部署测试环境，尚未部署 16088。
-- 生产入口 `http://192.168.2.145:16088`（Nginx）仍运行 release `20260828-185117-c1edcab0`；16077 当前测试 release 为 `20260902-095755-97fc9e9a`，健康 200、bootstrap 未授权 401、认证 API 回读、项目高保真列表/三栏工作台和预览 iframe 浏览器复测通过。
-- 原型规范和适配器在独立仓库 `D:\_projects\skills\prototype-manager-skills`。
-- 平台代码、MCP 源码和维护者发布技能提交到本仓库；原型设计规范提交到技能包仓库。
-- 不写凭证、密码或长期 token 进仓库或文档。
-- 当前主线：无 Git 轻协作 MVP（任务交接、候选预览、人工采用、基础版本 CAS）已完成代码和验收；GitLab Provider 真实环境验收已废弃，默认继续使用无 Git 轻协作，详见 `docs/BACKLOG.md`。
-- 阶段 18 MCP/Skill 延后更新已由用户确认验收；后续暂放事项统一维护在 `docs/BACKLOG.md`。
-- 阶段 20 已完成；阶段 21 已完成只读仓库治理，BL-003/004 已关闭，BL-006 已完成只读评估但实际处置仍待人工决策。BL-007 主目标已完成平台实现、本地/API 回归和 16077 跨用户真实复核；阶段 22 已确认固定打开第一个已绑定菜单，并完成高保真项目列表/三栏工作台接入、项目列表分页/筛选、绑定选择器服务端搜索分页、MCP 签出门禁、预览 ResizeObserver 误报修复、`ProjectWorkspace` 主内容拆分和任务/成员/快照权限显示对齐；目标项目的真实浏览器入口/iframe 复测已通过，完整角色路径、任务/成员/快照职责拆分和端到端性能样本仍待完成。阶段 24 已增加本地写入型 multipart 预备基线；详见 `docs/NEXT_ITERATION_PLAN.md`、`docs/PHASE22_PROJECT_MODULE_IA.md`、`docs/PHASE22_PROJECT_MODULE_EVIDENCE.md` 和 `docs/PHASE24_LOCAL_UPLOAD_BASELINE.md`。
-- 暂放、待决和后续技术债务不得在本文件重复展开，以 `docs/BACKLOG.md` 为唯一 backlog 入口。
+It must print `.githooks`. If it is empty or different, run:
 
-## 测试环境部署约定
+```bash
+bash .agent-project-ops/scripts/install-hooks.sh
+```
 
-- 用户已于 2026-09-02 明确授权后续 16077 测试环境部署无需逐次确认；执行仍必须使用本 Skill 的安全脚本和 `DEPLOY_FUXI_TEST` 门禁参数。该授权不包含 16088 生产发布、远程推送、删除或回滚。
-- `16077` 后续统一运行 `deploy-test-from-gitlab.ps1`（或其兼容包装 `quick-deploy-test.ps1`）：新鲜克隆平台与 Skill 的 GitLab `develop`（**deploy/manifest tip**，不是 write SoT），再执行前端构建、不可变归档、SHA-256、远端备份、Nginx/健康检查；禁止直接打包任意 worktree。宣称测发前，该 GitLab `develop` 须已 FF 自 GitHub 权威 tip。
-- 只有准备发布 `16088` 时才使用完整构建、MCP 校验/集成、生产基线和发布验收门禁。`deploy-production-from-gitlab.ps1` 今日仍新鲜克隆 GitLab `main` 作为生产 **deploy/manifest tip**（同样不是 write SoT）；切换前须已 FF 自 `origin/main`。
+Then check `git remote -v` against `.agent-project-ops/remotes`. If an extra remote is unregistered, stop. If the registry names `zoesoftgitlab` and that remote is not configured locally, restore/confirm it from the recorded project control plane before any **projection** operation. Absence of the remote in this sandbox is not permission to invent a second write URL.
+
+A missing client hook is **not** permission to push `main`. The hook is bypassable; server-side repository policy remains the stronger control.
+
+## Starting work
+
+- No Command Center / first project setup: `.agent-project-ops/playbooks/start-project.md`
+- New task: use `.agent-project-ops/scripts/new-worktree.sh` and the worktree playbook.
+- Multiple remotes / projection / SHA divergence: load `git-authority-and-projection` before any non-`origin` push.
+- Colleague GitLab / business-files-only share: load `share-export`; do **not** reclassify `zoesoftgitlab` as share-export.
+- Cannot verify an invariant or remote state: fail closed and record `BLOCKED:` on the active Issue.
+
+## Fuxi product operations
+
+Useful product-ops facts for Agents working this repo. They do **not** override the Git contract above.
+
+### How to run
+
+- Backend: `cd backend && npm install && npm start` (port 3001, SQLite)
+- Frontend: `cd frontend && npm install && npm run dev` (port 3000)
+- MCP: `cd mcp-server && node src/server.js` (stdio; needs `FUXI_API_URL` + `FUXI_TOKEN` or the connect-code flow)
+- Frontend production build: `cd frontend && npm run build` (Vite; current package script does not run `vue-tsc`)
+
+Do not write credentials, passwords, or long-lived tokens into the repo or docs.
+
+### Stack and layout
+
+Vue 3.3 + Vite 5 + Element Plus 2.4 (frontend); Node.js + Express 4 + sql.js 1.14 (backend); Node.js stdio MCP (`mcp-server`).
+
+- `backend/` — API routes, services, SQLite; data in `backend/data/app.db` and `backend/repos/`
+- `frontend/` — Vue SPA; pages in `src/views/`; API wrappers in `src/api/`
+- `mcp-server/` — Agent-facing MCP tools; source in `src/server.js`
+- `ops/skills/fuxi-platform-release/` — maintainer release skill (read-only precheck, immutable release, backup, rollback)
+- `docs/` — durable product facts (`TECHNICAL_DESIGN.md`, `MCP_SKILLS_EVOLUTION_JOURNEY.md`, `BACKLOG.md`)
+- `.backup/` and `.release/` — local backup/release artifacts; gitignored
+- Backlog / deferred debt: `docs/BACKLOG.md` only. Do not expand that list in this file.
+
+### Bilateral analysis with the companion Skill repo
+
+Companion Skill repo path (if still present on the disposer workstation): `D:\_projects\skills\prototype-manager-skills`. Skill entry: `fuxi-prototype`.
+
+Any requirement must be analyzed against **both** this platform repo and the companion Skill repo. Check API/tool contracts, entry directories, distribution zip, version/hash, runtime profile, and acceptance path. Default to a cross-repo assessment when the change touches platform APIs, MCP tools, Skill entry, ZIP distribution, runtime profile, or install flow.
+
+If both sides change: commit and verify separately; bind platform commit and Skill commit in the release record. If only one side changes: record why the other side needs no change.
+
+Skill-repo AGENTS / remote contract is **out of scope** for this file. Skill 16077/16088 scripts that still fresh-clone GitLab consume a **deploy/manifest tip**, not a write SoT.
+
+### Conventional Commits
+
+Fuxi habit on this repo:
+
+- `type(scope): 中文标题`
+- Body: 现象 / 根因 → 改法
+- Footer: `Co-Authored-By: Codex <noreply@openai.com>` when that trailer is part of the task's commit convention
+- One independent task → one commit. Before commit, run the tests/build/MCP/docs checks that the change scope requires.
+
+### Deploy identity (not write authority)
+
+- 16077 test deploys (authorized 2026-09-02 for subsequent test deploys without per-run confirmation) still run `deploy-test-from-gitlab.ps1` (or `quick-deploy-test.ps1`): fresh-clone platform + Skill from GitLab `develop`, then immutable archive / SHA-256 / remote backup / Nginx health. That clone is **deploy identity**. Do not pack an arbitrary worktree. This authorization does **not** include 16088 production publish, remote push, delete, or rollback.
+- 16088 production publish uses the full build / MCP / production-baseline gates and today still fresh-clones GitLab `main` as the production **deploy/manifest tip**. Same rule: deploy identity ≠ write authority.
+- Claiming a test or production release is shippable requires the consumed GitLab tip to be a projection of the intended GitHub authority tip (fast-forward, or a disposer-recorded projection merge). Projection failure stops the release; it does not justify pushing features to GitLab.
