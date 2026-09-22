@@ -214,7 +214,6 @@ $added=@($current|Where-Object {$_.id -notin @($baseline.prototypes|ForEach-Obje
   addedIds=$added
   bootstrap='verified'
   bootstrapHost=$BootstrapHost
-  bootstrapId="$($bootstrapSession.bootstrapId)"
   canonicalOnboardingSha256=$canonicalOnboardingSha256
   skillPackageBytes=$skillBytes
   mcpPackageBytes=$mcpBytes

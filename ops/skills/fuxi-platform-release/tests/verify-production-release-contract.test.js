@@ -36,6 +36,7 @@ test('production verifier result omits short-lived credentials and connect code'
   assert.ok(outputStart >= 0, 'final result object is missing');
   const output = script.slice(outputStart);
   assert.doesNotMatch(output, /credential|installToken|connectCode/i);
+  assert.doesNotMatch(output, /bootstrapId/i);
   assert.match(output, /bootstrapHost=\$BootstrapHost/);
   assert.match(output, /canonicalOnboardingSha256=\$canonicalOnboardingSha256/);
 });
