@@ -658,3 +658,281 @@ test('an outside comment written directly above the next table stays put', () =>
   assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
   assert.deepEqual(readMcpServers(written.text).names, ['fuxi-platform']);
 });
+
+// ---- 语义重定义（value vs table）：标准 TOML 拒绝，本解析器必须同样拒绝 ----
+// 这些形态只有追踪 inline table / dotted key 建立的命名空间才能发现：
+// 只看「同一个表内字面键重复」会漏掉它们，从而把畸形 Codex 配置当成合法并改写。
+// 期望值以 Python tomllib 参考解析器的判定为准（见 PR #73 证据）。
+
+const REDEFINITION_FIXTURES = {
+  'inline env, then the [env] header (review case 1)': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    'env = { FUXI_API_URL = "http://x" }',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_SKILL_TARGET = "C:/skill"',
+    ''
+  ],
+  'dotted env, then the [env] header (review case 2)': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    'env.FUXI_API_URL = "http://x"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_SKILL_TARGET = "C:/skill"',
+    ''
+  ],
+  'the [env] header first, then an inline env (reverse)': [
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_SKILL_TARGET = "C:/skill"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    'env = { FUXI_API_URL = "http://x" }',
+    ''
+  ],
+  'the [env] header first, then dotted env (reverse)': [
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_SKILL_TARGET = "C:/skill"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    'env.FUXI_API_URL = "http://x"',
+    ''
+  ],
+  'env as a value, then the [env] header': [
+    '[mcp_servers.fuxi-platform]',
+    'env = 1',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'A = "1"',
+    ''
+  ],
+  'env as an array, then the [env] header': [
+    '[mcp_servers.fuxi-platform]',
+    'env = ["a"]',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'A = "1"',
+    ''
+  ],
+  'the [env] header, then env as a value': [
+    '[mcp_servers.fuxi-platform.env]',
+    'A = "1"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'env = 1',
+    ''
+  ],
+  'command as a value, then a [command] table': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    '',
+    '[mcp_servers.fuxi-platform.command]',
+    'sub = 1',
+    ''
+  ],
+  'a [command] table, then command as a value': [
+    '[mcp_servers.fuxi-platform.command]',
+    'sub = 1',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    ''
+  ],
+  'an inline table, then a deeper header inside it': [
+    '[mcp_servers.fuxi-platform]',
+    'env = { A = { B = "1" } }',
+    '',
+    '[mcp_servers.fuxi-platform.env.A.C]',
+    'D = "2"',
+    ''
+  ],
+  'an inline table, then a dotted key extending it': [
+    '[mcp_servers.fuxi-platform]',
+    'env = { A = "1" }',
+    'env.B = "2"',
+    ''
+  ],
+  'a deep dotted key, then a header on that exact path': [
+    '[mcp_servers.fuxi-platform]',
+    'env.A.B = "1"',
+    '',
+    '[mcp_servers.fuxi-platform.env.A]',
+    'C = "2"',
+    ''
+  ],
+  'a dotted value, then a header on that exact path': [
+    '[mcp_servers.fuxi-platform]',
+    'env.A = "1"',
+    '',
+    '[mcp_servers.fuxi-platform.env.A]',
+    'B = "2"',
+    ''
+  ],
+  'a dotted table, then a header on that exact path': [
+    '[a]',
+    'b.c = 1',
+    '',
+    '[a.b]',
+    'd = 2',
+    ''
+  ],
+  'a root dotted key, then its table header': [
+    'a.b = 1',
+    '',
+    '[a]',
+    'c = 2',
+    ''
+  ]
+};
+
+// 反向控制：这些是合法 TOML，绝不能被误判（否则会挡住用户的正常配置）。
+const REDEFINITION_CONTROLS = {
+  'inline env only': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    'env = { FUXI_API_URL = "http://x" }',
+    ''
+  ],
+  'dotted env only': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    'env.A = "1"',
+    'env.B = "2"',
+    ''
+  ],
+  '[env] header only': [
+    '[mcp_servers.fuxi-platform]',
+    'command = "node"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'A = "1"',
+    ''
+  ],
+  'a dotted table, then a new sibling header': [
+    '[mcp_servers.fuxi-platform]',
+    'env.A = "1"',
+    '',
+    '[mcp_servers.fuxi-platform.env.B]',
+    'C = "2"',
+    ''
+  ],
+  'a dotted table, then an unrelated header': [
+    '[a]',
+    'b.c = 1',
+    '',
+    '[a.z]',
+    'y = 1',
+    ''
+  ],
+  'a child header, then its parent header': [
+    '[a.b.c]',
+    'd = 1',
+    '',
+    '[a]',
+    'e = 2',
+    ''
+  ],
+  'a parent header, then a deeper header': [
+    '[a]',
+    '',
+    '[a.b]',
+    '',
+    '[a.b.c]',
+    'd = 1',
+    ''
+  ],
+  'an inline table, then an unrelated header': [
+    '[mcp_servers.fuxi-platform]',
+    'env = { A = "1" }',
+    '',
+    '[mcp_servers.fuxi-platform.args]',
+    'B = "2"',
+    ''
+  ],
+  'repeated array-of-tables elements': [
+    '[[skills.config]]',
+    'name = "a"',
+    '',
+    '[[skills.config]]',
+    'name = "b"',
+    ''
+  ],
+  'an array-of-tables element sub-table, repeated': [
+    '[[a]]',
+    '',
+    '[a.b]',
+    'c = 1',
+    '',
+    '[[a]]',
+    '',
+    '[a.b]',
+    'c = 2',
+    ''
+  ]
+};
+
+test('semantic value/table redefinitions are rejected on read and on rewrite', () => {
+  for (const [label, lines] of Object.entries(REDEFINITION_FIXTURES)) {
+    const fixture = lines.join('\n');
+    assert.throws(
+      () => readMcpServers(fixture),
+      error => {
+        assertTomlError(error, 'TOML_INVALID');
+        assert.equal(typeof error.details.line, 'number', label + ': expected a line number');
+        return true;
+      },
+      'read must reject: ' + label
+    );
+    // 解析在写之前失败，因此不可能产生任何改写结果。
+    assert.throws(
+      () => upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY),
+      error => assertTomlError(error, 'TOML_INVALID'),
+      'rewrite must reject: ' + label
+    );
+  }
+});
+
+test('valid TOML shapes are still accepted after the semantic checks', () => {
+  for (const [label, lines] of Object.entries(REDEFINITION_CONTROLS)) {
+    const fixture = lines.join('\n');
+    // 必须能读：误判会让正常用户的配置被 MCP_CONFIG_INVALID 挡下。
+    // （部分控制用例不含 mcp_servers，因此只断言"可解析"，不假设 server 数量。）
+    assert.doesNotThrow(() => readMcpServers(fixture), label);
+  }
+});
+
+// 参考解析器（Python tomllib）在 40 个 fixture 上的判定与本解析器逐条一致：
+// 19/19 非法fixture 被拒、21/21 合法 fixture（含本机真实 config.toml）被接受。
+// 这里固化为用例，避免后续改动悄悄放宽语义检查。
+test('a real-world shaped config with repeated array-of-tables still parses and rewrites', () => {
+  const fixture = [
+    'approval_policy = "never"',
+    '',
+    '[mcp_servers.node_repl]',
+    'command = "C:/runtimes/node.exe"',
+    'startup_timeout_sec = 30',
+    '',
+    '[mcp_servers.node_repl.env]',
+    'CODEX_HOME = "C:/codex"',
+    '',
+    '[[skills.config]]',
+    'name = "a"',
+    '',
+    '[[skills.config]]',
+    'name = "b"',
+    '',
+    '[shell_environment_policy.set]',
+    'FOO = "bar"',
+    ''
+  ].join('\n');
+  const written = upsertMcpServer(fixture, 'fuxi-platform', FUXI_ENTRY);
+  assert.equal(written.changed, true);
+  assert.equal(written.text.split('[[skills.config]]').length - 1, 2);
+  assert.equal(written.text.includes('[shell_environment_policy.set]\nFOO = "bar"'), true);
+  assert.equal(written.text.includes('startup_timeout_sec = 30'), true);
+  assert.deepEqual(readMcpServers(written.text).names, ['node_repl', 'fuxi-platform']);
+  assert.equal(upsertMcpServer(written.text, 'fuxi-platform', FUXI_ENTRY).changed, false);
+});

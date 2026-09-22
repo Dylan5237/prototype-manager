@@ -595,3 +595,112 @@ test('a required Codex rewrite fails closed when the Fuxi block holds a user com
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+// ---- 语义重定义：必须 MCP_CONFIG_INVALID，且原文件不得被修改 ----
+// 这些文件标准 TOML 解析器会拒绝；如果我们接受，就会把畸形 Codex 配置当成合法并改写。
+
+const REDEFINITION_CONFIGS = {
+  'inline env then the [env] header': [
+    'approval_policy = "never"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'env = { FUXI_API_URL = "http://stale.invalid" }',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_SKILL_TARGET = "C:/skill"',
+    ''
+  ],
+  'dotted env then the [env] header': [
+    'approval_policy = "never"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'env.FUXI_API_URL = "http://stale.invalid"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_SKILL_TARGET = "C:/skill"',
+    ''
+  ],
+  'the [env] header then an inline env (reverse)': [
+    'approval_policy = "never"',
+    '',
+    '[mcp_servers.fuxi-platform.env]',
+    'FUXI_API_URL = "http://stale.invalid"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    'env = { FUXI_SKILL_TARGET = "C:/skill" }',
+    ''
+  ],
+  'a value then a table on the same path': [
+    'approval_policy = "never"',
+    '',
+    '[mcp_servers.fuxi-platform]',
+    'command = "stale-node"',
+    '',
+    '[mcp_servers.fuxi-platform.command]',
+    'sub = 1',
+    ''
+  ]
+};
+
+test('Codex preflight rejects semantic redefinitions with MCP_CONFIG_INVALID and no write', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-redefine-preflight-'));
+  const originalHomedir = os.homedir;
+  os.homedir = () => root;
+  try {
+    const config = path.join(root, '.codex', 'config.toml');
+    fs.mkdirSync(path.dirname(config), { recursive: true });
+    for (const [label, lines] of Object.entries(REDEFINITION_CONFIGS)) {
+      const content = lines.join('\n');
+      fs.writeFileSync(config, content);
+      assert.throws(
+        () => preflight(CODEX_MANIFEST, { client: 'codex' }),
+        error => {
+          assert.ok(error instanceof BootstrapError, label + ': expected BootstrapError, got ' + error);
+          assert.equal(error.code, 'MCP_CONFIG_INVALID', label);
+          assert.equal(error.details.file, config, label);
+          assert.equal(typeof error.details.line, 'number', label + ': expected a line number');
+          return true;
+        },
+        label
+      );
+      assert.equal(fs.readFileSync(config, 'utf8'), content, label + ': rejected config must stay untouched');
+    }
+  } finally {
+    os.homedir = originalHomedir;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('a Codex install refuses a semantically redefined config before any write', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-redefine-install-'));
+  const home = path.join(root, 'home');
+  try {
+    const configFile = path.join(home, '.codex', 'config.toml');
+    const skillTarget = path.join(home, '.agents', 'skills', SKILL_BASENAME);
+    const content = REDEFINITION_CONFIGS['inline env then the [env] header'].join('\n');
+    fs.mkdirSync(path.dirname(configFile), { recursive: true });
+    fs.writeFileSync(configFile, content);
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const skillZip = skillPackageZip(root);
+    await assert.rejects(
+      () => runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false }),
+      error => {
+        assert.ok(error instanceof BootstrapError, 'expected BootstrapError, got ' + error);
+        assert.equal(error.code, 'MCP_CONFIG_INVALID');
+        assert.equal(error.details.file, configFile);
+        return true;
+      }
+    );
+    // 失败在 PRECHECK：配置未被改写，Skill 也没落地。
+    assert.equal(fs.readFileSync(configFile, 'utf8'), content, 'the malformed config must stay byte-identical');
+    assert.equal(fs.existsSync(skillTarget), false, 'nothing may be installed when the config is rejected');
+    const failed = JSON.parse(fs.readFileSync(path.join(root, 'runtime', 'bootstrap-state.json'), 'utf8'));
+    assert.equal(failed.status, 'FAILED');
+    assert.equal(failed.failure.code, 'MCP_CONFIG_INVALID');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

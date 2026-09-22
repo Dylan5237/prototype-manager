@@ -12,6 +12,18 @@
 //   byte of the file is preserved, including unrelated Codex settings.
 
 const BARE_KEY_RE = /^[A-Za-z0-9_-]+$/;
+// 路径在文档里的"被定义成了什么"。标准 TOML 要求同一路径只能有一种身份：
+// 值、内联表（不可再扩展）、[table] 表、dotted key 建的表、表头隐式建出的父表、
+// 或数组表。只看字面重复是抓不到 value/table 重定义的（内联表与 dotted key 都会
+// 建立命名空间），因此必须按路径追踪语义身份。
+const DEFINITION_KIND = Object.freeze({
+  VALUE: 'value',
+  INLINE_TABLE: 'inline-table',
+  TABLE: 'table',
+  DOTTED: 'dotted',
+  IMPLICIT: 'implicit',
+  ARRAY_OF_TABLES: 'array-of-tables'
+});
 // 伏羲只管理自己条目的这三个字段；Codex 还支持 env_vars / startup_timeout_sec
 // 等字段，凡是用户自己加的都不属于我们，绝不能在重写时丢弃。
 const MANAGED_SERVER_KEYS = new Set(['command', 'args', 'env']);
@@ -339,7 +351,74 @@ function parseDocument(text) {
   const tables = [];
   const rootAssignments = [];
   const rootKeys = new Set();
-  const seenTables = new Set();
+  // 语义定义表：pathKey -> DEFINITION_KIND。用于拒绝 TOML 语义上的重定义
+  // （值当表用、内联表再扩展、dotted key 与 [table] 互相覆盖等）。
+  const definitions = new Map();
+  const arrayOfTables = new Set();
+  const lineStarts = scanner.lineStarts;
+  const pathKey = parts => parts.join('\u0000');
+  const kindOf = parts => definitions.get(pathKey(parts));
+  // 数组表每个元素是独立命名空间，元素内部不做路径级追踪（#71 只需要 mcp_servers 形状，
+  // 而 [[mcp_servers]] 已被 assertSupportedDocument 判为不支持）。不这样做会把
+  // 合法的重复 [[skills.config]] 误判成重定义。
+  const insideArrayOfTables = parts => {
+    for (let index = 1; index < parts.length; index += 1) {
+      if (arrayOfTables.has(pathKey(parts.slice(0, index)))) return true;
+    }
+    return false;
+  };
+  const semanticError = (message, position) => {
+    const line = lineNumberAt(lineStarts, position);
+    throw new TomlError('TOML_INVALID', `${message} (line ${line})`, { line });
+  };
+  const isInlineTableValue = value => Boolean(value)
+    && typeof value === 'object'
+    && !Array.isArray(value);
+  // [table] 表头：祖先不能是值/内联表；自身不能被声明过（隐式父表可以被显式声明）。
+  const defineTablePath = (headerPath, isArrayOfTables, position) => {
+    if (insideArrayOfTables(headerPath)) return;
+    for (let index = 1; index < headerPath.length; index += 1) {
+      const prefix = headerPath.slice(0, index);
+      const kind = kindOf(prefix);
+      if (kind === DEFINITION_KIND.VALUE) semanticError('Cannot overwrite a value with a table', position);
+      if (kind === DEFINITION_KIND.INLINE_TABLE) semanticError('Cannot extend an inline table', position);
+      if (!kind) definitions.set(pathKey(prefix), DEFINITION_KIND.IMPLICIT);
+    }
+    const existing = kindOf(headerPath);
+    if (isArrayOfTables) {
+      if (existing === DEFINITION_KIND.ARRAY_OF_TABLES) return;
+      if (existing) semanticError(`Cannot redefine "${headerPath.join('.')}" as an array of tables`, position);
+      definitions.set(pathKey(headerPath), DEFINITION_KIND.ARRAY_OF_TABLES);
+      arrayOfTables.add(pathKey(headerPath));
+      return;
+    }
+    if (existing === DEFINITION_KIND.VALUE) semanticError('Cannot overwrite a value with a table', position);
+    if (existing === DEFINITION_KIND.INLINE_TABLE) semanticError('Cannot extend an inline table', position);
+    if (existing && existing !== DEFINITION_KIND.IMPLICIT) {
+      semanticError(`Cannot declare table "${headerPath.join('.')}" twice`, position);
+    }
+    definitions.set(pathKey(headerPath), DEFINITION_KIND.TABLE);
+  };
+  // 赋值（含 dotted key）：中间段建立/沿用命名空间，末段写值。
+  const defineValuePath = (scopePath, assignmentPath, value, position) => {
+    const fullPath = scopePath.concat(assignmentPath);
+    if (insideArrayOfTables(fullPath)) return;
+    for (let index = 1; index < assignmentPath.length; index += 1) {
+      const prefix = scopePath.concat(assignmentPath.slice(0, index));
+      const kind = kindOf(prefix);
+      if (kind === DEFINITION_KIND.VALUE) semanticError('Cannot overwrite a value with a table', position);
+      if (kind === DEFINITION_KIND.INLINE_TABLE) semanticError('Cannot mutate an inline table', position);
+      if (kind === DEFINITION_KIND.TABLE) {
+        semanticError(`Cannot redefine table "${prefix.join('.')}" with a dotted key`, position);
+      }
+      if (!kind) definitions.set(pathKey(prefix), DEFINITION_KIND.DOTTED);
+    }
+    const existing = kindOf(fullPath);
+    if (existing) semanticError(`Cannot overwrite "${fullPath.join('.')}"`, position);
+    definitions.set(pathKey(fullPath), isInlineTableValue(value)
+      ? DEFINITION_KIND.INLINE_TABLE
+      : DEFINITION_KIND.VALUE);
+  };
   let current = null;
   let lastStatementEnd = 0;
 
@@ -349,11 +428,7 @@ function parseDocument(text) {
     const statementStart = scanner.pos;
     if (scanner.peek() === '[') {
       const header = scanner.readTableHeader();
-      const headerKey = `${header.arrayOfTables ? 'a' : 't'}:${header.path.join('\u0000')}`;
-      if (!header.arrayOfTables && seenTables.has(headerKey)) {
-        scanner.fail(`Duplicate table [${header.path.join('.')}]`);
-      }
-      seenTables.add(headerKey);
+      defineTablePath(header.path, header.arrayOfTables, statementStart);
       scanner.skipSpaces();
       scanner.skipComment();
       if (!scanner.atEnd() && !scanner.consumeNewline()) scanner.fail('Unexpected content after table header');
@@ -379,6 +454,7 @@ function parseDocument(text) {
     const assignmentKey = path.join('\u0000');
     if (keys.has(assignmentKey)) scanner.fail(`Duplicate key "${path.join('.')}"`);
     keys.add(assignmentKey);
+    defineValuePath(current ? current.path : [], path, value, statementStart);
     const assignment = { path, value, start: statementStart, end: scanner.pos };
     if (current) current.assignments.push(assignment);
     else rootAssignments.push(assignment);
