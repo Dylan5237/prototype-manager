@@ -568,6 +568,7 @@ async function main() {
     assert(mcpEntries.includes('fuxi-platform-mcp/src/bootstrap.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/src/instance-lock.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/src/fuxi-zip.js'));
+    assert(mcpEntries.includes('fuxi-platform-mcp/src/config-write.js'));
     assert(mcpEntries.includes('fuxi-platform-mcp/package.json'));
     assert(!mcpEntries.some(name => name.includes('/tests/')));
 

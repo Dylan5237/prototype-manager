@@ -62,6 +62,18 @@ function writeFixture(root, relative, content) {
   return file;
 }
 
+function assertNoPersistedSecret(root, secret) {
+  const visit = directory => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(file);
+      else assert.equal(fs.readFileSync(file).toString('utf8').includes(secret), false,
+        'connect code persisted in ' + path.relative(root, file));
+    }
+  };
+  visit(root);
+}
+
 function packageZip(root, packageName, files) {
   const absoluteFiles = files.map(([entry, content]) => ({
     entry: packageName + '/' + entry,
@@ -71,8 +83,12 @@ function packageZip(root, packageName, files) {
 }
 
 // The fake MCP server reports the check_connection result the test asks for.
-function fakeMcpServer(result) {
+function fakeMcpServer(result, options = {}) {
   const payload = JSON.stringify(JSON.stringify(result));
+  const missingCodePayload = JSON.stringify(JSON.stringify({ ok: false, authentication: 'none' }));
+  const payloadExpression = options.requireConnectCode
+    ? `(process.env.FUXI_CONNECT_CODE ? ${payload} : ${missingCodePayload})`
+    : payload;
   return [
     'const NL = String.fromCharCode(10);',
     "let buffer = '';",
@@ -88,7 +104,7 @@ function fakeMcpServer(result) {
     "    if (message.method === 'initialize') {",
     "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { serverInfo: { name: 'fake' } } }) + NL);",
     "    } else if (message.method === 'tools/call') {",
-    "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: " + payload + " }] } }) + NL);",
+    "      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: " + payloadExpression + " }] } }) + NL);",
     '    }',
     '  }',
     '});',
@@ -96,12 +112,13 @@ function fakeMcpServer(result) {
   ].join('\n');
 }
 
-function mcpPackageZip(root, result) {
+function mcpPackageZip(root, result, options = {}) {
   return packageZip(root, 'fuxi-platform-mcp', [
-    ['src/server.js', fakeMcpServer(result)],
+    ['src/server.js', options.serverSource || fakeMcpServer(result, options)],
     ['src/launcher.js', '#!/usr/bin/env node\n'],
     ['src/bootstrap.js', '#!/usr/bin/env node\n'],
     ['src/fuxi-toml.js', "'use strict';\n"],
+    ['src/config-write.js', "'use strict';\n"],
     ['src/local-lock.js', 'module.exports = {};\n'],
     ['src/instance-lock.js', 'module.exports = {};\n'],
     ['package.json', '{"name":"fuxi-platform-mcp","version":"test"}\n']
@@ -115,7 +132,7 @@ function skillPackageZip(root) {
 // Runs a real install against a temporary HOME so nothing touches the operator
 // own Codex configuration. The ZIP bytes are passed in so a repeated run can
 // reuse the exact same artifacts.
-async function runCodexInstall({ root, home, mcpZip, skillZip, seedConfig = true }) {
+async function runCodexInstall({ root, home, mcpZip, skillZip, seedConfig = true, connectCode }) {
   const installRoot = path.join(root, 'runtime');
   const configFile = path.join(home, '.codex', 'config.toml');
   const skillTarget = path.join(home, '.agents', 'skills', SKILL_BASENAME);
@@ -127,6 +144,7 @@ async function runCodexInstall({ root, home, mcpZip, skillZip, seedConfig = true
     const state = await install(
       {
         ...CODEX_MANIFEST,
+        ...(connectCode ? { connectCode } : {}),
         artifacts: {
           mcp: { url: 'http://127.0.0.1/mcp.zip', sha256: sha256(mcpZip), size: mcpZip.length },
           skill: { url: 'http://127.0.0.1/skill.zip', sha256: sha256(skillZip), size: skillZip.length }
@@ -249,9 +267,10 @@ test('a Codex install writes the official targets, preserves unrelated config an
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-install-'));
   const home = path.join(root, 'home');
   try {
-    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT);
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT, { requireConnectCode: true });
     const skillZip = skillPackageZip(root);
-    const { state, configFile, skillTarget, verified } = await runCodexInstall({ root, home, mcpZip, skillZip });
+    const connectCode = 'codex-test-connect-code-never-persist';
+    const { state, configFile, skillTarget, verified } = await runCodexInstall({ root, home, mcpZip, skillZip, connectCode });
 
     assert.equal(state.status, 'COMPLETE');
     assert.equal(state.client, 'codex');
@@ -285,6 +304,7 @@ test('a Codex install writes the official targets, preserves unrelated config an
     assert.equal(fs.existsSync(path.join(skillTarget, 'SKILL.md')), true);
     assert.equal(verified.ok, true);
     assert.equal(verified.checks.config, true);
+    assertNoPersistedSecret(root, connectCode);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -459,16 +479,48 @@ test('an already-complete Codex install stays a no-op even with a user key prese
 // ---- Gap 1: env 里非伏羲管理的用户变量（安装器层面） ----
 
 test('the installer only writes env keys declared as Fuxi-managed', () => {
-  // 白名单必须覆盖安装器实际写出的每一个 env 键，否则我们自己的键会被判成用户资产。
-  const plain = mcpEntry({ apiUrl: 'http://127.0.0.1:3001' }, '/opt/mcp', '/opt/skill', '/opt/creds', '/opt/root', null);
-  const withConnect = mcpEntry({ apiUrl: 'http://127.0.0.1:3001' }, '/opt/mcp', '/opt/skill', '/opt/creds', '/opt/root', 'connect-code');
-  for (const entry of [plain, withConnect]) {
-    for (const key of Object.keys(entry.env)) {
-      assert.equal(FUXI_MANAGED_ENV_KEYS.includes(key), true, key + ' must be declared as Fuxi-managed');
-    }
+  // 连接码白名单仅用于清理由旧版本留下的值；新条目从一开始就不包含它。
+  const entry = mcpEntry({ apiUrl: 'http://127.0.0.1:3001' }, '/opt/mcp', '/opt/skill', '/opt/creds', '/opt/root');
+  for (const key of Object.keys(entry.env)) {
+    assert.equal(FUXI_MANAGED_ENV_KEYS.includes(key), true, key + ' must be declared as Fuxi-managed');
   }
-  assert.equal(Object.keys(withConnect.env).includes('FUXI_CONNECT_CODE'), true);
+  assert.equal(Object.keys(entry.env).includes('FUXI_CONNECT_CODE'), false);
   assert.equal(FUXI_MANAGED_ENV_KEYS.includes('FUXI_CONNECT_CODE'), true);
+});
+
+test('a failed post-CONFIGURE Codex install redacts the connect code and persists no copy', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-connect-code-failure-'));
+  const home = path.join(root, 'home');
+  const connectCode = 'codex-test-connect-code-never-persist';
+  try {
+    const configFile = path.join(home, '.codex', 'config.toml');
+    const mcpZip = mcpPackageZip(root, VERIFIED_RESULT, {
+      serverSource: [
+        "process.stdin.resume();",
+        "process.stdin.on('end', () => {",
+        "  process.stderr.write(process.env.FUXI_CONNECT_CODE || 'missing-connect-code');",
+        '  process.exitCode = 1;',
+        '});',
+        ''
+      ].join('\n')
+    });
+    const skillZip = skillPackageZip(root);
+    let failure;
+    try {
+      await runCodexInstall({ root, home, mcpZip, skillZip, connectCode });
+      assert.fail('install should fail after writing the MCP config');
+    } catch (error) {
+      failure = error;
+    }
+    assert.ok(failure instanceof BootstrapError);
+    assert.equal(failure.code, 'MCP_PROCESS_FAILED');
+    assert.match(failure.details.stderr, /\[redacted\]/);
+    assert.equal(failure.details.stderr.includes(connectCode), false);
+    assert.equal(fs.readFileSync(configFile, 'utf8'), CODEX_USER_CONFIG, 'rollback restores the previous config');
+    assertNoPersistedSecret(root, connectCode);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 function userEnvConfig(extraEnvLines) {

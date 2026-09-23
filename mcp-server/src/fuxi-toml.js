@@ -29,6 +29,9 @@ const DEFINITION_KIND = Object.freeze({
 const MANAGED_SERVER_KEYS = new Set(['command', 'args', 'env']);
 // 伏羲安装器写进自己条目的环境变量白名单（与 bootstrap.js 的 mcpEntry 对应）。
 // env 里除此之外的任何变量都是用户资产：重写会丢，因此必须探测出来。
+// FUXI_CONNECT_CODE 保留在白名单里有两个作用：一是历史版本可能把连接码写进过
+// 用户配置，列入白名单才能在重写时被清掉（而不是被当成用户资产 fail closed 挡住）；
+// 二是现行安装器已不再写入它，见 bootstrap.js 的 mcpEntry()。
 const FUXI_MANAGED_ENV_KEYS = Object.freeze([
   'FUXI_API_URL',
   'FUXI_CREDENTIALS_FILE',
@@ -269,10 +272,17 @@ class Scanner {
     }
   }
 
-  assignInline(table, path, value) {
+  // 内联表内部同样要区分"由 dotted key 建立的命名空间"与"由内联表值建立的命名空间"：
+  // 后者是自包含的，之后（包括同一表达式内）不得再被 dotted key 扩展。
+  assignInline(table, path, value, kinds) {
     let current = table;
     for (let index = 0; index < path.length - 1; index += 1) {
       const key = path[index];
+      const localKey = JSON.stringify(path.slice(0, index + 1));
+      const kind = kinds.get(localKey);
+      if (kind === 'inline-table') this.fail('Cannot extend an inline table with a dotted key');
+      if (kind === 'value') this.fail(`Cannot overwrite a value with a table`);
+      if (!kind) kinds.set(localKey, 'dotted');
       if (!Object.prototype.hasOwnProperty.call(current, key)) current[key] = {};
       if (!current[key] || typeof current[key] !== 'object' || Array.isArray(current[key])) {
         this.fail(`Duplicate key "${path.join('.')}"`);
@@ -281,12 +291,14 @@ class Scanner {
     }
     const last = path[path.length - 1];
     if (Object.prototype.hasOwnProperty.call(current, last)) this.fail(`Duplicate key "${path.join('.')}"`);
+    kinds.set(JSON.stringify(path), isPlainTable(value) ? 'inline-table' : 'value');
     current[last] = value;
   }
 
   readInlineTable() {
     this.pos += 1;
     const table = {};
+    const kinds = new Map();
     for (;;) {
       this.skipTrivia();
       if (this.atEnd()) this.fail('Unterminated inline table');
@@ -300,7 +312,7 @@ class Scanner {
       this.pos += 1;
       this.skipSpaces();
       const value = this.readValue();
-      this.assignInline(table, path, value);
+      this.assignInline(table, path, value, kinds);
       this.skipTrivia();
       if (this.peek() === ',') {
         this.pos += 1;
@@ -354,55 +366,64 @@ function parseDocument(text) {
   // 语义定义表：pathKey -> DEFINITION_KIND。用于拒绝 TOML 语义上的重定义
   // （值当表用、内联表再扩展、dotted key 与 [table] 互相覆盖等）。
   const definitions = new Map();
-  const arrayOfTables = new Set();
+  const arrayOfTables = new Map();
   const lineStarts = scanner.lineStarts;
-  const pathKey = parts => parts.join('\u0000');
-  const kindOf = parts => definitions.get(pathKey(parts));
-  // 数组表每个元素是独立命名空间，元素内部不做路径级追踪（#71 只需要 mcp_servers 形状，
-  // 而 [[mcp_servers]] 已被 assertSupportedDocument 判为不支持）。不这样做会把
-  // 合法的重复 [[skills.config]] 误判成重定义。
-  const insideArrayOfTables = parts => {
-    for (let index = 1; index < parts.length; index += 1) {
-      if (arrayOfTables.has(pathKey(parts.slice(0, index)))) return true;
+  const pathKey = parts => JSON.stringify(parts);
+  // 作用域键：路径里每个数组表前缀都拼上"当前元素下标"，于是 [[a]] 的每个元素
+  // 拥有独立命名空间（合法的重复 AoT 元素互不干扰），而元素内部的
+  // value/table/inline-table 重定义仍旧照常检出——不再整体跳过 AoT 子树。
+  const scopeKey = parts => {
+    const segments = [];
+    for (let index = 1; index <= parts.length; index += 1) {
+      const prefix = parts.slice(0, index);
+      const key = pathKey(prefix);
+      segments.push([
+        parts[index - 1],
+        arrayOfTables.has(key) ? arrayOfTables.get(key) : null
+      ]);
     }
-    return false;
+    return JSON.stringify(segments);
   };
+  const kindOf = parts => definitions.get(scopeKey(parts));
+  const define = (parts, kind) => definitions.set(scopeKey(parts), kind);
   const semanticError = (message, position) => {
     const line = lineNumberAt(lineStarts, position);
     throw new TomlError('TOML_INVALID', `${message} (line ${line})`, { line });
   };
-  const isInlineTableValue = value => Boolean(value)
-    && typeof value === 'object'
-    && !Array.isArray(value);
   // [table] 表头：祖先不能是值/内联表；自身不能被声明过（隐式父表可以被显式声明）。
   const defineTablePath = (headerPath, isArrayOfTables, position) => {
-    if (insideArrayOfTables(headerPath)) return;
     for (let index = 1; index < headerPath.length; index += 1) {
       const prefix = headerPath.slice(0, index);
       const kind = kindOf(prefix);
       if (kind === DEFINITION_KIND.VALUE) semanticError('Cannot overwrite a value with a table', position);
       if (kind === DEFINITION_KIND.INLINE_TABLE) semanticError('Cannot extend an inline table', position);
-      if (!kind) definitions.set(pathKey(prefix), DEFINITION_KIND.IMPLICIT);
+      if (!kind) define(prefix, DEFINITION_KIND.IMPLICIT);
     }
-    const existing = kindOf(headerPath);
     if (isArrayOfTables) {
-      if (existing === DEFINITION_KIND.ARRAY_OF_TABLES) return;
-      if (existing) semanticError(`Cannot redefine "${headerPath.join('.')}" as an array of tables`, position);
-      definitions.set(pathKey(headerPath), DEFINITION_KIND.ARRAY_OF_TABLES);
-      arrayOfTables.add(pathKey(headerPath));
+      const key = pathKey(headerPath);
+      if (!arrayOfTables.has(key)) {
+        if (kindOf(headerPath)) {
+          semanticError(`Cannot redefine "${headerPath.join('.')}" as an array of tables`, position);
+        }
+        arrayOfTables.set(key, 0);
+        define(headerPath, DEFINITION_KIND.ARRAY_OF_TABLES);
+        return;
+      }
+      // 重复 [[...]] 表示"新元素"：下标 +1，作用域随之切到全新命名空间。
+      arrayOfTables.set(key, arrayOfTables.get(key) + 1);
       return;
     }
+    const existing = kindOf(headerPath);
     if (existing === DEFINITION_KIND.VALUE) semanticError('Cannot overwrite a value with a table', position);
     if (existing === DEFINITION_KIND.INLINE_TABLE) semanticError('Cannot extend an inline table', position);
     if (existing && existing !== DEFINITION_KIND.IMPLICIT) {
       semanticError(`Cannot declare table "${headerPath.join('.')}" twice`, position);
     }
-    definitions.set(pathKey(headerPath), DEFINITION_KIND.TABLE);
+    define(headerPath, DEFINITION_KIND.TABLE);
   };
   // 赋值（含 dotted key）：中间段建立/沿用命名空间，末段写值。
   const defineValuePath = (scopePath, assignmentPath, value, position) => {
     const fullPath = scopePath.concat(assignmentPath);
-    if (insideArrayOfTables(fullPath)) return;
     for (let index = 1; index < assignmentPath.length; index += 1) {
       const prefix = scopePath.concat(assignmentPath.slice(0, index));
       const kind = kindOf(prefix);
@@ -411,11 +432,11 @@ function parseDocument(text) {
       if (kind === DEFINITION_KIND.TABLE) {
         semanticError(`Cannot redefine table "${prefix.join('.')}" with a dotted key`, position);
       }
-      if (!kind) definitions.set(pathKey(prefix), DEFINITION_KIND.DOTTED);
+      if (!kind) define(prefix, DEFINITION_KIND.DOTTED);
     }
     const existing = kindOf(fullPath);
     if (existing) semanticError(`Cannot overwrite "${fullPath.join('.')}"`, position);
-    definitions.set(pathKey(fullPath), isInlineTableValue(value)
+    define(fullPath, isPlainTable(value)
       ? DEFINITION_KIND.INLINE_TABLE
       : DEFINITION_KIND.VALUE);
   };

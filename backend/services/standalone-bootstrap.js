@@ -5,13 +5,14 @@ function readSource(file) {
   return fs.readFileSync(path.resolve(file), 'utf8').replace(/^#![^\r\n]*(?:\r?\n|$)/, '');
 }
 
-// 将现有安装器及其两个无依赖模块封装成单文件脚本；不改变 MCP 运行时 ZIP。
+// 将现有安装器及其无依赖模块封装成单文件脚本；不改变 MCP 运行时 ZIP。
 function buildStandaloneBootstrap({ mcpRoot }) {
   const root = path.resolve(mcpRoot);
   const sources = {
     './fuxi-zip': readSource(path.join(root, 'src', 'fuxi-zip.js')),
     './local-lock': readSource(path.join(root, 'src', 'local-lock.js')),
     './fuxi-toml': readSource(path.join(root, 'src', 'fuxi-toml.js')),
+    './config-write': readSource(path.join(root, 'src', 'config-write.js')),
     './bootstrap': readSource(path.join(root, 'src', 'bootstrap.js'))
   };
   return `#!/usr/bin/env node\n'use strict';\n\nconst nativeRequire = require;\nconst moduleSources = ${JSON.stringify(sources)};\nconst moduleCache = new Map();\n\nfunction loadModule(id) {\n  if (!Object.prototype.hasOwnProperty.call(moduleSources, id)) return nativeRequire(id);\n  if (moduleCache.has(id)) return moduleCache.get(id).exports;\n  const module = { exports: {}, filename: __filename };\n  moduleCache.set(id, module);\n  const localRequire = dependency => {\n    if (Object.prototype.hasOwnProperty.call(moduleSources, dependency)) return loadModule(dependency);\n    return nativeRequire(dependency);\n  };\n  new Function('require', 'module', 'exports', moduleSources[id])(localRequire, module, module.exports);\n  return module.exports;\n}\n\nconst bootstrap = loadModule('./bootstrap');\nbootstrap.main(process.argv.slice(2)).then(code => {\n  process.exitCode = code;\n}).catch(error => {\n  process.stdout.write(JSON.stringify({\n    ok: false,\n    status: 'FAILED',\n    step: 'FAILED',\n    error: { code: error.code || 'BOOTSTRAP_FAILED', message: error.message || 'Bootstrap failed' }\n  }) + '\\n');\n  process.exitCode = 1;\n});\n`;

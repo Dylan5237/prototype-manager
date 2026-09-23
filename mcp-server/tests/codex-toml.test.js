@@ -785,6 +785,56 @@ const REDEFINITION_FIXTURES = {
     '[a]',
     'c = 2',
     ''
+  ],
+  'AoT value inside one element, then its table': [
+    '[[a]]',
+    'b = 1',
+    '',
+    '[a.b]',
+    'c = 2',
+    ''
+  ],
+  'AoT inline table inside one element, then its table': [
+    '[[a]]',
+    'b = { c = 1 }',
+    '',
+    '[a.b]',
+    'd = 2',
+    ''
+  ],
+  'AoT dotted namespace inside one element, then its table': [
+    '[[a]]',
+    'b.c = 1',
+    '',
+    '[a.b]',
+    'd = 2',
+    ''
+  ],
+  'AoT table namespace first, then the AoT declaration': [
+    '[a.b]',
+    'c = 1',
+    '',
+    '[[a]]',
+    'd = 2',
+    ''
+  ],
+  'inline table nested value cannot be extended in the same expression': [
+    'x = { a = { b = 1 }, a.c = 2 }',
+    ''
+  ],
+  'inline table nested value cannot be extended by a later dotted key': [
+    '[mcp_servers.fuxi-platform]',
+    'env = { a = { b = 1 } }',
+    'env.a.c = 2',
+    ''
+  ],
+  'inline table namespace cannot be extended by a deeper table': [
+    '[mcp_servers.fuxi-platform]',
+    'env = { a = { b = 1 } }',
+    '',
+    '[mcp_servers.fuxi-platform.env.a.c]',
+    'd = 2',
+    ''
   ]
 };
 
@@ -825,6 +875,14 @@ const REDEFINITION_CONTROLS = {
     '',
     '[a.z]',
     'y = 1',
+    ''
+  ],
+  'AoT element scope does not collide with a quoted key': [
+    '[[a]]',
+    'x = 1',
+    '',
+    '["a#0"]',
+    'x = 2',
     ''
   ],
   'a child header, then its parent header': [

@@ -10,6 +10,7 @@ const { spawn } = require('node:child_process');
 const { parseZipBuffer } = require('./fuxi-zip');
 const { acquireFileLockSync } = require('./local-lock');
 const { TomlError, readMcpServers, upsertMcpServer } = require('./fuxi-toml');
+const { ConfigWriteError, writeFileReplacingSync } = require('./config-write');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 10000;
@@ -160,11 +161,22 @@ function readJson(file) {
   }
 }
 
+// 配置文件写入统一走共享原语：Windows 上"临时文件 + rename 覆盖已存在目标"会被
+// EPERM/EEXIST/EBUSY 拒绝（#33 已证实），该原语做有限重试 + 原地覆盖回退，
+// 并在任何失败路径清理临时文件。
+function toBootstrapWriteError(error) {
+  if (error instanceof ConfigWriteError) {
+    return new BootstrapError(error.code || 'MCP_CONFIG_WRITE_FAILED', error.message, error.details || {});
+  }
+  return error;
+}
+
 function writeJsonAtomic(file, value) {
-  ensureDirectory(path.dirname(file));
-  const temp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temp, file);
+  try {
+    writeFileReplacingSync(file, `${JSON.stringify(value, null, 2)}\n`);
+  } catch (error) {
+    throw toBootstrapWriteError(error);
+  }
 }
 
 function acquireBootstrapLock(lockFile) {
@@ -344,7 +356,7 @@ function extractPackage(buffer, targetDir, packageType) {
   const rootFiles = extracted.filter(entry => entry.startsWith(rootPrefix));
   const packageRoot = rootFiles.length ? path.join(targetDir, expectedRoot) : targetDir;
   const required = packageType === 'mcp'
-    ? ['src/server.js', 'src/launcher.js', 'src/bootstrap.js', 'src/local-lock.js', 'src/instance-lock.js', 'package.json']
+    ? ['src/server.js', 'src/launcher.js', 'src/bootstrap.js', 'src/fuxi-toml.js', 'src/config-write.js', 'src/local-lock.js', 'src/instance-lock.js', 'package.json']
     : ['SKILL.md'];
   for (const requiredFile of required) {
     if (!fs.existsSync(path.join(packageRoot, requiredFile))) {
@@ -530,18 +542,22 @@ function restoreCredentialsPreservingLiveSession(backup, target) {
   return 'restored-backup';
 }
 
-function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot, connectCode) {
+// 落盘条目只包含长期有效的路径与端点；连接码从不进入这个对象，
+// 因此不存在"写入后再擦除"的窗口（#71 blocker 4）。
+function mcpEntry(manifest, mcpRoot, skillTarget, credentialsFile, installRoot) {
   const launcher = path.join(mcpRoot, 'src', 'launcher.js');
   const server = path.join(mcpRoot, 'src', 'server.js');
-  const env = {
-    FUXI_API_URL: normalizeApiUrl(manifest.apiUrl),
-    FUXI_CREDENTIALS_FILE: credentialsFile,
-    FUXI_MCP_TARGET: server,
-    FUXI_INSTALL_ROOT: installRoot,
-    FUXI_SKILL_TARGET: skillTarget
+  return {
+    command: process.execPath,
+    args: [launcher],
+    env: {
+      FUXI_API_URL: normalizeApiUrl(manifest.apiUrl),
+      FUXI_CREDENTIALS_FILE: credentialsFile,
+      FUXI_MCP_TARGET: server,
+      FUXI_INSTALL_ROOT: installRoot,
+      FUXI_SKILL_TARGET: skillTarget
+    }
   };
-  if (connectCode) env.FUXI_CONNECT_CODE = connectCode;
-  return { command: process.execPath, args: [launcher], env };
 }
 
 function mcpEntryMatchesState(entry, state, manifest) {
@@ -553,8 +569,7 @@ function mcpEntryMatchesState(entry, state, manifest) {
     state.mcpRoot,
     state.skillTarget,
     state.credentialsFile,
-    state.installRoot,
-    null
+    state.installRoot
   );
   if (!samePath(entry.command, expected.command)) return false;
   if (!Array.isArray(entry.args) || entry.args.length !== expected.args.length || !entry.args.every((value, index) => samePath(value, expected.args[index]))) {
@@ -634,10 +649,11 @@ function readConfigDocument(file, format) {
 }
 
 function writeTextAtomic(file, text) {
-  ensureDirectory(path.dirname(file));
-  const temp = `${file}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(temp, text, { encoding: 'utf8', mode: 0o600 });
-  fs.renameSync(temp, file);
+  try {
+    writeFileReplacingSync(file, text);
+  } catch (error) {
+    throw toBootstrapWriteError(error);
+  }
 }
 
 // 只更新伏羲自己的 MCP 条目；返回是否真的落盘，供回滚判断复用。
@@ -669,9 +685,17 @@ function parseToolReply(line, id) {
   }
 }
 
+function redact(value, secret) {
+  if (typeof value !== 'string' || !value) return value;
+  if (typeof secret !== 'string' || !secret) return value;
+  return value.split(secret).join('[redacted]');
+}
+
 function selfTest(serverPath, env, timeoutMs = DEFAULT_TIMEOUT_MS) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [serverPath], { env, stdio: ['pipe', 'pipe', 'pipe'] });
+    // 连接码只经环境变量传递；子进程若把它写进 stderr，也不能让它进入错误详情/日志。
+    const secret = typeof env.FUXI_CONNECT_CODE === 'string' ? env.FUXI_CONNECT_CODE : '';
     let stdout = '';
     let stderr = '';
     let settled = false;
@@ -707,7 +731,7 @@ function selfTest(serverPath, env, timeoutMs = DEFAULT_TIMEOUT_MS) {
     child.stderr.on('data', chunk => { stderr += chunk.toString(); });
     child.on('error', error => finish(new BootstrapError('MCP_PROCESS_FAILED', error.message)));
     child.on('exit', code => {
-      if (!settled && code !== 0) finish(new BootstrapError('MCP_PROCESS_FAILED', `MCP exited with code ${code}`, { stderr: stderr.slice(0, 300) }));
+      if (!settled && code !== 0) finish(new BootstrapError('MCP_PROCESS_FAILED', `MCP exited with code ${code}`, { stderr: redact(stderr, secret).slice(0, 300) }));
     });
     child.stdin.end([
       JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
@@ -854,7 +878,9 @@ async function install(manifest, options = {}) {
     step = 'CONFIGURE';
     stageStarted = Date.now();
     const configDocument = readConfigDocument(plan.mcpConfig, plan.configFormat);
-    const entry = mcpEntry(manifest, mcpInstallRoot, plan.skillTarget, credentialsFile, installRoot, manifest.connectCode);
+    // 落盘条目从一开始就不含连接码：#71 冻结契约要求安装/连接凭据不得进入
+    // 持久化状态。连接码只在下面 self-test 的子进程环境里临时传递。
+    const entry = mcpEntry(manifest, mcpInstallRoot, plan.skillTarget, credentialsFile, installRoot);
     configWritten = writeConfigEntry(plan.mcpConfig, configDocument, 'fuxi-platform', entry);
     mark('configureMs', stageStarted);
 
@@ -875,16 +901,7 @@ async function install(manifest, options = {}) {
 
     step = 'VERIFY';
     stageStarted = Date.now();
-    const finalConfig = readConfigDocument(plan.mcpConfig, plan.configFormat);
-    const finalEntry = finalConfig.servers['fuxi-platform'];
-    if (finalEntry) {
-      const sanitizedEntry = { ...finalEntry };
-      if (sanitizedEntry.env) {
-        sanitizedEntry.env = { ...sanitizedEntry.env };
-        delete sanitizedEntry.env.FUXI_CONNECT_CODE;
-      }
-      writeConfigEntry(plan.mcpConfig, finalConfig, 'fuxi-platform', sanitizedEntry);
-    }
+    // 配置里本就不存在连接码，因此无需再"事后擦除"——旧实现留有崩溃窗口。
     removePath(path.join(staging, 'mcp.zip'));
     removePath(path.join(staging, 'skill.zip'));
     mark('verifyMs', stageStarted);
