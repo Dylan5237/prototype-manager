@@ -58,7 +58,8 @@ test('onboarding Host registry separates deterministic install from safe-stop mo
   assert.equal(hosts[0].recommended, true);
   assert.equal(getOnboardingHost('workbuddy').client, 'workbuddy');
   assert.equal(getOnboardingHost('cursor').client, 'cursor');
-  assert.equal(getOnboardingHost('codex').mode, 'unsupported');
+  assert.equal(getOnboardingHost('codex').mode, 'install');
+  assert.equal(getOnboardingHost('codex').client, 'codex');
   assert.equal(getOnboardingHost('other').mode, 'discovery');
   assert.match(renderSafeStopPrompt(getOnboardingHost('other')), /只收集事实，不执行安装/);
   assert.doesNotMatch(renderSafeStopPrompt(getOnboardingHost('other')), /node -e|curl|--client/);
