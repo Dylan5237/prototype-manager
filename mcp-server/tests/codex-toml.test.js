@@ -2,9 +2,55 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const repeatedAotRedefinitions = require('./fixtures/repeated-aot-redefinitions.json');
 
 const { TomlError, FUXI_MANAGED_ENV_KEYS, readMcpServers, upsertMcpServer } = require('../src/fuxi-toml');
+
+function codexCliPath() {
+  const configured = process.env.FUXI_CODEX_CLI;
+  if (configured && fs.existsSync(configured)) return configured;
+  const binRoot = process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'OpenAI', 'Codex', 'bin');
+  if (binRoot && fs.existsSync(binRoot)) {
+    const versions = fs.readdirSync(binRoot, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => path.join(binRoot, entry.name, process.platform === 'win32' ? 'codex.exe' : 'codex'))
+      .filter(candidate => fs.existsSync(candidate));
+    if (versions.length) return versions.sort().at(-1);
+  }
+  return null;
+}
+
+function oracleWithPython(text) {
+  const python = process.platform === 'win32' ? 'python' : 'python3';
+  return spawnSync(python, ['-c', [
+    'import sys, tomllib',
+    'try:',
+    '    tomllib.loads(sys.stdin.read())',
+    'except tomllib.TOMLDecodeError:',
+    '    raise SystemExit(1)',
+    'raise SystemExit(0)'
+  ].join('\n')], { input: text, encoding: 'utf8', windowsHide: true });
+}
+
+function oracleWithCodex(text, cli) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-aot-oracle-'));
+  const codexHome = path.join(root, '.codex');
+  fs.mkdirSync(codexHome, { recursive: true });
+  fs.writeFileSync(path.join(codexHome, 'config.toml'), text);
+  try {
+    return spawnSync(cli, ['mcp', 'list', '--json'], {
+      env: { ...process.env, CODEX_HOME: codexHome },
+      encoding: 'utf8',
+      windowsHide: true
+    });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
 
 // 用户手加到伏羲条目 env 上的变量：不是我们的，重写会丢，必须被检出。
 const USER_ENV_FIXTURE = [
@@ -665,6 +711,7 @@ test('an outside comment written directly above the next table stays put', () =>
 // 期望值以 Python tomllib 参考解析器的判定为准（见 PR #73 证据）。
 
 const REDEFINITION_FIXTURES = {
+  ...Object.fromEntries(repeatedAotRedefinitions.map(fixture => [fixture.label, fixture.toml.trimEnd().split(/\r?\n/)])),
   'inline env, then the [env] header (review case 1)': [
     '[mcp_servers.fuxi-platform]',
     'command = "node"',
@@ -950,6 +997,24 @@ test('semantic value/table redefinitions are rejected on read and on rewrite', (
       error => assertTomlError(error, 'TOML_INVALID'),
       'rewrite must reject: ' + label
     );
+  }
+});
+
+test('repeated AoT container redefinitions agree with Python tomllib and Codex CLI', t => {
+  const cli = codexCliPath();
+  if (!cli) {
+    t.skip('Codex CLI executable is not installed on this machine');
+    return;
+  }
+  for (const fixture of repeatedAotRedefinitions) {
+    const python = oracleWithPython(fixture.toml);
+    assert.equal(python.error, undefined, fixture.label + ': Python oracle could not start');
+    assert.notEqual(python.status, 0, fixture.label + ': Python tomllib must reject');
+
+    const codex = oracleWithCodex(fixture.toml, cli);
+    assert.equal(codex.error, undefined, fixture.label + ': Codex oracle could not start');
+    assert.notEqual(codex.status, 0, fixture.label + ': Codex CLI must reject');
+    assert.match((codex.stderr || '') + (codex.stdout || ''), /TOML|duplicate|table|key/i, fixture.label);
   }
 });
 

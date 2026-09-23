@@ -1,0 +1,10 @@
+[
+  {
+    "label": "repeated root AoT then ordinary table",
+    "toml": "[[a]]\nx = 1\n\n[[a]]\nx = 2\n\n[a]\ny = 3\n"
+  },
+  {
+    "label": "repeated nested AoT then ordinary table in the latest parent element",
+    "toml": "[[a]]\nid = 1\n\n[[a.b]]\nv = 1\n\n[[a]]\nid = 2\n\n[[a.b]]\nv = 2\n\n[a.b]\nz = 3\n"
+  }
+]

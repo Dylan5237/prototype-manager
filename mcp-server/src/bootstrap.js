@@ -517,6 +517,61 @@ function restoreBackup(source, target) {
   }
 }
 
+function restoreConfigBackup(source, target) {
+  if (fs.existsSync(source)) {
+    let content;
+    try {
+      content = fs.readFileSync(source);
+    } catch (error) {
+      throw new BootstrapError('MCP_CONFIG_RECOVERY_FAILED', 'Cannot read the config backup during rollback', {
+        stage: 'READ_CONFIG_BACKUP', target, cause: error.code || null
+      });
+    }
+    try {
+      return writeFileReplacingSync(target, content);
+    } catch (error) {
+      const writer = error.details || {};
+      throw new BootstrapError('MCP_CONFIG_RECOVERY_FAILED', 'Cannot restore the previous config during rollback', {
+        stage: 'RESTORE_EXISTING_CONFIG', target, cause: error.code || null,
+        attempts: writer.attempts || null,
+        tempRemoved: writer.tempRemoved === undefined ? null : writer.tempRemoved,
+        failures: Array.isArray(writer.failures) ? writer.failures : []
+      });
+    }
+  }
+
+  try {
+    removePath(target);
+  } catch (error) {
+    throw new BootstrapError('MCP_CONFIG_RECOVERY_FAILED', 'Cannot restore the original absence of the config during rollback', {
+      stage: 'REMOVE_NEW_CONFIG', target, cause: error.code || null
+    });
+  }
+  return { file: target, strategy: 'remove-new-config' };
+}
+
+function compactFailure(error) {
+  return {
+    code: error.code || 'BOOTSTRAP_FAILED',
+    message: error.message,
+    step: error.step || null
+  };
+}
+
+function recoveryFailureRecord(error, fallbackStage) {
+  const details = error.details || {};
+  return {
+    code: error.code || 'BOOTSTRAP_RECOVERY_FAILED',
+    message: error.message || 'Rollback failed',
+    stage: details.stage || fallbackStage,
+    ...(details.target ? { target: details.target } : {}),
+    ...(details.cause ? { cause: details.cause } : {}),
+    ...(details.attempts ? { attempts: details.attempts } : {}),
+    ...(details.tempRemoved !== undefined ? { tempRemoved: details.tempRemoved } : {}),
+    ...(Array.isArray(details.failures) && details.failures.length ? { failures: details.failures } : {})
+  };
+}
+
 function readCredentialSessionId(file) {
   try {
     const data = JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -769,7 +824,11 @@ function buildState({ manifest, plan, state, mcp, skill, mcpRoot, credentialsFil
       skillVersion: selfTestResult.runtime && selfTestResult.runtime.skillVersion
     } : null,
     timings: timings || null,
-    failure: error ? { code: error.code || 'BOOTSTRAP_FAILED', message: error.message, step: error.step || null } : null,
+    failure: error ? {
+      ...compactFailure(error),
+      ...(error.details && error.details.installFailure ? { installFailure: error.details.installFailure } : {}),
+      ...(error.details && error.details.recoveryFailures ? { recoveryFailures: error.details.recoveryFailures } : {})
+    } : null,
     updatedAt: nowIso()
   };
 }
@@ -911,19 +970,52 @@ async function install(manifest, options = {}) {
     removePath(staging);
     return result;
   } catch (error) {
-    const wrapped = error instanceof BootstrapError ? error : new BootstrapError('BOOTSTRAP_FAILED', error.message);
-    wrapped.step = wrapped.step || step;
-    if (plan && (configWritten || fs.existsSync(mcpConfigBackup))) restoreBackup(mcpConfigBackup, plan.mcpConfig);
-    if (plan && (skillInstalled || fs.existsSync(skillBackup))) restoreBackup(skillBackup, plan.skillTarget);
-    if (mcpInstalled || fs.existsSync(mcpBackup)) restoreBackup(mcpBackup, mcpInstallRoot);
+    const installFailure = error instanceof BootstrapError ? error : new BootstrapError('BOOTSTRAP_FAILED', error.message);
+    installFailure.step = installFailure.step || step;
+    const recoveryFailures = [];
+    const recover = (stage, action) => {
+      try {
+        action();
+      } catch (recoveryError) {
+        recoveryFailures.push(recoveryFailureRecord(recoveryError, stage));
+      }
+    };
+    if (plan && (configWritten || fs.existsSync(mcpConfigBackup))) {
+      recover('RESTORE_MCP_CONFIG', () => restoreConfigBackup(mcpConfigBackup, plan.mcpConfig));
+    }
+    if (plan && (skillInstalled || fs.existsSync(skillBackup))) {
+      recover('RESTORE_SKILL', () => restoreBackup(skillBackup, plan.skillTarget));
+    }
+    if (mcpInstalled || fs.existsSync(mcpBackup)) {
+      recover('RESTORE_MCP_INSTALL', () => restoreBackup(mcpBackup, mcpInstallRoot));
+    }
     if (selfTestStarted || selfTestResult || fs.existsSync(credentialsBackup)) {
-      restoreCredentialsPreservingLiveSession(credentialsBackup, credentialsFile);
+      recover('RESTORE_CREDENTIALS', () => restoreCredentialsPreservingLiveSession(credentialsBackup, credentialsFile));
+    }
+
+    let wrapped = installFailure;
+    if (recoveryFailures.length) {
+      const configRecoveryFailed = recoveryFailures.some(failure => failure.code === 'MCP_CONFIG_RECOVERY_FAILED');
+      wrapped = new BootstrapError(
+        configRecoveryFailed ? 'MCP_CONFIG_RECOVERY_FAILED' : 'BOOTSTRAP_RECOVERY_FAILED',
+        'Bootstrap installation failed and rollback could not fully restore the previous state',
+        { installFailure: compactFailure(installFailure), recoveryFailures }
+      );
+      wrapped.step = installFailure.step;
+      wrapped.cause = installFailure;
     }
     timings.totalMs = Date.now() - startedAt;
     const failed = plan
       ? buildState({ manifest, plan, state, mcp: mcpInfo, skill: skillInfo, mcpRoot: mcpInstallRoot, credentialsFile, installRoot, selfTestResult, timings, error: wrapped })
       : { schema: 'fuxi-bootstrap-state/1', bootstrapId: manifest.bootstrapId, status: 'FAILED', step: wrapped.step, statePath: state, installRoot, timings, failure: { code: wrapped.code, message: wrapped.message, step: wrapped.step }, updatedAt: nowIso() };
-    writeJsonAtomic(state, failed);
+    try {
+      writeJsonAtomic(state, failed);
+    } catch (stateError) {
+      wrapped.details = {
+        ...wrapped.details,
+        stateWriteFailure: { code: stateError.code || 'BOOTSTRAP_STATE_WRITE_FAILED', message: stateError.message }
+      };
+    }
     wrapped.details = { ...wrapped.details, state, recovery: 'Read the state file and use a new bootstrap manifest after correcting the failure.' };
     throw wrapped;
   } finally {

@@ -363,12 +363,26 @@ function parseDocument(text) {
   const tables = [];
   const rootAssignments = [];
   const rootKeys = new Set();
-  // 语义定义表：pathKey -> DEFINITION_KIND。用于拒绝 TOML 语义上的重定义
+  // 语义定义表：作用域路径 -> DEFINITION_KIND。用于拒绝 TOML 语义上的重定义
   // （值当表用、内联表再扩展、dotted key 与 [table] 互相覆盖等）。
   const definitions = new Map();
+  // 容器身份与当前 AoT 元素索引分离：键只包含祖先 AoT 的元素身份，
+  // 不包含当前容器自己的元素索引。重复 [[a]] 因而仍指向同一个容器；
+  // [[a.b]] 则按父级 a 元素分别拥有容器。
   const arrayOfTables = new Map();
   const lineStarts = scanner.lineStarts;
-  const pathKey = parts => JSON.stringify(parts);
+  const containerKey = parts => {
+    const segments = [];
+    let parentKey = null;
+    for (let index = 0; index < parts.length; index += 1) {
+      segments.push([
+        parts[index],
+        parentKey !== null && arrayOfTables.has(parentKey) ? arrayOfTables.get(parentKey) : null
+      ]);
+      parentKey = JSON.stringify(segments);
+    }
+    return parentKey;
+  };
   // 作用域键：路径里每个数组表前缀都拼上"当前元素下标"，于是 [[a]] 的每个元素
   // 拥有独立命名空间（合法的重复 AoT 元素互不干扰），而元素内部的
   // value/table/inline-table 重定义仍旧照常检出——不再整体跳过 AoT 子树。
@@ -376,7 +390,7 @@ function parseDocument(text) {
     const segments = [];
     for (let index = 1; index <= parts.length; index += 1) {
       const prefix = parts.slice(0, index);
-      const key = pathKey(prefix);
+      const key = containerKey(prefix);
       segments.push([
         parts[index - 1],
         arrayOfTables.has(key) ? arrayOfTables.get(key) : null
@@ -400,7 +414,7 @@ function parseDocument(text) {
       if (!kind) define(prefix, DEFINITION_KIND.IMPLICIT);
     }
     if (isArrayOfTables) {
-      const key = pathKey(headerPath);
+      const key = containerKey(headerPath);
       if (!arrayOfTables.has(key)) {
         if (kindOf(headerPath)) {
           semanticError(`Cannot redefine "${headerPath.join('.')}" as an array of tables`, position);
@@ -412,6 +426,9 @@ function parseDocument(text) {
       // 重复 [[...]] 表示"新元素"：下标 +1，作用域随之切到全新命名空间。
       arrayOfTables.set(key, arrayOfTables.get(key) + 1);
       return;
+    }
+    if (arrayOfTables.has(containerKey(headerPath))) {
+      semanticError(`Cannot declare array-of-tables "${headerPath.join('.')}" as a table`, position);
     }
     const existing = kindOf(headerPath);
     if (existing === DEFINITION_KIND.VALUE) semanticError('Cannot overwrite a value with a table', position);

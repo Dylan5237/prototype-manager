@@ -6,6 +6,7 @@ const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const repeatedAotRedefinitions = require('./fixtures/repeated-aot-redefinitions.json');
 
 const { buildZip } = require('../src/fuxi-zip');
 const { FUXI_MANAGED_ENV_KEYS } = require('../src/fuxi-toml');
@@ -353,6 +354,106 @@ test('a failed Codex install restores the previous config and removes the new Sk
   }
 });
 
+test('Windows-safe config replacement also restores an existing Codex config after a later self-test failure', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-windows-rollback-'));
+  const home = path.join(root, 'home');
+  const configFile = path.join(home, '.codex', 'config.toml');
+  const originalRename = fs.renameSync;
+  const originalCopy = fs.copyFileSync;
+  const originalRemove = fs.rmSync;
+  let configRenameAttempts = 0;
+  let configCopyWrites = 0;
+  let configDeleteAttempts = 0;
+  let restoredConfig;
+  let temporaryFiles;
+  try {
+    fs.renameSync = (source, target) => {
+      if (target === configFile) {
+        configRenameAttempts += 1;
+        const error = new Error('sharing violation');
+        error.code = 'EPERM';
+        throw error;
+      }
+      return originalRename(source, target);
+    };
+    fs.copyFileSync = (source, target, flags) => {
+      if (target === configFile) configCopyWrites += 1;
+      return originalCopy(source, target, flags);
+    };
+    fs.rmSync = (target, options) => {
+      if (target === configFile) {
+        configDeleteAttempts += 1;
+        const error = new Error('delete sharing violation');
+        error.code = 'EPERM';
+        throw error;
+      }
+      return originalRemove(target, options);
+    };
+
+    const mcpZip = mcpPackageZip(root, { ok: false, authentication: 'none' });
+    const skillZip = skillPackageZip(root);
+    await assert.rejects(
+      () => runCodexInstall({ root, home, mcpZip, skillZip }),
+      error => error instanceof BootstrapError && error.code === 'MCP_CONNECTION_NOT_VERIFIED'
+    );
+    restoredConfig = fs.readFileSync(configFile, 'utf8');
+    temporaryFiles = fs.readdirSync(path.dirname(configFile)).filter(name => name.includes('.tmp-'));
+  } finally {
+    fs.renameSync = originalRename;
+    fs.copyFileSync = originalCopy;
+    fs.rmSync = originalRemove;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  assert.equal(configRenameAttempts, 2, 'forward write and rollback both attempt the shared rename path');
+  assert.equal(configCopyWrites, 2, 'forward write and rollback both use replace-existing copy fallback');
+  assert.equal(configDeleteAttempts, 0, 'rollback never deletes the existing config');
+  assert.equal(restoredConfig, CODEX_USER_CONFIG, 'the original config must be restored byte-for-byte');
+  assert.deepEqual(temporaryFiles, [], 'writer temp files must be cleaned');
+});
+
+test('failure to remove a newly-created Codex config is returned as structured recovery failure', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-absent-config-rollback-'));
+  const home = path.join(root, 'home');
+  const configFile = path.join(home, '.codex', 'config.toml');
+  const originalRemove = fs.rmSync;
+  let failed;
+  let configStillPresent;
+  try {
+    fs.rmSync = (target, options) => {
+      if (target === configFile) {
+        const error = new Error('delete sharing violation');
+        error.code = 'EPERM';
+        throw error;
+      }
+      return originalRemove(target, options);
+    };
+    const mcpZip = mcpPackageZip(root, { ok: false, authentication: 'none' });
+    const skillZip = skillPackageZip(root);
+    await assert.rejects(
+      () => runCodexInstall({ root, home, mcpZip, skillZip, seedConfig: false }),
+      error => {
+        assert.ok(error instanceof BootstrapError);
+        assert.equal(error.code, 'MCP_CONFIG_RECOVERY_FAILED');
+        assert.equal(error.details.installFailure.code, 'MCP_CONNECTION_NOT_VERIFIED');
+        assert.equal(error.details.recoveryFailures[0].stage, 'REMOVE_NEW_CONFIG');
+        assert.equal(error.details.recoveryFailures[0].cause, 'EPERM');
+        return true;
+      }
+    );
+    failed = JSON.parse(fs.readFileSync(path.join(root, 'runtime', 'bootstrap-state.json'), 'utf8'));
+    configStillPresent = fs.existsSync(configFile);
+  } finally {
+    fs.rmSync = originalRemove;
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+
+  assert.equal(failed.failure.code, 'MCP_CONFIG_RECOVERY_FAILED');
+  assert.equal(failed.failure.installFailure.code, 'MCP_CONNECTION_NOT_VERIFIED');
+  assert.equal(failed.failure.recoveryFailures[0].code, 'MCP_CONFIG_RECOVERY_FAILED');
+  assert.equal(configStillPresent, true, 'the simulated sharing violation leaves the file for operator recovery');
+});
+
 test('Windows Codex targets stay absolute and native', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-codex-windows-'));
   const originalHomedir = os.homedir;
@@ -652,6 +753,7 @@ test('a required Codex rewrite fails closed when the Fuxi block holds a user com
 // 这些文件标准 TOML 解析器会拒绝；如果我们接受，就会把畸形 Codex 配置当成合法并改写。
 
 const REDEFINITION_CONFIGS = {
+  ...Object.fromEntries(repeatedAotRedefinitions.map(fixture => [fixture.label, fixture.toml.trimEnd().split(/\r?\n/)])),
   'inline env then the [env] header': [
     'approval_policy = "never"',
     '',
