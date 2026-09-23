@@ -45,6 +45,16 @@ projection_csv="$(sed -n 's/^projection=//p' "${registry}" | head -1)"
 share_export_csv="$(sed -n 's/^share_export=//p' "${registry}" | head -1)"
 [[ -n "${authority}" ]] || deny "remote registry has no authority entry"
 
+# Projects may explicitly allow authority-tip projection to additional named
+# branches (for example, a deploy-identity branch). An absent setting preserves
+# the original default-branch-only behavior; an explicitly empty setting allows
+# no projection target.
+if grep -q '^projection_branches=' "${registry}"; then
+  projection_branches_csv="$(sed -n 's/^projection_branches=//p' "${registry}" | head -1)"
+else
+  projection_branches_csv="${default_branch}"
+fi
+
 is_authority=0
 is_projection=0
 is_share_export=0
@@ -85,11 +95,31 @@ resolve_authority_tip() {
   printf '%s\n' "${tip}"
 }
 
+projection_ref_is_allowed() {
+  local remote_ref_to_check="${1}"
+  local branch=""
+  local -a projection_branches=()
+
+  [[ -n "${projection_branches_csv}" ]] || return 1
+  IFS=',' read -r -a projection_branches <<< "${projection_branches_csv}"
+  for branch in "${projection_branches[@]}"; do
+    branch="${branch//[[:space:]]/}"
+    if [[ -n "${branch}" && "${remote_ref_to_check}" == "refs/heads/${branch}" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 while read -r local_ref local_sha remote_ref remote_sha; do
   [[ -z "${local_ref:-}" ]] && continue
 
-  # Default branch deletion is forbidden on every registered remote.
+  # A projection is mirror-only and never a branch-cleanup surface. Authority
+  # topic deletion remains unchanged; its default branch is still protected.
   if [[ "${local_sha}" == "${zero}" ]]; then
+    if [[ "${is_projection}" -eq 1 ]]; then
+      deny "projection ref deletion is forbidden"
+    fi
     if [[ "${remote_ref}" == "refs/heads/${default_branch}" ]]; then
       deny "refusing to delete ${default_branch} on ${remote_name}"
     fi
@@ -97,8 +127,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
   fi
 
   if [[ "${is_projection}" -eq 1 ]]; then
-    [[ "${remote_ref}" == "refs/heads/${default_branch}" ]] || \
-      deny "projection accepts only ${default_branch}; topic branches push to ${authority}"
+    projection_ref_is_allowed "${remote_ref}" || \
+      deny "projection target ${remote_ref} is not explicitly allowed; topic branches push to ${authority}"
 
     authority_tip="$(resolve_authority_tip || true)"
     [[ -n "${authority_tip}" ]] || \
