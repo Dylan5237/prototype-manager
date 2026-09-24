@@ -573,7 +573,11 @@ test('named-host install writes a host-specific credentials path and leaves the 
       ['src/server.js', fakeMcpServer()],
       ['src/launcher.js', '#!/usr/bin/env node\n'],
       ['src/bootstrap.js', '#!/usr/bin/env node\n'],
-      ['package.json', '{"name":"fuxi-platform-mcp"}\n']
+      ['src/fuxi-toml.js', "'use strict';\n"],
+      ['src/config-write.js', "'use strict';\n"],
+      ['src/local-lock.js', 'module.exports = {};\n'],
+      ['src/instance-lock.js', 'module.exports = {};\n'],
+      ['package.json', '{"name":"fuxi-platform-mcp","version":"test"}\n']
     ]);
     const skillZip = packageZip(fixtureRoot, 'fuxi-prototype', [
       ['SKILL.md', '---\nname: fuxi-prototype\n---\n']
