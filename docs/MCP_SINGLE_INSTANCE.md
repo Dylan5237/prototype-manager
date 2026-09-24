@@ -8,6 +8,16 @@
 
 同一台机器上，**同一 `FUXI_CREDENTIALS_FILE`（同一逻辑设备会话）只允许一个 MCP 运行时拥有连接**。
 
+可安装 Host（`workbuddy` / `cursor` / `codex`）各自写入独立凭证文件，因此 `${credentialsFile}.instance.lock` 也自然分离。锁键语义仍只看凭证路径，不把 `apiUrl` 纳入锁键。默认实例策略仍为 `takeover`。
+
+| Host | 新安装写入的凭证路径 |
+|---|---|
+| WorkBuddy | `~/.fuxi/mcp-credentials-workbuddy.json` |
+| Cursor | `~/.fuxi/mcp-credentials-cursor.json` |
+| Codex | `~/.fuxi/mcp-credentials-codex.json` |
+
+Bootstrap 把该绝对路径写入该 Host MCP 环境的 `FUXI_CREDENTIALS_FILE`（Codex 为 TOML，WorkBuddy/Cursor 为 JSON）。未指定 Host 且无显式路径时，回退 `~/.fuxi/mcp-credentials.json`。新安装不删除遗留文件；各 Host 文件各自持有该 Host 接入后的 token，不做跨 Host 共享。
+
 stdio MCP 无法把两个 AI 宿主接到同一个 stdin/stdout，因此不实现“第二宿主 attach 到已有进程”。策略写死如下：
 
 | `FUXI_MCP_INSTANCE_POLICY` | 行为 |

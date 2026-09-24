@@ -11,6 +11,12 @@ const { parseZipBuffer } = require('./fuxi-zip');
 const { acquireFileLockSync } = require('./local-lock');
 const { TomlError, readMcpServers, upsertMcpServer } = require('./fuxi-toml');
 const { ConfigWriteError, writeFileReplacingSync } = require('./config-write');
+const {
+  NAMED_HOST_CLIENTS,
+  hostCredentialsFile,
+  legacyCredentialsFile,
+  resolveCredentialsFile
+} = require('./credentials-file');
 
 const MAX_ARTIFACT_BYTES = 100 * 1024 * 1024;
 const MAX_ZIP_ENTRIES = 10000;
@@ -18,7 +24,6 @@ const DEFAULT_TIMEOUT_MS = 15000;
 const MAX_NETWORK_ATTEMPTS = 3;
 const RETRY_BACKOFF_MS = 250;
 const DEFAULT_INSTALL_ROOT = path.join(os.homedir(), '.fuxi', 'agent-runtime');
-const DEFAULT_CREDENTIALS_FILE = path.join(os.homedir(), '.fuxi', 'mcp-credentials.json');
 const SHARED_INSTALL_LOCK = path.join('install', 'update.lock');
 const PACKAGE_ROOTS = {
   mcp: 'fuxi-platform-mcp',
@@ -64,6 +69,13 @@ function samePath(left, right) {
   const normalizedLeft = normalizePathForComparison(left);
   const normalizedRight = normalizePathForComparison(right);
   return Boolean(normalizedLeft && normalizedRight && normalizedLeft === normalizedRight);
+}
+
+function resolveInstallCredentials(manifest, options, clientName) {
+  return absolute(resolveCredentialsFile({
+    client: clientName,
+    explicit: options['credentials-file'] || (manifest && manifest.credentialsFile) || ''
+  }), 'credentialsFile');
 }
 
 function workbuddyDefaultMcpConfig() {
@@ -307,7 +319,8 @@ function preflight(manifest, options = {}) {
     // 重写时 writeConfigEntry 会 fail closed，避免静默删除用户配置。
     unmanagedFuxiEntryKeys: document.unmanaged,
     // 同理：env 里除伏羲白名单外的用户变量（如 NODE_OPTIONS、HTTP_PROXY）。
-    unmanagedFuxiEnvKeys: document.unmanagedEnv
+    unmanagedFuxiEnvKeys: document.unmanagedEnv,
+    credentialsFile: resolveInstallCredentials(manifest, options, targets.name)
   };
   if (!plan.writable) {
     throw new BootstrapError('WRITE_PERMISSION_REQUIRED', 'MCP config or Skill target is not writable', plan);
@@ -859,7 +872,7 @@ function readCompletedInstall(stateFile, manifest) {
 
 async function install(manifest, options = {}) {
   const installRoot = absolute(options['install-root'] || manifest.installRoot || process.env.FUXI_INSTALL_ROOT || DEFAULT_INSTALL_ROOT, 'installRoot');
-  const credentialsFile = absolute(options['credentials-file'] || manifest.credentialsFile || process.env.FUXI_CREDENTIALS_FILE || DEFAULT_CREDENTIALS_FILE, 'credentialsFile');
+  let credentialsFile = null;
   const state = absolute(options.state || manifest.stateFile || path.join(installRoot, 'bootstrap-state.json'), 'state');
   const unlock = acquireBootstrapLock(path.join(installRoot, SHARED_INSTALL_LOCK));
   const staging = path.join(installRoot, 'bootstrap', manifest.bootstrapId);
@@ -885,6 +898,7 @@ async function install(manifest, options = {}) {
     step = 'PRECHECK';
     let stageStarted = Date.now();
     plan = preflight(manifest, options);
+    credentialsFile = plan.credentialsFile;
     mark('preflightMs', stageStarted);
 
     const existing = readCompletedInstall(state, manifest);
@@ -989,7 +1003,7 @@ async function install(manifest, options = {}) {
     if (mcpInstalled || fs.existsSync(mcpBackup)) {
       recover('RESTORE_MCP_INSTALL', () => restoreBackup(mcpBackup, mcpInstallRoot));
     }
-    if (selfTestStarted || selfTestResult || fs.existsSync(credentialsBackup)) {
+    if (credentialsFile && (selfTestStarted || selfTestResult || fs.existsSync(credentialsBackup))) {
       recover('RESTORE_CREDENTIALS', () => restoreCredentialsPreservingLiveSession(credentialsBackup, credentialsFile));
     }
 
@@ -1134,6 +1148,7 @@ if (require.main === module) {
 
 module.exports = {
   BootstrapError,
+  NAMED_HOST_CLIENTS,
   clientTargets,
   preflight,
   extractPackage,
@@ -1142,6 +1157,10 @@ module.exports = {
   mcpEntry,
   codexDefaultMcpConfig,
   codexDefaultSkillTarget,
+  hostCredentialsFile,
+  legacyCredentialsFile,
+  resolveCredentialsFile,
+  resolveInstallCredentials,
   readConfigDocument,
   writeConfigEntry,
   acquireBootstrapLock,
