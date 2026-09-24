@@ -706,7 +706,7 @@ PREFLIGHT -> deliver_project -> COMPLETE
 
 平台仓库新增 `mcp-server/src/local-lock.js`；配套 `prototype-manager-skills` 同步更新 `fuxi-prototype/SKILL.md` 与 `references/workflow-contract.md`，不改变 MCP 工具 schema。当前本地验证通过，16077/16088 尚未发布。
 
-跟进 #48/#52：launcher/`server.js` 按凭证文件单实例（默认后起接管，`fail` 则退出码 2），refresh 继续走跨进程文件锁。设计见 [MCP_SINGLE_INSTANCE.md](MCP_SINGLE_INSTANCE.md)。未部署。
+跟进 #48/#52：launcher/`server.js` 按凭证文件单实例（默认后起接管，`fail` 则退出码 2），refresh 继续走跨进程文件锁。可安装 Host 新安装写入 `~/.fuxi/mcp-credentials-<client>.json`，实例锁因此按 Host 分离。设计见 [MCP_SINGLE_INSTANCE.md](MCP_SINGLE_INSTANCE.md)。未部署。
 
 ## 更新规则
 

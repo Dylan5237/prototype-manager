@@ -10,6 +10,7 @@ const path = require('node:path');
 
 const { buildZip } = require('../src/fuxi-zip');
 const { acquireFileLockSync } = require('../src/local-lock');
+const { instanceLockPath } = require('../src/instance-lock');
 const {
   BootstrapError,
   acquireBootstrapLock,
@@ -22,6 +23,7 @@ const {
   restoreCredentialsPreservingLiveSession,
   verify
 } = require('../src/bootstrap');
+const { NAMED_HOST_CLIENTS, resolveCredentialsFile } = require('../src/credentials-file');
 
 function sha256(buffer) {
   return crypto.createHash('sha256').update(buffer).digest('hex');
@@ -102,6 +104,8 @@ test('explicit WorkBuddy selection remains deterministic when Cursor is also ins
     assert.equal(targets.name, 'workbuddy');
     assert.equal(targets.mcpConfig, path.join(root, '.workbuddy', 'mcp.json'));
     assert.equal(targets.skillTarget, path.join(root, '.workbuddy', 'skills', 'fuxi-prototype'));
+    const plan = preflight(manifest, { client: 'workbuddy' });
+    assert.equal(plan.credentialsFile, path.join(root, '.fuxi', 'mcp-credentials-workbuddy.json'));
   } finally {
     os.homedir = originalHomedir;
     fs.rmSync(root, { recursive: true, force: true });
@@ -546,6 +550,79 @@ test('CONNECT failure keeps rotated credentials for the same device session', ()
     assert.equal(JSON.parse(fs.readFileSync(overwritten, 'utf8')).sessionId, 'session-sibling');
     assert.equal(JSON.parse(fs.readFileSync(overwritten, 'utf8')).refreshToken, 'sibling-old');
   } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('named-host install writes a host-specific credentials path and leaves the legacy file', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fuxi-bootstrap-host-creds-'));
+  const home = path.join(root, 'home');
+  const originalHomedir = os.homedir;
+  const previousCredEnv = process.env.FUXI_CREDENTIALS_FILE;
+  os.homedir = () => home;
+  delete process.env.FUXI_CREDENTIALS_FILE;
+  try {
+    fs.mkdirSync(path.join(home, '.workbuddy', 'skills'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.cursor'), { recursive: true });
+    fs.mkdirSync(path.join(home, '.fuxi'), { recursive: true });
+    const legacyFile = path.join(home, '.fuxi', 'mcp-credentials.json');
+    fs.writeFileSync(legacyFile, JSON.stringify({ keep: 'legacy-sentinel' }));
+
+    const fixtureRoot = path.join(root, 'fixtures');
+    const mcpZip = packageZip(fixtureRoot, 'fuxi-platform-mcp', [
+      ['src/server.js', fakeMcpServer()],
+      ['src/launcher.js', '#!/usr/bin/env node\n'],
+      ['src/bootstrap.js', '#!/usr/bin/env node\n'],
+      ['src/fuxi-toml.js', "'use strict';\n"],
+      ['src/config-write.js', "'use strict';\n"],
+      ['src/local-lock.js', 'module.exports = {};\n'],
+      ['src/instance-lock.js', 'module.exports = {};\n'],
+      ['package.json', '{"name":"fuxi-platform-mcp","version":"test"}\n']
+    ]);
+    const skillZip = packageZip(fixtureRoot, 'fuxi-prototype', [
+      ['SKILL.md', '---\nname: fuxi-prototype\n---\n']
+    ]);
+    const mcpZipPath = writeFixture(root, 'downloads/mcp.zip', mcpZip);
+    const skillZipPath = writeFixture(root, 'downloads/skill.zip', skillZip);
+    const installRoot = path.join(root, 'runtime');
+    const manifest = {
+      schema: 'fuxi-bootstrap/2',
+      bootstrapId: 'host-creds-1',
+      apiUrl: 'http://127.0.0.1',
+      client: { name: 'workbuddy' },
+      artifacts: {
+        mcp: { url: 'http://127.0.0.1/mcp.zip', sha256: sha256(mcpZip), size: mcpZip.length },
+        skill: { url: 'http://127.0.0.1/skill.zip', sha256: sha256(skillZip), size: skillZip.length }
+      }
+    };
+
+    const workbuddyPlan = preflight(manifest, { client: 'workbuddy' });
+    const cursorPlan = preflight({ schema: 'fuxi-bootstrap/2', bootstrapId: 'host-creds-cursor', apiUrl: 'http://127.0.0.1', client: { name: 'cursor' } });
+    const expectedWorkbuddy = path.join(home, '.fuxi', 'mcp-credentials-workbuddy.json');
+    const expectedCursor = path.join(home, '.fuxi', 'mcp-credentials-cursor.json');
+    assert.equal(workbuddyPlan.credentialsFile, expectedWorkbuddy);
+    assert.equal(cursorPlan.credentialsFile, expectedCursor);
+    assert.notEqual(workbuddyPlan.credentialsFile, cursorPlan.credentialsFile);
+    assert.notEqual(instanceLockPath(workbuddyPlan.credentialsFile), instanceLockPath(cursorPlan.credentialsFile));
+
+    const state = await install(manifest, {
+      'install-root': installRoot,
+      state: path.join(installRoot, 'state.json'),
+      'mcp-zip': mcpZipPath,
+      'skill-zip': skillZipPath,
+      'timeout-ms': 5000
+    });
+    assert.equal(state.status, 'COMPLETE');
+    assert.equal(state.credentialsFile, expectedWorkbuddy);
+    const written = JSON.parse(fs.readFileSync(path.join(home, '.workbuddy', 'mcp.json'), 'utf8'));
+    assert.equal(written.mcpServers['fuxi-platform'].env.FUXI_CREDENTIALS_FILE, expectedWorkbuddy);
+    assert.equal(JSON.parse(fs.readFileSync(legacyFile, 'utf8')).keep, 'legacy-sentinel');
+    assert.equal(NAMED_HOST_CLIENTS.includes('workbuddy'), true);
+    assert.equal(resolveCredentialsFile({ client: 'workbuddy' }), expectedWorkbuddy);
+  } finally {
+    os.homedir = originalHomedir;
+    if (previousCredEnv === undefined) delete process.env.FUXI_CREDENTIALS_FILE;
+    else process.env.FUXI_CREDENTIALS_FILE = previousCredEnv;
     fs.rmSync(root, { recursive: true, force: true });
   }
 });

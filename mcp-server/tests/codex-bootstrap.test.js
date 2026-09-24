@@ -153,7 +153,6 @@ async function runCodexInstall({ root, home, mcpZip, skillZip, seedConfig = true
       },
       {
         'install-root': installRoot,
-        'credentials-file': path.join(home, '.fuxi', 'mcp-credentials.json'),
         state: path.join(installRoot, 'bootstrap-state.json'),
         'mcp-zip': writeFixture(root, 'downloads/mcp.zip', mcpZip),
         'skill-zip': writeFixture(root, 'downloads/skill.zip', skillZip),
@@ -211,6 +210,7 @@ test('Codex preflight reports an empty config as ready without creating it', () 
     assert.deepEqual(plan.unmanagedFuxiEntryKeys, []);
     assert.equal(plan.mcpConfig, path.join(root, '.codex', 'config.toml'));
     assert.equal(plan.skillTarget, path.join(root, '.agents', 'skills', SKILL_BASENAME));
+    assert.equal(plan.credentialsFile, path.join(root, '.fuxi', 'mcp-credentials-codex.json'));
     assert.equal(fs.existsSync(plan.mcpConfig), false);
   } finally {
     os.homedir = originalHomedir;
@@ -278,6 +278,7 @@ test('a Codex install writes the official targets, preserves unrelated config an
     assert.equal(state.configFormat, 'toml');
     assert.equal(state.mcpConfig, configFile);
     assert.equal(state.skillTarget, skillTarget);
+    assert.equal(state.credentialsFile, path.join(home, '.fuxi', 'mcp-credentials-codex.json'));
     assert.equal(state.mcpConnected, true);
     assert.equal(state.skillReady, true);
     assert.equal(state.reloadRequired, true);
@@ -296,6 +297,7 @@ test('a Codex install writes the official targets, preserves unrelated config an
     assert.equal(entry.command, process.execPath);
     assert.deepEqual(entry.args, [path.join(state.mcpRoot, 'src', 'launcher.js')]);
     assert.equal(entry.env.FUXI_API_URL, 'http://127.0.0.1');
+    assert.equal(entry.env.FUXI_CREDENTIALS_FILE, path.join(home, '.fuxi', 'mcp-credentials-codex.json'));
     assert.equal(entry.env.FUXI_SKILL_TARGET, skillTarget);
     assert.equal(entry.env.FUXI_INSTALL_ROOT, state.installRoot);
     assert.equal(entry.env.FUXI_CONNECT_CODE, undefined);

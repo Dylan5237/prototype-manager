@@ -17,7 +17,7 @@ Set these environment variables in the MCP host:
 |---|---|---|
 | `FUXI_API_URL` | No | Fuxi backend URL, defaults to `http://localhost:3001` |
 | `FUXI_CONNECT_CODE` | No | One-time code from the platform "接入平台MCP" dialog. Used only on first connect to exchange a device session. |
-| `FUXI_CREDENTIALS_FILE` | No | Path to the local credential file, defaults to `~/.fuxi/mcp-credentials.json`. |
+| `FUXI_CREDENTIALS_FILE` | No | Path to the local credential file. Bootstrap writes a per-host path (`~/.fuxi/mcp-credentials-<client>.json` for `workbuddy` / `cursor` / `codex`). Launcher/`server.js` still fall back to `~/.fuxi/mcp-credentials.json` when the env is unset. |
 | `FUXI_TOKEN` | No | Legacy short-lived access token from `GET /api/auth/mcp-token`. Takes priority over username/password login but does not auto-refresh. |
 | `FUXI_USERNAME` | No | Login username when no connect code, refresh token, or `FUXI_TOKEN` is present. |
 | `FUXI_PASSWORD` | No | Login password for the username/password fallback. |

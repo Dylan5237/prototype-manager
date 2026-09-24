@@ -63,7 +63,7 @@ MCP 连接变量：
 |---|---|---|
 | `FUXI_API_URL` | 伏羲后端地址 | `http://localhost:3001` |
 | `FUXI_CONNECT_CODE` | 首次接入的一次性连接码 | 推荐方式，不写入仓库 |
-| `FUXI_CREDENTIALS_FILE` | 本地 refresh token 文件 | `~/.fuxi/mcp-credentials.json` |
+| `FUXI_CREDENTIALS_FILE` | 本地 refresh token 文件 | 可安装 Host 新安装写入 `~/.fuxi/mcp-credentials-<client>.json`；未指定时回退 `~/.fuxi/mcp-credentials.json` |
 | `FUXI_TOKEN` | 兼容旧流程的短期 token | 不自动刷新 |
 | `FUXI_USERNAME` / `FUXI_PASSWORD` | 无连接码或 refresh token 时的兼容登录 | 仅放在当前进程环境 |
 | `FUXI_INSTALL_ROOT` | MCP/Skill 本地运行时根目录 | `~/.fuxi/agent-runtime` |

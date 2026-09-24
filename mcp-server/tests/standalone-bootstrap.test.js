@@ -77,6 +77,14 @@ function extractLauncherSource(command) {
   return match[1];
 }
 
+test('standalone bootstrap bundle includes the per-host credentials helper', () => {
+  const script = buildStandaloneBootstrap({ mcpRoot: path.resolve(__dirname, '..') });
+  assert.match(script, /mcp-credentials-\$\{name\}\.json/);
+  assert.match(script, /"\.\/credentials-file"/);
+  assert.match(script, /workbuddy/);
+  assert.match(script, /codex/);
+});
+
 test('thin launcher reports unsupported Node before any download logic', () => {
   const command = renderOnboardingLauncherCommand({
     onboardingUrl: 'https://fuxi.example.test/onboarding',
